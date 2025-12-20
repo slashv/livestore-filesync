@@ -92,7 +92,7 @@ export function App() {
     >
       <FileSyncProvider
         remoteAdapter={mockRemoteAdapter}
-        schema={fileSyncSchemaConfig}
+        schema={fileSyncSchemaConfig as any}
         onEvent={(event) => {
           console.log('FileSync event:', event)
         }}

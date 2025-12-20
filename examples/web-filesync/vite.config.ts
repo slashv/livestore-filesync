@@ -14,6 +14,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@livestore-filesync/core/schema': path.resolve(__dirname, '../../packages/core/dist/schema/index.js'),
       '@livestore-filesync/core': path.resolve(__dirname, '../../packages/core/dist/index.js'),
       '@livestore-filesync/react': path.resolve(__dirname, '../../packages/react/dist/index.js'),
       // Ensure a single copy of React is used (fixes "Invalid hook call" errors)

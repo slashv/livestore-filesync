@@ -5,7 +5,15 @@ import { useFileSync, useIsOnline } from '@livestore-filesync/react'
 import { tables } from '../livestore/schema.ts'
 import { ImageCard } from './ImageCard.tsx'
 
-const filesQuery = queryDb(tables.files.where({ deletedAt: null }), { label: 'files' })
+interface FileRecord {
+  id: string
+  path: string
+  remoteUrl: string | null
+  contentHash: string
+  deletedAt: Date | null
+}
+
+const filesQuery = queryDb((tables.files as any).where({ deletedAt: null }), { label: 'files' })
 
 export function Gallery() {
   const { store } = useStore()
@@ -13,7 +21,7 @@ export function Gallery() {
   const isOnline = useIsOnline()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const files = store.useQuery(filesQuery)
+  const files = store.useQuery(filesQuery) as FileRecord[]
 
   const handleUploadClick = useCallback(() => {
     inputRef.current?.click()

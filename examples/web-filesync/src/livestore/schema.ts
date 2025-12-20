@@ -1,52 +1,16 @@
 import { Events, makeSchema, Schema, SessionIdSymbol, State } from '@livestore/livestore'
+import { createFileSyncSchema } from '@livestore-filesync/core/schema'
 
-// Transfer status schema
-const transferStatus = Schema.Literal("pending", "queued", "inProgress", "done", "error")
-
-// Local file state schema
-const localFileState = Schema.Struct({
-  path: Schema.String,
-  localHash: Schema.String,
-  downloadStatus: transferStatus,
-  uploadStatus: transferStatus,
-  lastSyncError: Schema.String
+// Create file sync schema components from the base package
+// Using 'as any' to bypass generic type constraints that return 'unknown'
+const fileSyncSchema = createFileSyncSchema({
+  Schema: Schema as any,
+  State: State as any,
+  Events: Events as any,
+  SessionIdSymbol
 })
 
-// Local files state map schema
-const localFilesState = Schema.Record({
-  key: Schema.String,
-  value: localFileState
-})
-
-// Files table for synced file metadata
-const filesTable = State.SQLite.table({
-  name: "files",
-  columns: {
-    id: State.SQLite.text({ primaryKey: true }),
-    path: State.SQLite.text({ default: "" }),
-    remoteUrl: State.SQLite.text({ default: "" }),
-    contentHash: State.SQLite.text({ default: "" }),
-    createdAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
-    updatedAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
-    deletedAt: State.SQLite.integer({ nullable: true, schema: Schema.DateFromNumber })
-  }
-})
-
-// Local file state (client-only, per-session)
-const localFileStateDoc = State.SQLite.clientDocument({
-  name: "localFileState",
-  schema: Schema.Struct({
-    localFiles: localFilesState
-  }),
-  default: {
-    id: SessionIdSymbol,
-    value: {
-      localFiles: {}
-    }
-  }
-})
-
-// UI state for the gallery
+// UI state for the gallery (app-specific)
 const uiStateDoc = State.SQLite.clientDocument({
   name: 'uiState',
   schema: Schema.Struct({
@@ -64,77 +28,30 @@ const uiStateDoc = State.SQLite.clientDocument({
   }
 })
 
-// All tables
+// Combine file sync tables with app-specific tables
 export const tables = {
-  files: filesTable,
-  localFileState: localFileStateDoc,
+  files: fileSyncSchema.tables.files,
+  localFileState: fileSyncSchema.tables.localFileState,
   uiState: uiStateDoc
-}
+} as const
 
-// File sync events
-const fileCreated = Events.synced({
-  name: "v1.FileCreated",
-  schema: Schema.Struct({
-    id: Schema.String,
-    path: Schema.String,
-    contentHash: Schema.String,
-    createdAt: Schema.Date,
-    updatedAt: Schema.Date
-  })
-})
-
-const fileUpdated = Events.synced({
-  name: "v1.FileUpdated",
-  schema: Schema.Struct({
-    id: Schema.String,
-    path: Schema.String,
-    remoteUrl: Schema.String,
-    contentHash: Schema.String,
-    updatedAt: Schema.Date
-  })
-})
-
-const fileDeleted = Events.synced({
-  name: "v1.FileDeleted",
-  schema: Schema.Struct({
-    id: Schema.String,
-    deletedAt: Schema.Date
-  })
-})
-
-// All events
+// Combine file sync events with app-specific events
 export const events = {
-  fileCreated,
-  fileUpdated,
-  fileDeleted,
-  localFileStateSet: localFileStateDoc.set,
+  ...fileSyncSchema.events,
   uiStateSet: uiStateDoc.set
 }
 
-// Materializers
-const materializers = State.SQLite.materializers(events, {
-  "v1.FileCreated": ({ id, path, contentHash, createdAt, updatedAt }) =>
-    tables.files.insert({ id, path, contentHash, createdAt, updatedAt }),
-  "v1.FileUpdated": ({ id, path, remoteUrl, contentHash, updatedAt }) =>
-    tables.files.update({ path, remoteUrl, contentHash, updatedAt }).where({ id }),
-  "v1.FileDeleted": ({ id, deletedAt }) =>
-    tables.files.update({ deletedAt }).where({ id })
+// Create materializers using the helper from file sync schema
+const materializers = State.SQLite.materializers(events as any, {
+  ...fileSyncSchema.createMaterializers(tables as any)
 })
 
-const state = State.SQLite.makeState({ tables, materializers })
+const state = State.SQLite.makeState({ tables: tables as any, materializers })
 
-export const schema = makeSchema({ events, state })
+export const schema = makeSchema({ events: events as any, state })
 
-// Export schema for use in FileSyncProvider
+// Export schema config for use in FileSyncProvider
 export const fileSyncSchemaConfig = {
-  tables: {
-    files: filesTable,
-    localFileState: localFileStateDoc
-  },
-  events: {
-    fileCreated,
-    fileUpdated,
-    fileDeleted,
-    localFileStateSet: localFileStateDoc.set
-  }
+  tables: fileSyncSchema.tables,
+  events: fileSyncSchema.events
 }
