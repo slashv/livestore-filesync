@@ -1,14 +1,21 @@
 {
-  "name": "@template/basic",
-  "version": "0.0.0",
+  "name": "livestore-filesync",
+  "version": "0.0.1",
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "license": "MIT",
-  "description": "A basic Effect package",
+  "description": "Framework-agnostic file syncing for LiveStore applications with OPFS support",
   "repository": {
     "type": "git",
-    "url": "<PLACEHOLDER>"
+    "url": "https://github.com/example/livestore-filesync"
   },
+  "keywords": [
+    "livestore",
+    "file-sync",
+    "opfs",
+    "effect",
+    "offline-first"
+  ],
   "publishConfig": {
     "access": "public",
     "directory": "dist"

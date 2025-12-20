@@ -1,0 +1,424 @@
+/**
+ * SyncExecutor Service
+ *
+ * Manages concurrent file transfers with automatic retry and exponential backoff.
+ * Uses Effect's concurrency primitives for queue management.
+ *
+ * @module
+ */
+
+import { Context, Deferred, Effect, Layer, Option, Queue, Ref, Schedule, Scope } from "effect"
+import { Duration } from "effect"
+
+/**
+ * Transfer kind
+ */
+export type TransferKind = "upload" | "download"
+
+/**
+ * Transfer status
+ */
+export type TransferStatus = "pending" | "queued" | "inProgress" | "done" | "error"
+
+/**
+ * Transfer task
+ */
+export interface TransferTask {
+  readonly kind: TransferKind
+  readonly fileId: string
+}
+
+/**
+ * Transfer result
+ */
+export interface TransferResult {
+  readonly kind: TransferKind
+  readonly fileId: string
+  readonly success: boolean
+  readonly error?: unknown
+}
+
+/**
+ * SyncExecutor configuration
+ */
+export interface SyncExecutorConfig {
+  /**
+   * Maximum concurrent downloads (default: 2)
+   */
+  readonly maxConcurrentDownloads: number
+
+  /**
+   * Maximum concurrent uploads (default: 2)
+   */
+  readonly maxConcurrentUploads: number
+
+  /**
+   * Base delay for exponential backoff (default: 1 second)
+   */
+  readonly baseDelayMs: number
+
+  /**
+   * Maximum delay for exponential backoff (default: 60 seconds)
+   */
+  readonly maxDelayMs: number
+
+  /**
+   * Jitter to add to delays (default: 500ms)
+   */
+  readonly jitterMs: number
+
+  /**
+   * Maximum retry attempts (default: 5)
+   */
+  readonly maxRetries: number
+}
+
+/**
+ * Default configuration
+ */
+export const defaultConfig: SyncExecutorConfig = {
+  maxConcurrentDownloads: 2,
+  maxConcurrentUploads: 2,
+  baseDelayMs: 1000,
+  maxDelayMs: 60000,
+  jitterMs: 500,
+  maxRetries: 5
+}
+
+/**
+ * Transfer handler function type
+ */
+export type TransferHandler = (
+  kind: TransferKind,
+  fileId: string
+) => Effect.Effect<void, unknown>
+
+/**
+ * SyncExecutor service interface
+ */
+export interface SyncExecutorService {
+  /**
+   * Enqueue a download task
+   */
+  readonly enqueueDownload: (fileId: string) => Effect.Effect<void>
+
+  /**
+   * Enqueue an upload task
+   */
+  readonly enqueueUpload: (fileId: string) => Effect.Effect<void>
+
+  /**
+   * Pause processing (e.g., when going offline)
+   */
+  readonly pause: () => Effect.Effect<void>
+
+  /**
+   * Resume processing (e.g., when coming back online)
+   */
+  readonly resume: () => Effect.Effect<void>
+
+  /**
+   * Check if the executor is paused
+   */
+  readonly isPaused: () => Effect.Effect<boolean>
+
+  /**
+   * Get the number of tasks currently in flight
+   */
+  readonly getInflightCount: () => Effect.Effect<{ downloads: number; uploads: number }>
+
+  /**
+   * Get the number of tasks waiting in queue
+   */
+  readonly getQueuedCount: () => Effect.Effect<{ downloads: number; uploads: number }>
+
+  /**
+   * Wait for all current tasks to complete
+   */
+  readonly awaitIdle: () => Effect.Effect<void>
+
+  /**
+   * Start the executor (begins processing queues)
+   */
+  readonly start: () => Effect.Effect<void, never, Scope.Scope>
+}
+
+/**
+ * SyncExecutor service tag
+ */
+export class SyncExecutor extends Context.Tag("SyncExecutor")<
+  SyncExecutor,
+  SyncExecutorService
+>() {}
+
+/**
+ * Internal state for the executor
+ */
+interface ExecutorState {
+  readonly paused: boolean
+  readonly downloadsInflight: number
+  readonly uploadsInflight: number
+}
+
+/**
+ * Create a SyncExecutor service
+ */
+export const makeSyncExecutor = (
+  handler: TransferHandler,
+  config: SyncExecutorConfig = defaultConfig
+): Effect.Effect<SyncExecutorService, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    // Create queues for downloads and uploads
+    const downloadQueue = yield* Queue.unbounded<string>()
+    const uploadQueue = yield* Queue.unbounded<string>()
+
+    // State management
+    const stateRef = yield* Ref.make<ExecutorState>({
+      paused: false,
+      downloadsInflight: 0,
+      uploadsInflight: 0
+    })
+
+    // Track queued file IDs to avoid duplicates
+    const downloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
+    const uploadQueuedSet = yield* Ref.make<Set<string>>(new Set())
+
+    // Signal for idle waiting
+    const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
+
+    // Create retry schedule with exponential backoff
+    const retrySchedule = Schedule.exponential(Duration.millis(config.baseDelayMs)).pipe(
+      Schedule.jittered,
+      Schedule.upTo(Duration.millis(config.maxDelayMs)),
+      Schedule.intersect(Schedule.recurs(config.maxRetries))
+    )
+
+    // Check if we're idle and signal if needed
+    const checkIdle = Effect.gen(function*() {
+      const state = yield* Ref.get(stateRef)
+      const downloadQueueSize = yield* Queue.size(downloadQueue)
+      const uploadQueueSize = yield* Queue.size(uploadQueue)
+
+      if (
+        state.downloadsInflight === 0 &&
+        state.uploadsInflight === 0 &&
+        downloadQueueSize === 0 &&
+        uploadQueueSize === 0
+      ) {
+        const maybeDeferred = yield* Ref.get(idleDeferred)
+        if (Option.isSome(maybeDeferred)) {
+          yield* Deferred.succeed(maybeDeferred.value, undefined)
+          yield* Ref.set(idleDeferred, Option.none())
+        }
+      }
+    })
+
+    // Process a single task with retry
+    const processTask = (
+      kind: TransferKind,
+      fileId: string
+    ): Effect.Effect<TransferResult> =>
+      Effect.gen(function*() {
+        // Update inflight count
+        yield* Ref.update(stateRef, (s) => ({
+          ...s,
+          downloadsInflight: kind === "download" ? s.downloadsInflight + 1 : s.downloadsInflight,
+          uploadsInflight: kind === "upload" ? s.uploadsInflight + 1 : s.uploadsInflight
+        }))
+
+        // Remove from queued set
+        const queuedSet = kind === "download" ? downloadQueuedSet : uploadQueuedSet
+        yield* Ref.update(queuedSet, (set) => {
+          const newSet = new Set(set)
+          newSet.delete(fileId)
+          return newSet
+        })
+
+        // Execute with retry
+        const result = yield* handler(kind, fileId).pipe(
+          Effect.retry(retrySchedule),
+          Effect.map(() => ({ kind, fileId, success: true as const })),
+          Effect.catchAll((error) =>
+            Effect.succeed({ kind, fileId, success: false as const, error })
+          )
+        )
+
+        // Update inflight count
+        yield* Ref.update(stateRef, (s) => ({
+          ...s,
+          downloadsInflight: kind === "download" ? s.downloadsInflight - 1 : s.downloadsInflight,
+          uploadsInflight: kind === "upload" ? s.uploadsInflight - 1 : s.uploadsInflight
+        }))
+
+        // Check if we're idle now
+        yield* checkIdle
+
+        return result
+      })
+
+    // Worker that processes a queue
+    const createWorker = (
+      kind: TransferKind,
+      queue: Queue.Queue<string>,
+      getMaxConcurrent: () => number,
+      getInflight: (state: ExecutorState) => number
+    ): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        // Process loop
+        const processLoop: Effect.Effect<void> = Effect.gen(function*() {
+          // Check if paused
+          const state = yield* Ref.get(stateRef)
+          if (state.paused) {
+            // Wait a bit and retry
+            yield* Effect.sleep(Duration.millis(100))
+            return
+          }
+
+          // Check if we can start more tasks
+          const currentInflight = getInflight(state)
+          if (currentInflight >= getMaxConcurrent()) {
+            // Wait a bit and retry
+            yield* Effect.sleep(Duration.millis(50))
+            return
+          }
+
+          // Try to get a task from the queue (non-blocking)
+          const maybeFileId = yield* Queue.poll(queue)
+          if (Option.isNone(maybeFileId)) {
+            // Queue is empty, wait a bit
+            yield* Effect.sleep(Duration.millis(100))
+            return
+          }
+
+          // Process the task in the background
+          yield* Effect.fork(processTask(kind, maybeFileId.value))
+        })
+
+        // Run the process loop forever
+        yield* Effect.forever(processLoop).pipe(Effect.interruptible)
+      })
+
+    // Start workers
+    const start = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        // Create download workers
+        const downloadWorker = createWorker(
+          "download",
+          downloadQueue,
+          () => config.maxConcurrentDownloads,
+          (s) => s.downloadsInflight
+        )
+
+        // Create upload workers
+        const uploadWorker = createWorker(
+          "upload",
+          uploadQueue,
+          () => config.maxConcurrentUploads,
+          (s) => s.uploadsInflight
+        )
+
+        // Fork both workers
+        yield* Effect.forkScoped(downloadWorker)
+        yield* Effect.forkScoped(uploadWorker)
+      })
+
+    const enqueueDownload = (fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const queued = yield* Ref.get(downloadQueuedSet)
+        if (!queued.has(fileId)) {
+          yield* Ref.update(downloadQueuedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.add(fileId)
+            return newSet
+          })
+          yield* Queue.offer(downloadQueue, fileId)
+        }
+      })
+
+    const enqueueUpload = (fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const queued = yield* Ref.get(uploadQueuedSet)
+        if (!queued.has(fileId)) {
+          yield* Ref.update(uploadQueuedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.add(fileId)
+            return newSet
+          })
+          yield* Queue.offer(uploadQueue, fileId)
+        }
+      })
+
+    const pause = (): Effect.Effect<void> =>
+      Ref.update(stateRef, (s) => ({ ...s, paused: true }))
+
+    const resume = (): Effect.Effect<void> =>
+      Ref.update(stateRef, (s) => ({ ...s, paused: false }))
+
+    const isPaused = (): Effect.Effect<boolean> =>
+      Ref.get(stateRef).pipe(Effect.map((s) => s.paused))
+
+    const getInflightCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
+      Ref.get(stateRef).pipe(
+        Effect.map((s) => ({
+          downloads: s.downloadsInflight,
+          uploads: s.uploadsInflight
+        }))
+      )
+
+    const getQueuedCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
+      Effect.all({
+        downloads: Queue.size(downloadQueue),
+        uploads: Queue.size(uploadQueue)
+      })
+
+    const awaitIdle = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        // Check if already idle
+        const state = yield* Ref.get(stateRef)
+        const downloadQueueSize = yield* Queue.size(downloadQueue)
+        const uploadQueueSize = yield* Queue.size(uploadQueue)
+
+        if (
+          state.downloadsInflight === 0 &&
+          state.uploadsInflight === 0 &&
+          downloadQueueSize === 0 &&
+          uploadQueueSize === 0
+        ) {
+          return
+        }
+
+        // Create a deferred to wait on
+        const deferred = yield* Deferred.make<void>()
+        yield* Ref.set(idleDeferred, Option.some(deferred))
+
+        // Wait for completion
+        yield* Deferred.await(deferred)
+      })
+
+    return {
+      enqueueDownload,
+      enqueueUpload,
+      pause,
+      resume,
+      isPaused,
+      getInflightCount,
+      getQueuedCount,
+      awaitIdle,
+      start
+    }
+  })
+
+/**
+ * Create a Layer for SyncExecutor
+ *
+ * Note: The handler must be provided separately since it typically
+ * depends on other services (LocalFileStorage, RemoteStorage, etc.)
+ */
+export const makeSyncExecutorLayer = (
+  handler: TransferHandler,
+  config: SyncExecutorConfig = defaultConfig
+): Layer.Layer<SyncExecutor, never, Scope.Scope> =>
+  Layer.scoped(
+    SyncExecutor,
+    makeSyncExecutor(handler, config)
+  )
