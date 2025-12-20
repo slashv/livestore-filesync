@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "jsx": "react-jsx",
+    "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@livestore-filesync/core": ["../core/dist/index.d.ts"],
+      "@livestore-filesync/core/*": ["../core/dist/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [
+    { "path": "../core/tsconfig.build.json" }
+  ]
+}
