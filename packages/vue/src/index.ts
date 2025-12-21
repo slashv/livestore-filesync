@@ -7,29 +7,17 @@
  */
 
 // Provider
-export { FileSyncProvider } from "./FileSyncProvider.js"
-export { FileSyncKey, useFileSyncContext } from "./FileSyncContext.js"
+export { FileSyncProvider, type FileSyncProviderProps } from "./FileSyncProvider.js"
 
-// Composables
-export {
-  useFileSync,
-  useSaveFile,
-  useFileUrl,
-  useFileStatus,
-  useIsOnline,
-  useFileExistsLocally,
-  useDeleteFile
-} from "./composables.js"
+// Context
+export { FileSyncKey, useFileSync } from "./context.js"
 
-// Types
+// Re-export core types
 export type {
-  FileSyncProviderConfig,
-  FileSyncService,
-  LocalFileState,
-  LocalFilesState,
-  FileSyncEvent,
-  FileSyncEventCallback,
-  FileSaveResult,
-  RemoteStorageAdapter,
-  TransferStatus
-} from "./types.js"
+  FileSyncInstance,
+  CreateFileSyncConfig,
+  SyncEvent,
+  SyncFileOperationResult,
+  SyncLocalFileState,
+  SyncTransferStatus
+} from "@livestore-filesync/core"

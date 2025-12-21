@@ -28,8 +28,7 @@
     "dev": "tsc -b tsconfig.build.json --watch"
   },
   "dependencies": {
-    "@livestore-filesync/core": "workspace:*",
-    "effect": "^3.17.7"
+    "@livestore-filesync/core": "workspace:*"
   },
   "peerDependencies": {
     "@livestore/livestore": ">=0.3.0",

@@ -2,10 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@livestore-filesync/core": ["../core/dist/index.d.ts"],
+      "@livestore-filesync/core/*": ["../core/dist/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "references": [
-    { "path": "../core" }
+    { "path": "../core/tsconfig.build.json" }
   ]
 }
