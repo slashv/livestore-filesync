@@ -1,33 +1,28 @@
 /**
  * FileSyncProvider - Vue component that provides file sync context
  *
- * This is a simplified provider that wraps createFileSync from core.
+ * Automatically integrates with LiveStore via useStore() and uses the
+ * standard file sync schema.
  *
  * @module
  */
 
 import { defineComponent, onMounted, onUnmounted, provide, type PropType } from "vue"
-import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance, type SyncEvent } from "@livestore-filesync/core"
+import { useStore } from "vue-livestore"
+import { queryDb } from "@livestore/livestore"
+import { createFileSync, type FileSyncInstance, type SyncEvent } from "@livestore-filesync/core"
 import { FileSyncKey } from "./context.js"
+import { fileSyncSchema } from "./schema.js"
 
 /**
  * Props for FileSyncProvider
  */
 export interface FileSyncProviderProps {
   /**
-   * LiveStore store instance
-   */
-  store: CreateFileSyncConfig["store"]
-
-  /**
-   * Schema with tables and events from createFileSyncSchema
-   */
-  schema: CreateFileSyncConfig["schema"]
-
-  /**
    * Base URL for the remote storage API
+   * @default "/api"
    */
-  remoteUrl: string
+  remoteUrl?: string
 
   /**
    * Optional function to get auth headers
@@ -44,38 +39,26 @@ export interface FileSyncProviderProps {
  * FileSyncProvider component
  *
  * Provides file sync functionality to child components via Vue's provide/inject.
+ * Automatically gets the store from LiveStoreProvider context.
  *
  * @example
  * ```vue
  * <template>
- *   <FileSyncProvider :store="store" :schema="schema" remote-url="/api">
- *     <YourApp />
- *   </FileSyncProvider>
+ *   <LiveStoreProvider :options="storeOptions">
+ *     <FileSyncProvider remote-url="/api">
+ *       <YourApp />
+ *     </FileSyncProvider>
+ *   </LiveStoreProvider>
  * </template>
- *
- * <script setup>
- * import { FileSyncProvider } from '@livestore-filesync/vue'
- * import { useStore } from 'vue-livestore'
- *
- * const { store } = useStore()
- * </script>
  * ```
  */
 export const FileSyncProvider = defineComponent({
   name: "FileSyncProvider",
 
   props: {
-    store: {
-      type: Object as PropType<CreateFileSyncConfig["store"]>,
-      required: true
-    },
-    schema: {
-      type: Object as PropType<CreateFileSyncConfig["schema"]>,
-      required: true
-    },
     remoteUrl: {
       type: String,
-      required: true
+      default: "/api"
     },
     authHeaders: {
       type: Function as PropType<() => HeadersInit>,
@@ -88,6 +71,9 @@ export const FileSyncProvider = defineComponent({
   },
 
   setup(props, { slots }) {
+    // Get store from LiveStoreProvider context
+    const { store } = useStore()
+
     // Build remote config
     const remoteConfig: { baseUrl: string; authHeaders?: () => HeadersInit } = {
       baseUrl: props.remoteUrl
@@ -104,8 +90,12 @@ export const FileSyncProvider = defineComponent({
 
     // Create the file sync instance
     const fileSync: FileSyncInstance = createFileSync({
-      store: props.store,
-      schema: props.schema,
+      store,
+      schema: {
+        tables: fileSyncSchema.tables as any,
+        events: fileSyncSchema.events as any,
+        queryDb: queryDb as any
+      },
       remote: remoteConfig,
       options: optionsConfig
     })

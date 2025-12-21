@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { queryDb } from '@livestore/livestore'
 import { useStore, useQuery } from 'vue-livestore'
-import { useFileSync, useIsOnline } from '@livestore-filesync/vue'
+import { useFileSync } from '@livestore-filesync/vue'
 import { tables } from '../livestore/schema.ts'
 import ImageCard from './ImageCard.vue'
 
@@ -15,12 +15,18 @@ interface FileRecord {
 }
 
 const { store } = useStore()
-const { saveFile } = useFileSync()
-const isOnline = useIsOnline()
+const fileSync = useFileSync()
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const filesQuery = queryDb((tables.files as any).where({ deletedAt: null }), { label: 'files' })
 const files = useQuery(filesQuery) as unknown as ReturnType<typeof ref<FileRecord[]>>
+
+const isOnline = ref(fileSync.isOnline())
+
+// Poll online status
+setInterval(() => {
+  isOnline.value = fileSync.isOnline()
+}, 1000)
 
 const handleUploadClick = () => {
   inputRef.value?.click()
@@ -32,7 +38,7 @@ const handleFileChange = async (e: Event) => {
   if (!file) return
 
   try {
-    const result = await saveFile(file)
+    const result = await fileSync.saveFile(file)
     console.log('File saved:', result)
   } catch (error) {
     console.error('Failed to save file:', error)
@@ -44,12 +50,11 @@ const handleFileChange = async (e: Event) => {
   }
 }
 
-const statusDotStyle = computed(() => ({
+const statusDotStyle = {
   width: '10px',
   height: '10px',
   borderRadius: '50%',
-  backgroundColor: isOnline.value ? '#4caf50' : '#f44336'
-}))
+}
 </script>
 
 <template>
@@ -75,7 +80,7 @@ const statusDotStyle = computed(() => ({
         :style="statusStyle"
         data-testid="status-indicator"
       >
-        <span :style="statusDotStyle" />
+        <span :style="{ ...statusDotStyle, backgroundColor: isOnline ? '#4caf50' : '#f44336' }" />
         {{ isOnline ? 'Online' : 'Offline' }}
       </div>
     </div>

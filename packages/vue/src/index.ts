@@ -12,6 +12,9 @@ export { FileSyncProvider, type FileSyncProviderProps } from "./FileSyncProvider
 // Context
 export { FileSyncKey, useFileSync } from "./context.js"
 
+// Schema - pre-configured file sync schema
+export { fileSyncSchema } from "./schema.js"
+
 // Re-export core types
 export type {
   FileSyncInstance,

@@ -1,3 +1,13 @@
 packages:
   - "packages/*"
   - "examples/*"
+
+catalog:
+  "@livestore/adapter-web": "0.4.0-dev.20"
+  "@livestore/livestore": "0.4.0-dev.20"
+  "@livestore/peer-deps": "0.4.0-dev.20"
+  "@livestore/sync-cf": "0.4.0-dev.20"
+  "@livestore/utils": "0.4.0-dev.20"
+  "@livestore/wa-sqlite": "0.4.0-dev.20"
+  "@livestore/react": "0.4.0-dev.20"
+  "effect": "3.18.4"

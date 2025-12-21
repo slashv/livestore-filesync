@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useFileUrl, useFileStatus, useDeleteFile } from '@livestore-filesync/vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useFileSync } from '@livestore-filesync/vue'
 
 interface FileRecord {
   id: string
@@ -14,51 +14,32 @@ const props = defineProps<{
   file: FileRecord
 }>()
 
-const { url, isLoading } = useFileUrl(props.file.id)
-const status = useFileStatus(props.file.id)
-const { remove } = useDeleteFile()
+const fileSync = useFileSync()
+const url = ref<string | null>(null)
+const isLoading = ref(true)
+
+// Load file URL on mount and when file changes
+const loadUrl = async () => {
+  isLoading.value = true
+  try {
+    url.value = await fileSync.getFileUrl(props.file.path)
+  } catch (error) {
+    console.error('Failed to load file URL:', error)
+    url.value = null
+  }
+  isLoading.value = false
+}
+
+onMounted(loadUrl)
+watch(() => props.file.path, loadUrl)
 
 const handleDelete = async () => {
   try {
-    await remove(props.file.id)
+    await fileSync.deleteFile(props.file.id)
   } catch (error) {
     console.error('Failed to delete:', error)
   }
 }
-
-const statusText = computed(() => {
-  if (!status.value) return 'Unknown'
-  if (status.value.uploadStatus === 'inProgress') return 'Uploading...'
-  if (status.value.uploadStatus === 'queued') return 'Queued'
-  if (status.value.uploadStatus === 'pending') return 'Pending'
-  if (status.value.downloadStatus === 'inProgress') return 'Downloading...'
-  if (status.value.downloadStatus === 'queued') return 'Queued'
-  if (status.value.downloadStatus === 'pending') return 'Pending'
-  if (status.value.lastSyncError) return 'Error'
-  return 'Synced'
-})
-
-const statusColor = computed(() => {
-  const text = statusText.value
-  switch (text) {
-    case 'Synced': return '#4caf50'
-    case 'Uploading...':
-    case 'Downloading...': return '#ff9800'
-    case 'Queued':
-    case 'Pending': return '#2196f3'
-    case 'Error': return '#f44336'
-    default: return '#999'
-  }
-})
-
-const statusBadgeStyle = computed(() => ({
-  padding: '4px 8px',
-  borderRadius: '4px',
-  fontSize: '12px',
-  fontWeight: 'bold',
-  color: '#fff',
-  backgroundColor: statusColor.value
-}))
 
 const filename = computed(() => props.file.path.split('/').pop())
 </script>
@@ -80,7 +61,7 @@ const filename = computed(() => props.file.path.split('/').pop())
       <div :style="filenameStyle" data-testid="file-name">{{ filename }}</div>
       <div :style="statusRowStyle">
         <span :style="statusBadgeStyle" data-testid="file-status">
-          {{ statusText }}
+          {{ file.remoteUrl ? 'Synced' : 'Local' }}
         </span>
         <button
           type="button"
@@ -142,6 +123,15 @@ const statusRowStyle = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between'
+}
+
+const statusBadgeStyle = {
+  padding: '4px 8px',
+  borderRadius: '4px',
+  fontSize: '12px',
+  fontWeight: 'bold',
+  color: '#fff',
+  backgroundColor: '#4caf50'
 }
 
 const deleteButtonStyle = {
