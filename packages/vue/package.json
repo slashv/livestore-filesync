@@ -1,0 +1,43 @@
+{
+  "name": "@livestore-filesync/vue",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "MIT",
+  "description": "Vue adapter for livestore-filesync",
+  "keywords": [
+    "livestore",
+    "file-sync",
+    "vue",
+    "opfs",
+    "offline-first"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "check": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.build.json --watch"
+  },
+  "dependencies": {
+    "@livestore-filesync/core": "workspace:*",
+    "effect": "^3.17.7"
+  },
+  "peerDependencies": {
+    "@livestore/livestore": ">=0.3.0",
+    "vue": ">=3.4.0"
+  },
+  "devDependencies": {
+    "@livestore/livestore": "0.4.0-dev.20",
+    "typescript": "^5.6.2",
+    "vue": "^3.5.0"
+  }
+}
