@@ -6,8 +6,6 @@
  * @module
  */
 
-export { FileSyncClient, type FileSyncClientConfig, type FileSyncError } from "./FileSyncClient.js"
-
 // New simplified API
 export {
   createFileSync,

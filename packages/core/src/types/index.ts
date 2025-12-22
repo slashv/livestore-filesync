@@ -12,11 +12,11 @@ import type { TransferStatus } from "../services/sync-executor/index.js"
 export interface FileRecord {
   readonly id: string
   readonly path: string
-  readonly remoteUrl: string | null
+  readonly remoteUrl: string
   readonly contentHash: string
-  readonly createdAt: number
-  readonly updatedAt: number
-  readonly deletedAt: number | null
+  readonly createdAt: Date
+  readonly updatedAt: Date
+  readonly deletedAt: Date | null
 }
 
 /**
@@ -24,10 +24,10 @@ export interface FileRecord {
  */
 export interface LocalFileState {
   readonly path: string
-  readonly localHash: string | null
+  readonly localHash: string
   readonly downloadStatus: TransferStatus
   readonly uploadStatus: TransferStatus
-  readonly lastSyncError: string | null
+  readonly lastSyncError: string
 }
 
 /**
@@ -50,6 +50,8 @@ export interface TransferProgress {
  * File sync event types
  */
 export type FileSyncEvent =
+  | { readonly type: "sync:start" }
+  | { readonly type: "sync:complete" }
   | { readonly type: "download:start"; readonly fileId: string }
   | { readonly type: "download:progress"; readonly fileId: string; readonly progress: TransferProgress }
   | { readonly type: "download:complete"; readonly fileId: string }
@@ -65,6 +67,8 @@ export type FileSyncEvent =
  * Callback for file sync events
  */
 export type FileSyncEventCallback = (event: FileSyncEvent) => void
+
+export type { TransferStatus } from "../services/sync-executor/index.js"
 
 /**
  * Options for creating a new file

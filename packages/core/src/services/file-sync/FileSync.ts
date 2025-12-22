@@ -10,7 +10,14 @@
 import { Context, Effect, Fiber, Layer, Ref, Scope } from "effect"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
-import { makeSyncExecutor, type SyncExecutorConfig, type TransferKind } from "../sync-executor/index.js"
+import {
+  defaultConfig as defaultExecutorConfig,
+  makeSyncExecutor,
+  type SyncExecutorConfig,
+  type TransferKind,
+  type TransferStatus
+} from "../sync-executor/index.js"
+import { FILES_DIRECTORY } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
 import type {
   FileRecord,
@@ -26,9 +33,14 @@ import type {
  */
 export interface FileSyncStore {
   /**
-   * Get all file records
+   * Get all active (non-deleted) file records
    */
-  readonly getFiles: () => Effect.Effect<FileRecord[]>
+  readonly getActiveFiles: () => Effect.Effect<FileRecord[]>
+
+  /**
+   * Get all deleted file records
+   */
+  readonly getDeletedFiles: () => Effect.Effect<FileRecord[]>
 
   /**
    * Get a file record by ID
@@ -131,19 +143,25 @@ export interface FileSyncConfig {
   /**
    * Sync executor configuration
    */
-  readonly executorConfig?: SyncExecutorConfig
+  readonly executorConfig?: Partial<SyncExecutorConfig>
 
   /**
    * Health check interval when offline (ms)
    */
   readonly healthCheckIntervalMs?: number
+
+  /**
+   * Cleanup delay for deleted local files (ms)
+   */
+  readonly gcDelayMs?: number
 }
 
 /**
  * Default FileSync configuration
  */
 export const defaultFileSyncConfig: FileSyncConfig = {
-  healthCheckIntervalMs: 10000
+  healthCheckIntervalMs: 10000,
+  gcDelayMs: 300
 }
 
 /**
@@ -165,9 +183,19 @@ export const makeFileSync = (
     const onlineRef = yield* Ref.make(true)
     const runningRef = yield* Ref.make(false)
     const unsubscribeRef = yield* Ref.make<(() => void) | null>(null)
+    const activeSyncOpsRef = yield* Ref.make(0)
 
     // Event callbacks
     const eventCallbacks = yield* Ref.make<FileSyncEventCallback[]>([])
+
+    // Background fibers
+    const gcFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const healthCheckFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+
+    const executorConfig: SyncExecutorConfig = {
+      ...defaultExecutorConfig,
+      ...(config.executorConfig ?? {})
+    }
 
     // Emit an event
     const emit = (event: FileSyncEvent): Effect.Effect<void> =>
@@ -178,49 +206,142 @@ export const makeFileSync = (
         }
       })
 
-    // Transfer handler for the sync executor
-    const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
-      kind === "download" ? downloadFile(fileId) : uploadFile(fileId)
+    const mergeLocalFiles = (patch: Record<string, LocalFilesState[string]>): Effect.Effect<void> =>
+      store.updateLocalFilesState((state) => ({
+        ...state,
+        ...patch
+      }))
 
-    // Create sync executor
-    const executor = yield* makeSyncExecutor(transferHandler, config.executorConfig)
+    const setLocalFileTransferStatus = (
+      fileId: string,
+      action: "upload" | "download",
+      status: TransferStatus
+    ): Effect.Effect<void> =>
+      store.updateLocalFilesState((state) => {
+        const localFile = state[fileId]
+        if (!localFile) return state
+        const field = action === "upload" ? "uploadStatus" : "downloadStatus"
+        return {
+          ...state,
+          [fileId]: { ...localFile, [field]: status }
+        }
+      })
+
+    // Cleanup deleted local files when idle
+    const cleanDeletedLocalFiles = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const diskPaths = yield* localStorage.listFiles(FILES_DIRECTORY).pipe(
+          Effect.catchAll(() => Effect.succeed<string[]>([]))
+        )
+
+        const activeFiles = yield* store.getActiveFiles()
+        const deletedFiles = yield* store.getDeletedFiles()
+
+        const activePaths = new Set(activeFiles.map((f) => f.path))
+        const deletedPaths = new Set(deletedFiles.map((f) => f.path))
+
+        const pathsToDelete = Array.from(deletedPaths).filter(
+          (p) => diskPaths.includes(p) && !activePaths.has(p)
+        )
+
+        if (pathsToDelete.length === 0) return
+
+        yield* Effect.forEach(
+          pathsToDelete,
+          (path) => localStorage.deleteFile(path).pipe(Effect.ignore),
+          { concurrency: "unbounded" }
+        )
+      })
+
+    const scheduleCleanupIfIdle = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const active = yield* Ref.get(activeSyncOpsRef)
+        if (active !== 0) return
+
+        const existing = yield* Ref.get(gcFiberRef)
+        if (existing) {
+          yield* Fiber.interrupt(existing)
+        }
+
+        const delayMs = config.gcDelayMs ?? 300
+        const fiber = yield* Effect.fork(
+          Effect.sleep(`${delayMs} millis`).pipe(
+            Effect.flatMap(() => Ref.get(activeSyncOpsRef)),
+            Effect.flatMap((activeNow) =>
+              activeNow === 0
+                ? cleanDeletedLocalFiles().pipe(Effect.catchAll(() => Effect.void))
+                : Effect.void
+            ),
+            Effect.ensuring(Ref.set(gcFiberRef, null))
+          )
+        )
+
+        yield* Ref.set(gcFiberRef, fiber)
+      })
+
+    // Health check loop while offline
+    const stopHealthCheckLoop = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const existing = yield* Ref.get(healthCheckFiberRef)
+        if (!existing) return
+        yield* Fiber.interrupt(existing)
+        yield* Ref.set(healthCheckFiberRef, null)
+      })
+
+    const startHealthCheckLoop = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const existing = yield* Ref.get(healthCheckFiberRef)
+        if (existing) return
+
+        const intervalMs = config.healthCheckIntervalMs ?? 10000
+
+        const loop: Effect.Effect<void> = Effect.gen(function*() {
+          const isHealthy = yield* remoteStorage.checkHealth()
+          if (isHealthy) {
+            yield* Ref.set(onlineRef, true)
+            yield* emit({ type: "online" })
+            yield* executor.resume()
+            yield* checkAndSync()
+            return
+          }
+
+          yield* Effect.sleep(`${intervalMs} millis`)
+          yield* loop
+        })
+
+        const fiber = yield* Effect.fork(
+          loop.pipe(Effect.ensuring(Ref.set(healthCheckFiberRef, null)))
+        )
+
+        yield* Ref.set(healthCheckFiberRef, fiber)
+      })
 
     // Download a file from remote to local
     const downloadFile = (fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
+        yield* setLocalFileTransferStatus(fileId, "download", "inProgress")
         yield* emit({ type: "download:start", fileId })
 
         const file = yield* store.getFile(fileId)
         if (!file || !file.remoteUrl) {
           const error = new Error("File not found or no remote URL")
-          yield* emit({
-            type: "download:error",
-            fileId,
-            error
-          })
+          yield* emit({ type: "download:error", fileId, error })
           return yield* Effect.fail(error)
         }
 
-        // Download from remote
         const downloadedFile = yield* remoteStorage.download(file.remoteUrl)
-
-        // Write to local storage
         yield* localStorage.writeFile(file.path, downloadedFile)
+        const localHash = yield* hashFile(downloadedFile)
 
-        // Hash the downloaded file
-        const hash = yield* hashFile(downloadedFile)
-
-        // Update local state
-        yield* store.updateLocalFilesState((state) => ({
-          ...state,
+        yield* mergeLocalFiles({
           [fileId]: {
             path: file.path,
-            localHash: hash,
-            downloadStatus: "done" as const,
-            uploadStatus: state[fileId]?.uploadStatus ?? "pending" as const,
-            lastSyncError: null
+            localHash,
+            downloadStatus: "done",
+            uploadStatus: "done",
+            lastSyncError: ""
           }
-        }))
+        })
 
         yield* emit({ type: "download:complete", fileId })
       }).pipe(
@@ -231,9 +352,9 @@ export const makeFileSync = (
               [fileId]: {
                 ...state[fileId],
                 path: state[fileId]?.path ?? "",
-                localHash: state[fileId]?.localHash ?? null,
-                downloadStatus: "error" as const,
-                uploadStatus: state[fileId]?.uploadStatus ?? "pending" as const,
+                localHash: state[fileId]?.localHash ?? "",
+                downloadStatus: "pending",
+                uploadStatus: state[fileId]?.uploadStatus ?? "done",
                 lastSyncError: String(error)
               }
             }))
@@ -246,38 +367,30 @@ export const makeFileSync = (
     // Upload a file from local to remote
     const uploadFile = (fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
+        yield* setLocalFileTransferStatus(fileId, "upload", "inProgress")
         yield* emit({ type: "upload:start", fileId })
 
         const file = yield* store.getFile(fileId)
         if (!file) {
           const error = new Error("File not found")
-          yield* emit({
-            type: "upload:error",
-            fileId,
-            error
-          })
+          yield* emit({ type: "upload:error", fileId, error })
           return yield* Effect.fail(error)
         }
 
-        // Read from local storage
         const localFile = yield* localStorage.readFile(file.path)
-
-        // Upload to remote
         const remoteUrl = yield* remoteStorage.upload(localFile)
 
-        // Update file record with remote URL
         yield* store.updateFileRemoteUrl(fileId, remoteUrl)
 
-        // Update local state
         yield* store.updateLocalFilesState((state) => ({
           ...state,
           [fileId]: {
             ...state[fileId],
             path: state[fileId]?.path ?? file.path,
-            localHash: state[fileId]?.localHash ?? null,
-            downloadStatus: state[fileId]?.downloadStatus ?? "pending" as const,
-            uploadStatus: "done" as const,
-            lastSyncError: null
+            localHash: state[fileId]?.localHash ?? "",
+            downloadStatus: state[fileId]?.downloadStatus ?? "done",
+            uploadStatus: "done",
+            lastSyncError: ""
           }
         }))
 
@@ -290,9 +403,9 @@ export const makeFileSync = (
               [fileId]: {
                 ...state[fileId],
                 path: state[fileId]?.path ?? "",
-                localHash: state[fileId]?.localHash ?? null,
-                downloadStatus: state[fileId]?.downloadStatus ?? "pending" as const,
-                uploadStatus: "error" as const,
+                localHash: state[fileId]?.localHash ?? "",
+                downloadStatus: state[fileId]?.downloadStatus ?? "done",
+                uploadStatus: "pending",
                 lastSyncError: String(error)
               }
             }))
@@ -302,84 +415,105 @@ export const makeFileSync = (
         )
       )
 
-    // Check files and enqueue necessary syncs
-    const checkAndSync = (): Effect.Effect<void> =>
+    // Transfer handler for the sync executor
+    const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
-        const online = yield* Ref.get(onlineRef)
-        if (!online) return
-
-        const files = yield* store.getFiles()
-        const localState = yield* store.getLocalFilesState()
-
-        for (const file of files) {
-          if (file.deletedAt !== null) continue
-
-          const local = localState[file.id]
-
-          // Check if needs download (has remote URL but no local file or hash mismatch)
-          if (file.remoteUrl) {
-            const needsDownload =
-              !local ||
-              local.localHash === null ||
-              local.localHash !== file.contentHash
-
-            if (needsDownload && local?.downloadStatus !== "inProgress") {
-              yield* store.updateLocalFilesState((state) => ({
-                ...state,
-                [file.id]: {
-                  path: file.path,
-                  localHash: state[file.id]?.localHash ?? null,
-                  downloadStatus: "queued" as const,
-                  uploadStatus: state[file.id]?.uploadStatus ?? "pending" as const,
-                  lastSyncError: null
-                }
-              }))
-              yield* executor.enqueueDownload(file.id)
-            }
+        yield* Ref.update(activeSyncOpsRef, (value) => value + 1)
+        try {
+          if (kind === "download") {
+            yield* downloadFile(fileId)
+          } else {
+            yield* uploadFile(fileId)
           }
-
-          // Check if needs upload (has local file but no remote URL)
-          if (!file.remoteUrl && local?.localHash) {
-            if (local.uploadStatus !== "inProgress") {
-              yield* store.updateLocalFilesState((state) => ({
-                ...state,
-                [file.id]: {
-                  ...state[file.id],
-                  path: state[file.id]?.path ?? file.path,
-                  localHash: state[file.id]?.localHash ?? null,
-                  downloadStatus: state[file.id]?.downloadStatus ?? "pending" as const,
-                  uploadStatus: "queued" as const,
-                  lastSyncError: null
-                }
-              }))
-              yield* executor.enqueueUpload(file.id)
-            }
-          }
+        } finally {
+          yield* Ref.update(activeSyncOpsRef, (value) => Math.max(0, value - 1))
+          yield* scheduleCleanupIfIdle()
         }
       })
 
-    // Start health check loop when offline
-    let healthCheckFiber: Fiber.RuntimeFiber<void, never> | null = null
+    // Create sync executor
+    const executor = yield* makeSyncExecutor(transferHandler, executorConfig)
 
-    const startHealthCheckLoop = (): Effect.Effect<void> =>
+    // Two-pass reconciliation of local file state
+    const updateLocalFileState = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const loop: Effect.Effect<void> = Effect.gen(function*() {
-          const online = yield* Ref.get(onlineRef)
-          if (online) return
+        const files = yield* store.getActiveFiles()
+        const localFiles = yield* store.getLocalFilesState()
 
-          const isHealthy = yield* remoteStorage.checkHealth()
-          if (isHealthy) {
-            yield* Ref.set(onlineRef, true)
-            yield* emit({ type: "online" })
-            yield* executor.resume()
-            yield* checkAndSync()
-          } else {
-            yield* Effect.sleep(`${config.healthCheckIntervalMs ?? 10000} millis`)
-            yield* loop
+        const nextLocalFilesState: LocalFilesState = { ...localFiles }
+
+        // Pass 1: reconcile using existing state and remote metadata only (no disk I/O)
+        for (const file of files) {
+          if (file.id in nextLocalFilesState) {
+            const localFile = nextLocalFilesState[file.id]!
+            const remoteMismatch = localFile.localHash !== file.contentHash
+            nextLocalFilesState[file.id] = {
+              ...localFile,
+              downloadStatus: remoteMismatch ? "pending" : "done",
+              uploadStatus: "done"
+            }
+          } else if (file.remoteUrl) {
+            // Not known locally but exists remotely: mark as pending download
+            nextLocalFilesState[file.id] = {
+              path: file.path,
+              localHash: "",
+              downloadStatus: "pending",
+              uploadStatus: "done",
+              lastSyncError: ""
+            }
           }
-        })
+        }
 
-        healthCheckFiber = yield* Effect.fork(loop)
+        // Pass 2: detect local files that need upload (disk I/O)
+        const additions: LocalFilesState = {}
+
+        for (const file of files) {
+          if (file.id in nextLocalFilesState) continue
+
+          const exists = yield* localStorage.fileExists(file.path)
+          if (!exists) continue
+
+          const f = yield* localStorage.readFile(file.path)
+          const localHash = yield* hashFile(f)
+          const shouldUpload = !file.remoteUrl
+
+          additions[file.id] = {
+            path: file.path,
+            localHash,
+            downloadStatus: "done",
+            uploadStatus: shouldUpload ? "pending" : "done",
+            lastSyncError: ""
+          }
+        }
+
+        const merged: LocalFilesState = { ...nextLocalFilesState, ...additions }
+        yield* store.updateLocalFilesState(() => merged)
+      }).pipe(Effect.catchAll(() => Effect.void))
+
+    const syncFiles = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        yield* emit({ type: "sync:start" })
+
+        const localFiles = yield* store.getLocalFilesState()
+        for (const [fileId, localFile] of Object.entries(localFiles)) {
+          if (localFile.downloadStatus === "pending" || localFile.downloadStatus === "queued") {
+            yield* setLocalFileTransferStatus(fileId, "download", "queued")
+            yield* executor.enqueueDownload(fileId)
+          }
+          if (localFile.uploadStatus === "pending" || localFile.uploadStatus === "queued") {
+            yield* setLocalFileTransferStatus(fileId, "upload", "queued")
+            yield* executor.enqueueUpload(fileId)
+          }
+        }
+
+        yield* emit({ type: "sync:complete" })
+      })
+
+    const checkAndSync = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        yield* updateLocalFileState()
+        yield* syncFiles()
+        yield* scheduleCleanupIfIdle()
       })
 
     // Service methods
@@ -395,7 +529,7 @@ export const makeFileSync = (
 
         // Subscribe to file changes
         const unsubscribe = yield* store.onFilesChanged(() => {
-          Effect.runPromise(checkAndSync())
+          Effect.runPromise(checkAndSync()).catch(() => {})
         })
 
         yield* Ref.set(unsubscribeRef, unsubscribe)
@@ -412,9 +546,15 @@ export const makeFileSync = (
         yield* Ref.set(runningRef, false)
 
         // Stop health check if running
-        if (healthCheckFiber) {
-          yield* Fiber.interrupt(healthCheckFiber)
-          healthCheckFiber = null
+        yield* stopHealthCheckLoop()
+
+        // Pause executor processing
+        yield* executor.pause()
+
+        const gcFiber = yield* Ref.get(gcFiberRef)
+        if (gcFiber) {
+          yield* Fiber.interrupt(gcFiber)
+          yield* Ref.set(gcFiberRef, null)
         }
 
         // Unsubscribe from file changes
@@ -438,9 +578,9 @@ export const makeFileSync = (
           [fileId]: {
             path,
             localHash: hash,
-            downloadStatus: "done" as const,
-            uploadStatus: "queued" as const,
-            lastSyncError: null
+            downloadStatus: "done",
+            uploadStatus: "queued",
+            lastSyncError: ""
           }
         }))
 
@@ -450,13 +590,16 @@ export const makeFileSync = (
     const setOnline = (online: boolean): Effect.Effect<void> =>
       Effect.gen(function*() {
         const wasOnline = yield* Ref.get(onlineRef)
+        if (online === wasOnline) return
+
         yield* Ref.set(onlineRef, online)
 
-        if (online && !wasOnline) {
+        if (online) {
           yield* emit({ type: "online" })
           yield* executor.resume()
+          yield* stopHealthCheckLoop()
           yield* checkAndSync()
-        } else if (!online && wasOnline) {
+        } else {
           yield* emit({ type: "offline" })
           yield* executor.pause()
           yield* startHealthCheckLoop()

@@ -9,6 +9,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import { LocalFileStorage } from "../local-file-storage/index.js"
+import { RemoteStorage } from "../remote-file-storage/index.js"
 import { FileSync, FileSyncStoreTag } from "../file-sync/index.js"
 import { hashFile, makeStoredPath } from "../../utils/index.js"
 import type { FileOperationResult } from "../../types/index.js"
@@ -47,7 +48,7 @@ export interface FileStorageStore {
   readonly getFile: (id: string) => Effect.Effect<{
     id: string
     path: string
-    remoteUrl: string | null
+    remoteUrl: string
     contentHash: string
   } | undefined>
 
@@ -131,10 +132,11 @@ export class FileStorage extends Context.Tag("FileStorage")<
 export const makeFileStorage = (): Effect.Effect<
   FileStorageService,
   never,
-  LocalFileStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
+  LocalFileStorage | RemoteStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
 > =>
   Effect.gen(function*() {
     const localStorage = yield* LocalFileStorage
+    const remoteStorage = yield* RemoteStorage
     const fileSync = yield* FileSync
     const store = yield* FileStorageStoreTag
     const syncStore = yield* FileSyncStoreTag
@@ -215,8 +217,12 @@ export const makeFileStorage = (): Effect.Effect<
           Effect.catchAll(() => Effect.void) // Ignore errors
         )
 
-        // Note: Remote deletion happens via sync process
-        // when it sees the file is marked as deleted
+        // Best-effort remote cleanup
+        if (existingFile.remoteUrl) {
+          yield* remoteStorage.delete(existingFile.remoteUrl).pipe(
+            Effect.catchAll(() => Effect.void) // Ignore errors
+          )
+        }
       })
 
     const getFileUrl = (fileId: string): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
@@ -239,8 +245,8 @@ export const makeFileStorage = (): Effect.Effect<
           }
         }
 
-        // Fall back to remote URL
-        return file.remoteUrl
+        // Fall back to remote URL when present
+        return file.remoteUrl || null
       })
 
     return {
@@ -257,5 +263,5 @@ export const makeFileStorage = (): Effect.Effect<
 export const FileStorageLive: Layer.Layer<
   FileStorage,
   never,
-  LocalFileStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
+  LocalFileStorage | RemoteStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
 > = Layer.effect(FileStorage, makeFileStorage())

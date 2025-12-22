@@ -8,7 +8,7 @@ Framework-agnostic file syncing for [LiveStore](https://livestore.dev) applicati
 - **OPFS-backed local storage** - Fast local file access via the browser's Origin Private File System
 - **Pluggable remote storage** - Works with any backend (S3, Cloudflare R2, Supabase Storage, custom APIs)
 - **Effect-based architecture** - Built on [Effect](https://effect.website) for type-safe error handling and concurrency
-- **Promise-based API** - Simple Promise-based client for users who prefer not to use Effect directly
+- **Promise-based LiveStore API** - Simple Promise-based sync wrapper around Effect services
 - **Service Worker support** - Intercept file requests and serve from local cache
 - **LiveStore integration** - Schema helpers for seamless LiveStore integration
 
@@ -22,34 +22,32 @@ pnpm add livestore-filesync effect
 
 ## Quick Start
 
-### Promise-based API (Simple)
+### Promise-based LiveStore API
 
 ```typescript
-import { FileSyncClient, makeHttpRemoteStorage } from 'livestore-filesync'
+import { createFileSync } from 'livestore-filesync'
+import { useStore } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
+import { tables, events } from './schema'
 
-// Create a client
-const client = await FileSyncClient.create({
-  remoteAdapter: makeHttpRemoteStorage({
+const { store } = useStore()
+
+const fileSync = createFileSync({
+  store,
+  schema: { tables, events, queryDb },
+  remote: {
     baseUrl: 'https://api.example.com/files',
-    authToken: 'your-auth-token'
-  }),
-  onError: (error) => console.error('Sync error:', error)
+    authHeaders: () => ({ Authorization: `Bearer ${token}` })
+  }
 })
 
-// Save a file locally (content-addressable by hash)
+fileSync.start()
+
 const file = new File(['Hello, World!'], 'hello.txt', { type: 'text/plain' })
-const result = await client.saveFile(file)
+const result = await fileSync.saveFile(file)
 console.log('Saved:', result.contentHash)
 
-// Upload to remote storage
-const remoteUrl = await client.uploadFile(file)
-console.log('Uploaded to:', remoteUrl)
-
-// Get a local URL for display
-const localUrl = await client.getFileUrl(result.path)
-
-// Clean up when done
-await client.dispose()
+await fileSync.deleteFile(result.fileId)
 ```
 
 ### Effect-based API (Advanced)
@@ -255,26 +253,21 @@ const myCustomAdapter: RemoteStorageAdapter = {
 
 ## API Reference
 
-### FileSyncClient
+### createFileSync
 
-Promise-based client for simple file operations.
+Promise-based LiveStore sync wrapper.
 
 | Method | Description |
 |--------|-------------|
-| `create(config)` | Create a new client |
-| `saveFile(file)` | Save a file to local storage |
-| `updateFile(oldPath, file)` | Update a file's content |
-| `deleteFile(path)` | Delete a file from local storage |
-| `getFileUrl(path)` | Get a blob URL for a file |
-| `fileExists(path)` | Check if a file exists locally |
+| `start()` | Start syncing and subscriptions |
+| `stop()` | Stop syncing and subscriptions |
+| `saveFile(file)` | Save a file locally and queue upload |
+| `updateFile(fileId, file)` | Update file content and queue upload |
+| `deleteFile(fileId)` | Soft-delete and remove local/remote file |
 | `readFile(path)` | Read a file from local storage |
-| `listFiles(directory)` | List files in a directory |
-| `uploadFile(file)` | Upload a file to remote storage |
-| `downloadFile(url)` | Download a file from remote |
-| `downloadAndSave(url, path)` | Download and save locally |
-| `uploadFromLocal(path)` | Upload a local file to remote |
-| `checkRemoteHealth()` | Check remote storage availability |
-| `hashFile(file)` | Get SHA-256 hash of file content |
+| `getFileUrl(path)` | Get a blob URL for a local file |
+| `isOnline()` | Get current connectivity status |
+| `triggerSync()` | Manually trigger reconciliation |
 | `dispose()` | Release resources |
 
 ### Effect Services
