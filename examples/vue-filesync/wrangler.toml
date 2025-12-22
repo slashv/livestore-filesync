@@ -17,5 +17,5 @@ class_name = "SyncBackendDO"
 tag = "v1"
 new_sqlite_classes = ["SyncBackendDO"]
 
-[vars]
-WORKER_AUTH_TOKEN = "dev-token-change-in-production"
+# WORKER_AUTH_TOKEN is set via .dev.vars for local dev
+# For production, use `wrangler secret put WORKER_AUTH_TOKEN`

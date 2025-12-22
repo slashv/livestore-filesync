@@ -23,14 +23,16 @@ const adapter = makePersistedAdapter({
   resetPersistence,
 })
 
+const authToken = import.meta.env.VITE_AUTH_TOKEN
+
 const storeOptions = {
   schema,
   adapter,
   storeId: 'vue_filesync_store',
+  syncPayload: { authToken }
 }
 
 // Auth headers for file sync API
-const authToken = 'dev-token-change-in-production'
 const getAuthHeaders = () => ({
   'Authorization': `Bearer ${authToken}`,
 })

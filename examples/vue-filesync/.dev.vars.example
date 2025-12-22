@@ -1,0 +1,3 @@
+# Cloudflare Worker secrets (used by wrangler dev)
+# Copy this file to .dev.vars and set your own values
+WORKER_AUTH_TOKEN=dev-token-change-in-production
