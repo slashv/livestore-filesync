@@ -1,6 +1,9 @@
 import { makeSchema, Schema, SessionIdSymbol, State } from '@livestore/livestore'
 import { fileSyncSchema } from '@livestore-filesync/vue'
 
+// Shared sync payload schema for authentication
+export const SyncPayload = Schema.Struct({ authToken: Schema.String })
+
 // UI state for the gallery (app-specific)
 const uiStateDoc = State.SQLite.clientDocument({
   name: 'uiState',
