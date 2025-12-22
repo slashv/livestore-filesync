@@ -11,6 +11,7 @@
     "test:debug": "playwright test --debug"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.18.10"
   }
 }

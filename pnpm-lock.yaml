@@ -6,9 +6,24 @@ settings:
 
 catalogs:
   default:
+    '@livestore/adapter-web':
+      specifier: 0.4.0-dev.20
+      version: 0.4.0-dev.20
     '@livestore/livestore':
       specifier: 0.4.0-dev.20
       version: 0.4.0-dev.20
+    '@livestore/peer-deps':
+      specifier: 0.4.0-dev.20
+      version: 0.4.0-dev.20
+    '@livestore/sync-cf':
+      specifier: 0.4.0-dev.20
+      version: 0.4.0-dev.20
+    '@livestore/wa-sqlite':
+      specifier: 0.4.0-dev.20
+      version: 0.4.0-dev.20
+    effect:
+      specifier: 3.18.4
+      version: 3.18.4
 
 patchedDependencies:
   '@changesets/get-github-info@0.6.0':
@@ -222,6 +237,9 @@ importers:
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.57.0
+      '@types/node':
+        specifier: ^22.18.10
+        version: 22.18.10
 
   packages/react:
     dependencies:
