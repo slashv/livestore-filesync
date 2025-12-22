@@ -51,4 +51,52 @@ test.describe('File Sync', () => {
       timeout: 10000,
     })
   })
+
+  test('should sync files across browsers', async ({ browser }) => {
+    // Use a unique storeId shared between both browsers
+    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const url = `/?storeId=${storeId}`
+
+    // Create two separate browser contexts (simulates two different users/browsers)
+    const context1 = await browser.newContext()
+    const context2 = await browser.newContext()
+
+    const page1 = await context1.newPage()
+    const page2 = await context2.newPage()
+
+    // Navigate both to the app with the same storeId
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStore(page1)
+    await waitForLiveStore(page2)
+
+    // Verify both start with empty state
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page2.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Upload a file in browser 1
+    const testImage = createTestImage()
+    await page1.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for file to appear in browser 1 with image loaded
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+    await expect(page1.locator('[data-testid="file-image"]')).toBeVisible({
+      timeout: 10000,
+    })
+
+    // Verify file syncs to browser 2 with image loaded
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    })
+    await expect(page2.locator('[data-testid="file-image"]')).toBeVisible({
+      timeout: 15000,
+    })
+
+    // Cleanup
+    await context1.close()
+    await context2.close()
+  })
 })
