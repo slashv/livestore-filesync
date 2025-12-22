@@ -19,64 +19,13 @@ import {
 } from "../sync-executor/index.js"
 import { FILES_DIRECTORY } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
+import type { LiveStoreDeps } from "../../livestore/types.js"
 import type {
   FileRecord,
   FileSyncEvent,
   FileSyncEventCallback,
   LocalFilesState
 } from "../../types/index.js"
-
-/**
- * Store abstraction for LiveStore integration
- *
- * Implement this interface to connect FileSync to your LiveStore instance.
- */
-export interface FileSyncStore {
-  /**
-   * Get all active (non-deleted) file records
-   */
-  readonly getActiveFiles: () => Effect.Effect<FileRecord[]>
-
-  /**
-   * Get all deleted file records
-   */
-  readonly getDeletedFiles: () => Effect.Effect<FileRecord[]>
-
-  /**
-   * Get a file record by ID
-   */
-  readonly getFile: (fileId: string) => Effect.Effect<FileRecord | undefined>
-
-  /**
-   * Get the local files state
-   */
-  readonly getLocalFilesState: () => Effect.Effect<LocalFilesState>
-
-  /**
-   * Update local files state
-   */
-  readonly updateLocalFilesState: (
-    updater: (state: LocalFilesState) => LocalFilesState
-  ) => Effect.Effect<void>
-
-  /**
-   * Update a file record with remote URL
-   */
-  readonly updateFileRemoteUrl: (fileId: string, remoteUrl: string) => Effect.Effect<void>
-
-  /**
-   * Subscribe to file changes
-   */
-  readonly onFilesChanged: (callback: () => void) => Effect.Effect<() => void>
-}
-
-/**
- * FileSyncStore service tag
- */
-export class FileSyncStoreTag extends Context.Tag("FileSyncStore")<
-  FileSyncStoreTag,
-  FileSyncStore
->() {}
 
 /**
  * FileSync service interface
@@ -168,16 +117,14 @@ export const defaultFileSyncConfig: FileSyncConfig = {
  * Create the FileSync service
  */
 export const makeFileSync = (
+  deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Effect.Effect<
-  FileSyncService,
-  never,
-  LocalFileStorage | RemoteStorage | FileSyncStoreTag | Scope.Scope
-> =>
+): Effect.Effect<FileSyncService, never, LocalFileStorage | RemoteStorage | Scope.Scope> =>
   Effect.gen(function*() {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
-    const store = yield* FileSyncStoreTag
+    const { store, schema } = deps
+    const { tables, events, queryDb } = schema
 
     // State
     const onlineRef = yield* Ref.make(true)
@@ -206,8 +153,57 @@ export const makeFileSync = (
         }
       })
 
+    const getActiveFiles = (): Effect.Effect<FileRecord[]> =>
+      Effect.sync(() => store.query<FileRecord[]>(queryDb(tables.files.where({ deletedAt: null }))))
+
+    const getDeletedFiles = (): Effect.Effect<FileRecord[]> =>
+      Effect.sync(() =>
+        store.query<FileRecord[]>(queryDb(tables.files.where({ deletedAt: { $ne: null } })))
+      )
+
+    const getFile = (fileId: string): Effect.Effect<FileRecord | undefined> =>
+      Effect.sync(() => {
+        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: fileId })))
+        return files[0]
+      })
+
+    const readLocalFilesState = (): Effect.Effect<LocalFilesState> =>
+      Effect.sync(() => {
+        const state = store.query<{ localFiles: LocalFilesState }>(
+          queryDb(tables.localFileState.get())
+        )
+        return state.localFiles ?? {}
+      })
+
+    const updateLocalFilesState = (
+      updater: (state: LocalFilesState) => LocalFilesState
+    ): Effect.Effect<void> =>
+      Effect.sync(() => {
+        const state = store.query<{ localFiles: LocalFilesState }>(
+          queryDb(tables.localFileState.get())
+        )
+        const next = updater(state.localFiles ?? {})
+        store.commit(events.localFileStateSet({ localFiles: next }))
+      })
+
+    const updateFileRemoteUrl = (fileId: string, remoteUrl: string): Effect.Effect<void> =>
+      Effect.sync(() => {
+        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: fileId })))
+        const file = files[0]
+        if (!file) return
+        store.commit(
+          events.fileUpdated({
+            id: fileId,
+            path: file.path,
+            remoteUrl,
+            contentHash: file.contentHash,
+            updatedAt: new Date()
+          })
+        )
+      })
+
     const mergeLocalFiles = (patch: Record<string, LocalFilesState[string]>): Effect.Effect<void> =>
-      store.updateLocalFilesState((state) => ({
+      updateLocalFilesState((state) => ({
         ...state,
         ...patch
       }))
@@ -217,7 +213,7 @@ export const makeFileSync = (
       action: "upload" | "download",
       status: TransferStatus
     ): Effect.Effect<void> =>
-      store.updateLocalFilesState((state) => {
+      updateLocalFilesState((state) => {
         const localFile = state[fileId]
         if (!localFile) return state
         const field = action === "upload" ? "uploadStatus" : "downloadStatus"
@@ -234,8 +230,8 @@ export const makeFileSync = (
           Effect.catchAll(() => Effect.succeed<string[]>([]))
         )
 
-        const activeFiles = yield* store.getActiveFiles()
-        const deletedFiles = yield* store.getDeletedFiles()
+        const activeFiles = yield* getActiveFiles()
+        const deletedFiles = yield* getDeletedFiles()
 
         const activePaths = new Set(activeFiles.map((f) => f.path))
         const deletedPaths = new Set(deletedFiles.map((f) => f.path))
@@ -322,7 +318,7 @@ export const makeFileSync = (
         yield* setLocalFileTransferStatus(fileId, "download", "inProgress")
         yield* emit({ type: "download:start", fileId })
 
-        const file = yield* store.getFile(fileId)
+        const file = yield* getFile(fileId)
         if (!file || !file.remoteUrl) {
           const error = new Error("File not found or no remote URL")
           yield* emit({ type: "download:error", fileId, error })
@@ -347,7 +343,7 @@ export const makeFileSync = (
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function*() {
-            yield* store.updateLocalFilesState((state) => ({
+            yield* updateLocalFilesState((state) => ({
               ...state,
               [fileId]: {
                 ...state[fileId],
@@ -370,7 +366,7 @@ export const makeFileSync = (
         yield* setLocalFileTransferStatus(fileId, "upload", "inProgress")
         yield* emit({ type: "upload:start", fileId })
 
-        const file = yield* store.getFile(fileId)
+        const file = yield* getFile(fileId)
         if (!file) {
           const error = new Error("File not found")
           yield* emit({ type: "upload:error", fileId, error })
@@ -380,9 +376,9 @@ export const makeFileSync = (
         const localFile = yield* localStorage.readFile(file.path)
         const remoteUrl = yield* remoteStorage.upload(localFile)
 
-        yield* store.updateFileRemoteUrl(fileId, remoteUrl)
+        yield* updateFileRemoteUrl(fileId, remoteUrl)
 
-        yield* store.updateLocalFilesState((state) => ({
+        yield* updateLocalFilesState((state) => ({
           ...state,
           [fileId]: {
             ...state[fileId],
@@ -398,7 +394,7 @@ export const makeFileSync = (
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function*() {
-            yield* store.updateLocalFilesState((state) => ({
+            yield* updateLocalFilesState((state) => ({
               ...state,
               [fileId]: {
                 ...state[fileId],
@@ -437,8 +433,8 @@ export const makeFileSync = (
     // Two-pass reconciliation of local file state
     const updateLocalFileState = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const files = yield* store.getActiveFiles()
-        const localFiles = yield* store.getLocalFilesState()
+        const files = yield* getActiveFiles()
+        const localFiles = yield* readLocalFilesState()
 
         const nextLocalFilesState: LocalFilesState = { ...localFiles }
 
@@ -487,14 +483,14 @@ export const makeFileSync = (
         }
 
         const merged: LocalFilesState = { ...nextLocalFilesState, ...additions }
-        yield* store.updateLocalFilesState(() => merged)
+        yield* updateLocalFilesState(() => merged)
       }).pipe(Effect.catchAll(() => Effect.void))
 
     const syncFiles = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         yield* emit({ type: "sync:start" })
 
-        const localFiles = yield* store.getLocalFilesState()
+        const localFiles = yield* readLocalFilesState()
         for (const [fileId, localFile] of Object.entries(localFiles)) {
           if (localFile.downloadStatus === "pending" || localFile.downloadStatus === "queued") {
             yield* setLocalFileTransferStatus(fileId, "download", "queued")
@@ -528,8 +524,13 @@ export const makeFileSync = (
         yield* executor.start()
 
         // Subscribe to file changes
-        const unsubscribe = yield* store.onFilesChanged(() => {
-          Effect.runPromise(checkAndSync()).catch(() => {})
+        const unsubscribe = yield* Effect.sync(() => {
+          const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
+          return store.subscribe(fileQuery, {
+            onUpdate: () => {
+              Effect.runPromise(checkAndSync()).catch(() => {})
+            }
+          })
         })
 
         yield* Ref.set(unsubscribeRef, unsubscribe)
@@ -573,7 +574,7 @@ export const makeFileSync = (
       hash: string
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
-        yield* store.updateLocalFilesState((state) => ({
+        yield* updateLocalFilesState((state) => ({
           ...state,
           [fileId]: {
             path,
@@ -617,8 +618,7 @@ export const makeFileSync = (
       }
     }
 
-    const getLocalFilesState = (): Effect.Effect<LocalFilesState> =>
-      store.getLocalFilesState()
+    const getLocalFilesState = (): Effect.Effect<LocalFilesState> => readLocalFilesState()
 
     return {
       start,
@@ -636,6 +636,7 @@ export const makeFileSync = (
  * Create a Layer for FileSync
  */
 export const FileSyncLive = (
+  deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Layer.Layer<FileSync, never, LocalFileStorage | RemoteStorage | FileSyncStoreTag | Scope.Scope> =>
-  Layer.scoped(FileSync, makeFileSync(config))
+): Layer.Layer<FileSync, never, LocalFileStorage | RemoteStorage | Scope.Scope> =>
+  Layer.scoped(FileSync, makeFileSync(deps, config))

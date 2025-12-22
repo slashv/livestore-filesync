@@ -10,61 +10,11 @@
 import { Context, Effect, Layer } from "effect"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
-import { FileSync, FileSyncStoreTag } from "../file-sync/index.js"
+import { FileSync } from "../file-sync/index.js"
 import { hashFile, makeStoredPath } from "../../utils/index.js"
-import type { FileOperationResult } from "../../types/index.js"
+import type { LiveStoreDeps } from "../../livestore/types.js"
+import type { FileOperationResult, FileRecord, LocalFilesState } from "../../types/index.js"
 import type { HashError, StorageError, FileNotFoundError } from "../../errors/index.js"
-
-/**
- * Store operations for file management
- */
-export interface FileStorageStore {
-  /**
-   * Create a new file record
-   */
-  readonly createFile: (params: {
-    id: string
-    path: string
-    contentHash: string
-  }) => Effect.Effect<void>
-
-  /**
-   * Update a file record
-   */
-  readonly updateFile: (params: {
-    id: string
-    path: string
-    contentHash: string
-  }) => Effect.Effect<void>
-
-  /**
-   * Delete a file record (soft delete)
-   */
-  readonly deleteFile: (id: string) => Effect.Effect<void>
-
-  /**
-   * Get a file record by ID
-   */
-  readonly getFile: (id: string) => Effect.Effect<{
-    id: string
-    path: string
-    remoteUrl: string
-    contentHash: string
-  } | undefined>
-
-  /**
-   * Generate a unique file ID
-   */
-  readonly generateId: () => string
-}
-
-/**
- * FileStorageStore service tag
- */
-export class FileStorageStoreTag extends Context.Tag("FileStorageStore")<
-  FileStorageStoreTag,
-  FileStorageStore
->() {}
 
 /**
  * FileStorage service interface
@@ -129,22 +79,68 @@ export class FileStorage extends Context.Tag("FileStorage")<
 /**
  * Create the FileStorage service
  */
-export const makeFileStorage = (): Effect.Effect<
-  FileStorageService,
-  never,
-  LocalFileStorage | RemoteStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
-> =>
+export const makeFileStorage = (
+  deps: LiveStoreDeps
+): Effect.Effect<FileStorageService, never, LocalFileStorage | RemoteStorage | FileSync> =>
   Effect.gen(function*() {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
     const fileSync = yield* FileSync
-    const store = yield* FileStorageStoreTag
-    const syncStore = yield* FileSyncStoreTag
+    const { store, schema } = deps
+    const { tables, events, queryDb } = schema
+
+    const getFileRecord = (id: string): Effect.Effect<FileRecord | undefined> =>
+      Effect.sync(() => {
+        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id })))
+        return files[0]
+      })
+
+    const getLocalFilesState = (): Effect.Effect<LocalFilesState> =>
+      Effect.sync(() => {
+        const state = store.query<{ localFiles: LocalFilesState }>(
+          queryDb(tables.localFileState.get())
+        )
+        return state.localFiles ?? {}
+      })
+
+    const createFileRecord = (params: { id: string; path: string; contentHash: string }) =>
+      Effect.sync(() => {
+        store.commit(
+          events.fileCreated({
+            id: params.id,
+            path: params.path,
+            contentHash: params.contentHash,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+        )
+      })
+
+    const updateFileRecord = (params: { id: string; path: string; contentHash: string }) =>
+      Effect.sync(() => {
+        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: params.id })))
+        const file = files[0]
+        if (!file) return
+        store.commit(
+          events.fileUpdated({
+            id: params.id,
+            path: params.path,
+            remoteUrl: file.remoteUrl,
+            contentHash: params.contentHash,
+            updatedAt: new Date()
+          })
+        )
+      })
+
+    const deleteFileRecord = (id: string) =>
+      Effect.sync(() => {
+        store.commit(events.fileDeleted({ id, deletedAt: new Date() }))
+      })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
       Effect.gen(function*() {
         // Generate ID
-        const id = store.generateId()
+        const id = crypto.randomUUID()
 
         // Hash file content
         const contentHash = yield* hashFile(file)
@@ -156,7 +152,7 @@ export const makeFileStorage = (): Effect.Effect<
         yield* localStorage.writeFile(path, file)
 
         // Create file record
-        yield* store.createFile({ id, path, contentHash })
+        yield* createFileRecord({ id, path, contentHash })
 
         // Mark as changed for sync
         yield* fileSync.markLocalFileChanged(id, path, contentHash)
@@ -170,7 +166,7 @@ export const makeFileStorage = (): Effect.Effect<
     ): Effect.Effect<FileOperationResult, Error | HashError | StorageError> =>
       Effect.gen(function*() {
         // Get existing file
-        const existingFile = yield* store.getFile(fileId)
+        const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
           return yield* Effect.fail(new Error(`File not found: ${fileId}`))
         }
@@ -185,7 +181,7 @@ export const makeFileStorage = (): Effect.Effect<
           yield* localStorage.writeFile(path, file)
 
           // Update file record
-          yield* store.updateFile({ id: fileId, path, contentHash })
+          yield* updateFileRecord({ id: fileId, path, contentHash })
 
           // Clean up old file if path changed
           if (path !== existingFile.path) {
@@ -204,13 +200,13 @@ export const makeFileStorage = (): Effect.Effect<
     const deleteFileOp = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Get existing file
-        const existingFile = yield* store.getFile(fileId)
+        const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
           return // Already deleted
         }
 
         // Delete file record (soft delete)
-        yield* store.deleteFile(fileId)
+        yield* deleteFileRecord(fileId)
 
         // Delete from local storage
         yield* localStorage.deleteFile(existingFile.path).pipe(
@@ -228,13 +224,13 @@ export const makeFileStorage = (): Effect.Effect<
     const getFileUrl = (fileId: string): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
       Effect.gen(function*() {
         // Get file record
-        const file = yield* store.getFile(fileId)
+        const file = yield* getFileRecord(fileId)
         if (!file) {
           return null
         }
 
         // Check local files state
-        const localState = yield* syncStore.getLocalFilesState()
+        const localState = yield* getLocalFilesState()
         const local = localState[fileId]
 
         // Try local first
@@ -260,8 +256,7 @@ export const makeFileStorage = (): Effect.Effect<
 /**
  * Create a Layer for FileStorage
  */
-export const FileStorageLive: Layer.Layer<
-  FileStorage,
-  never,
-  LocalFileStorage | RemoteStorage | FileSync | FileStorageStoreTag | FileSyncStoreTag
-> = Layer.effect(FileStorage, makeFileStorage())
+export const FileStorageLive = (
+  deps: LiveStoreDeps
+): Layer.Layer<FileStorage, never, LocalFileStorage | RemoteStorage | FileSync> =>
+  Layer.effect(FileStorage, makeFileStorage(deps))

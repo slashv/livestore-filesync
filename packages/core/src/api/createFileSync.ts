@@ -16,7 +16,6 @@ import {
   FileStorageLive,
   FileSync,
   FileSyncLive,
-  FileSyncStoreTag,
   LocalFileStorage,
   LocalFileStorageLive,
   RemoteStorage,
@@ -34,12 +33,10 @@ import type {
   TransferStatus
 } from "../types/index.js"
 import {
-  makeLiveStoreFileStorageStore,
-  makeLiveStoreFileSyncStore,
   type SyncSchema,
-  type SyncStore
-} from "./livestoreAdapter.js"
-import { FileStorageStoreTag } from "../services/file-storage/index.js"
+  type SyncStore,
+  type LiveStoreDeps
+} from "../livestore/types.js"
 import type { FileSyncConfig } from "../services/file-sync/index.js"
 
 /**
@@ -72,7 +69,7 @@ export type SyncFileOperationResult = FileOperationResult
  */
 export type SyncEvent = FileSyncEvent
 
-export type { SyncSchema, SyncStore } from "./livestoreAdapter.js"
+export type { SyncSchema, SyncStore } from "../livestore/types.js"
 
 /**
  * Configuration for createFileSync
@@ -186,9 +183,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let fileSyncService: FileSyncService | null = null
   let fileStorageService: FileStorageService | null = null
 
-  // Create Effect runtime using LiveStore adapters
-  const fileSyncStore = makeLiveStoreFileSyncStore(store, schema)
-  const fileStorageStore = makeLiveStoreFileStorageStore(store, schema)
+  const deps: LiveStoreDeps = { store, schema }
 
   const remoteStorageConfig: { baseUrl: string; headers?: Record<string, string> } = {
     baseUrl: remote.baseUrl
@@ -201,9 +196,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     RemoteStorage,
     makeHttpRemoteStorage(remoteStorageConfig)
   )
-
-  const FileSyncStoreLive = Layer.succeed(FileSyncStoreTag, fileSyncStore)
-  const FileStorageStoreLive = Layer.succeed(FileStorageStoreTag, fileStorageStore)
 
   const fileSyncConfig: FileSyncConfig = {
     executorConfig: {
@@ -220,13 +212,13 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const BaseLayer = Layer.mergeAll(
     Layer.scope,
     LocalFileStorageLive,
-    RemoteStorageLive,
-    FileSyncStoreLive,
-    FileStorageStoreLive
+    RemoteStorageLive
   )
 
-  const FileSyncLayer = Layer.provide(BaseLayer)(FileSyncLive(fileSyncConfig))
-  const FileStorageLayer = Layer.provide(Layer.mergeAll(BaseLayer, FileSyncLayer))(FileStorageLive)
+  const FileSyncLayer = Layer.provide(BaseLayer)(FileSyncLive(deps, fileSyncConfig))
+  const FileStorageLayer = Layer.provide(Layer.mergeAll(BaseLayer, FileSyncLayer))(
+    FileStorageLive(deps)
+  )
 
   const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
 
