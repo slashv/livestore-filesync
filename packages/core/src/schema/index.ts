@@ -34,6 +34,8 @@
  * @module
  */
 
+import { Events, Schema, SessionIdSymbol, State } from "@livestore/livestore"
+
 // Re-export types that consumers will need
 export type { TransferStatus } from "../services/sync-executor/index.js"
 
@@ -111,51 +113,14 @@ export interface FileDeletedPayload {
 /**
  * Helper to create file sync schema components
  *
- * This function must be called with the LiveStore Schema module
- * since it's a peer dependency.
- *
  * @example
  * ```typescript
- * import { Schema, State, Events, SessionIdSymbol } from '@livestore/livestore'
  * import { createFileSyncSchema } from 'livestore-filesync/schema'
  *
- * const { tables, events, createMaterializers } = createFileSyncSchema({
- *   Schema,
- *   State,
- *   Events,
- *   SessionIdSymbol
- * })
+ * const { tables, events, createMaterializers } = createFileSyncSchema()
  * ```
  */
-export function createFileSyncSchema<
-  TSchema extends {
-    Literal: (...args: readonly string[]) => unknown
-    Struct: (shape: Record<string, unknown>) => unknown
-    Record: (config: { key: unknown; value: unknown }) => unknown
-    String: unknown
-    Boolean: unknown
-    Date: unknown
-    DateFromNumber: unknown
-  },
-  TState extends {
-    SQLite: {
-      table: (config: unknown) => unknown
-      text: (config?: unknown) => unknown
-      integer: (config?: unknown) => unknown
-      clientDocument: (config: unknown) => unknown
-      materializers: (events: unknown, handlers: unknown) => unknown
-    }
-  },
-  TEvents extends {
-    synced: (config: { name: string; schema: unknown }) => unknown
-  }
->(deps: {
-  Schema: TSchema
-  State: TState
-  Events: TEvents
-  SessionIdSymbol: symbol
-}) {
-  const { Schema, State, Events, SessionIdSymbol } = deps
+export function createFileSyncSchema() {
 
   // Transfer status schema
   const transferStatus = Schema.Literal("pending", "queued", "inProgress", "done", "error")

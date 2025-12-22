@@ -6,27 +6,9 @@ settings:
 
 catalogs:
   default:
-    '@livestore/adapter-web':
-      specifier: 0.4.0-dev.20
-      version: 0.4.0-dev.20
     '@livestore/livestore':
       specifier: 0.4.0-dev.20
       version: 0.4.0-dev.20
-    '@livestore/peer-deps':
-      specifier: 0.4.0-dev.20
-      version: 0.4.0-dev.20
-    '@livestore/react':
-      specifier: 0.4.0-dev.20
-      version: 0.4.0-dev.20
-    '@livestore/sync-cf':
-      specifier: 0.4.0-dev.20
-      version: 0.4.0-dev.20
-    '@livestore/wa-sqlite':
-      specifier: 0.4.0-dev.20
-      version: 0.4.0-dev.20
-    effect:
-      specifier: 3.18.4
-      version: 3.18.4
 
 patchedDependencies:
   '@changesets/get-github-info@0.6.0':
@@ -284,6 +266,12 @@ importers:
       vue-livestore:
         specifier: 0.3.0-0
         version: 0.3.0-0(1bfd67c552ef542d2a3b85ec6d544b53)
+
+  scratchpad/livestore-types:
+    dependencies:
+      '@livestore/livestore':
+        specifier: 'catalog:'
+        version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
 
 packages:
 

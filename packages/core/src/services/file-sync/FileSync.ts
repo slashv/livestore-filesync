@@ -83,7 +83,7 @@ export interface FileSyncService {
 export class FileSync extends Context.Tag("FileSync")<
   FileSync,
   FileSyncService
->() {}
+>() { }
 
 /**
  * FileSync configuration
@@ -120,7 +120,7 @@ export const makeFileSync = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
 ): Effect.Effect<FileSyncService, never, LocalFileStorage | RemoteStorage | Scope.Scope> =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
     const { store, schema } = deps
@@ -146,7 +146,7 @@ export const makeFileSync = (
 
     // Emit an event
     const emit = (event: FileSyncEvent): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const callbacks = yield* Ref.get(eventCallbacks)
         for (const callback of callbacks) {
           callback(event)
@@ -158,7 +158,9 @@ export const makeFileSync = (
 
     const getDeletedFiles = (): Effect.Effect<FileRecord[]> =>
       Effect.sync(() =>
-        store.query<FileRecord[]>(queryDb(tables.files.where({ deletedAt: { $ne: null } })))
+        store.query<FileRecord[]>(
+          queryDb(tables.files.where({ deletedAt: { op: "!=", value: null } }))
+        )
       )
 
     const getFile = (fileId: string): Effect.Effect<FileRecord | undefined> =>
@@ -225,7 +227,7 @@ export const makeFileSync = (
 
     // Cleanup deleted local files when idle
     const cleanDeletedLocalFiles = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const diskPaths = yield* localStorage.listFiles(FILES_DIRECTORY).pipe(
           Effect.catchAll(() => Effect.succeed<string[]>([]))
         )
@@ -250,7 +252,7 @@ export const makeFileSync = (
       })
 
     const scheduleCleanupIfIdle = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const active = yield* Ref.get(activeSyncOpsRef)
         if (active !== 0) return
 
@@ -277,7 +279,7 @@ export const makeFileSync = (
 
     // Health check loop while offline
     const stopHealthCheckLoop = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const existing = yield* Ref.get(healthCheckFiberRef)
         if (!existing) return
         yield* Fiber.interrupt(existing)
@@ -285,13 +287,13 @@ export const makeFileSync = (
       })
 
     const startHealthCheckLoop = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const existing = yield* Ref.get(healthCheckFiberRef)
         if (existing) return
 
         const intervalMs = config.healthCheckIntervalMs ?? 10000
 
-        const loop: Effect.Effect<void> = Effect.gen(function*() {
+        const loop: Effect.Effect<void> = Effect.gen(function* () {
           const isHealthy = yield* remoteStorage.checkHealth()
           if (isHealthy) {
             yield* Ref.set(onlineRef, true)
@@ -314,7 +316,7 @@ export const makeFileSync = (
 
     // Download a file from remote to local
     const downloadFile = (fileId: string): Effect.Effect<void, unknown> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* setLocalFileTransferStatus(fileId, "download", "inProgress")
         yield* emit({ type: "download:start", fileId })
 
@@ -342,7 +344,7 @@ export const makeFileSync = (
         yield* emit({ type: "download:complete", fileId })
       }).pipe(
         Effect.catchAll((error) =>
-          Effect.gen(function*() {
+          Effect.gen(function* () {
             yield* updateLocalFilesState((state) => ({
               ...state,
               [fileId]: {
@@ -362,7 +364,7 @@ export const makeFileSync = (
 
     // Upload a file from local to remote
     const uploadFile = (fileId: string): Effect.Effect<void, unknown> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* setLocalFileTransferStatus(fileId, "upload", "inProgress")
         yield* emit({ type: "upload:start", fileId })
 
@@ -393,7 +395,7 @@ export const makeFileSync = (
         yield* emit({ type: "upload:complete", fileId })
       }).pipe(
         Effect.catchAll((error) =>
-          Effect.gen(function*() {
+          Effect.gen(function* () {
             yield* updateLocalFilesState((state) => ({
               ...state,
               [fileId]: {
@@ -413,7 +415,7 @@ export const makeFileSync = (
 
     // Transfer handler for the sync executor
     const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* Ref.update(activeSyncOpsRef, (value) => value + 1)
         try {
           if (kind === "download") {
@@ -432,7 +434,7 @@ export const makeFileSync = (
 
     // Two-pass reconciliation of local file state
     const updateLocalFileState = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const files = yield* getActiveFiles()
         const localFiles = yield* readLocalFilesState()
 
@@ -487,7 +489,7 @@ export const makeFileSync = (
       }).pipe(Effect.catchAll(() => Effect.void))
 
     const syncFiles = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* emit({ type: "sync:start" })
 
         const localFiles = yield* readLocalFilesState()
@@ -506,7 +508,8 @@ export const makeFileSync = (
       })
 
     const checkAndSync = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
+        console.log("checkAndSync")
         yield* updateLocalFileState()
         yield* syncFiles()
         yield* scheduleCleanupIfIdle()
@@ -514,11 +517,13 @@ export const makeFileSync = (
 
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const running = yield* Ref.get(runningRef)
         if (running) return
 
         yield* Ref.set(runningRef, true)
+
+        console.log("start")
 
         // Start the executor
         yield* executor.start()
@@ -526,10 +531,9 @@ export const makeFileSync = (
         // Subscribe to file changes
         const unsubscribe = yield* Effect.sync(() => {
           const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
-          return store.subscribe(fileQuery, {
-            onUpdate: () => {
-              Effect.runPromise(checkAndSync()).catch(() => {})
-            }
+          return store.subscribe(fileQuery, () => {
+            console.log("file changed")
+            Effect.runPromise(checkAndSync()).catch(() => {})
           })
         })
 
@@ -540,7 +544,7 @@ export const makeFileSync = (
       })
 
     const stop = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const running = yield* Ref.get(runningRef)
         if (!running) return
 
@@ -573,7 +577,7 @@ export const makeFileSync = (
       path: string,
       hash: string
     ): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* updateLocalFilesState((state) => ({
           ...state,
           [fileId]: {
@@ -589,7 +593,7 @@ export const makeFileSync = (
       })
 
     const setOnline = (online: boolean): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const wasOnline = yield* Ref.get(onlineRef)
         if (online === wasOnline) return
 

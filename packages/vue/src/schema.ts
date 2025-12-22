@@ -7,7 +7,6 @@
  * @module
  */
 
-import { Events, Schema, SessionIdSymbol, State } from "@livestore/livestore"
 import { createFileSyncSchema } from "@livestore-filesync/core/schema"
 
 /**
@@ -36,9 +35,4 @@ import { createFileSyncSchema } from "@livestore-filesync/core/schema"
  * })
  * ```
  */
-export const fileSyncSchema = createFileSyncSchema({
-  Schema: Schema as any,
-  State: State as any,
-  Events: Events as any,
-  SessionIdSymbol
-})
+export const fileSyncSchema = createFileSyncSchema()
