@@ -87,7 +87,7 @@ importers:
     dependencies:
       '@livestore-filesync/core':
         specifier: workspace:*
-        version: link:../../packages/core/dist
+        version: link:../../packages/core
       '@livestore-filesync/vue':
         specifier: workspace:*
         version: link:../../packages/vue
@@ -103,6 +103,9 @@ importers:
       '@livestore/wa-sqlite':
         specifier: 'catalog:'
         version: 0.4.0-dev.20
+      effect:
+        specifier: 'catalog:'
+        version: 3.18.4
       vue:
         specifier: ^3.5.0
         version: 3.5.26(typescript@5.9.3)
@@ -127,7 +130,7 @@ importers:
     dependencies:
       '@livestore-filesync/core':
         specifier: workspace:*
-        version: link:../../packages/core/dist
+        version: link:../../packages/core
       '@livestore-filesync/react':
         specifier: workspace:*
         version: link:../../packages/react
@@ -201,7 +204,6 @@ importers:
       vitest:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
-    publishDirectory: dist
 
   packages/e2e-tests:
     devDependencies:
@@ -213,7 +215,7 @@ importers:
     dependencies:
       '@livestore-filesync/core':
         specifier: workspace:*
-        version: link:../core/dist
+        version: link:../core
     devDependencies:
       '@livestore/livestore':
         specifier: 'catalog:'
@@ -238,7 +240,7 @@ importers:
     dependencies:
       '@livestore-filesync/core':
         specifier: workspace:*
-        version: link:../core/dist
+        version: link:../core
     devDependencies:
       '@livestore/livestore':
         specifier: 'catalog:'

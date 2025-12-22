@@ -12,11 +12,13 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "build:packages": "pnpm --filter '@livestore-filesync/*' build",
     "check": "pnpm -r check",
     "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\"",
     "lint-fix": "pnpm lint --fix",
     "test": "pnpm -r test",
     "dev": "pnpm -r --parallel dev",
+    "dev:vue": "pnpm build:packages && pnpm --filter livestore-filesync-vue-example dev",
     "changeset-version": "changeset version",
     "changeset-publish": "pnpm build && changeset publish"
   },

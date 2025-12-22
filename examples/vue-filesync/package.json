@@ -10,6 +10,7 @@
     "@livestore/wa-sqlite": "catalog:",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/vue": "workspace:*",
+    "effect": "catalog:",
     "vue": "^3.5.0",
     "vue-livestore": "0.3.0-0"
   },
