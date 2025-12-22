@@ -115,7 +115,7 @@ export const makeLiveStoreFileSyncStore = (store: SyncStore, schema: SyncSchema)
 
     onFilesChanged: (callback) =>
       Effect.sync(() => {
-        const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
+        const fileQuery = queryDb(tables.files.where({ deletedAt: null }))
         return store.subscribe(fileQuery, { onUpdate: () => callback() })
       })
   }

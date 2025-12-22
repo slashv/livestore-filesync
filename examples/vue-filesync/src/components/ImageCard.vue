@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useStore } from 'vue-livestore'
 import { useFileSync } from '@livestore-filesync/vue'
+import { tables } from '../livestore/schema.ts'
 
 interface FileRecord {
   id: string
@@ -14,9 +16,12 @@ const props = defineProps<{
   file: FileRecord
 }>()
 
+const { store } = useStore()
 const fileSync = useFileSync()
 const url = ref<string | null>(null)
 const isLoading = ref(true)
+const { localFiles } = store.useClientDocument(tables.localFileState)
+const localFile = computed(() => localFiles.value[props.file.id])
 
 // Load file URL on mount and when file changes
 const loadUrl = async () => {
@@ -32,6 +37,14 @@ const loadUrl = async () => {
 
 onMounted(loadUrl)
 watch(() => props.file.path, loadUrl)
+watch(
+  () => localFile.value?.downloadStatus,
+  (status, prevStatus) => {
+    if (status === 'done' && status !== prevStatus) {
+      void loadUrl()
+    }
+  }
+)
 
 const handleDelete = async () => {
   try {
