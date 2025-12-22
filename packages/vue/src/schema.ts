@@ -9,6 +9,8 @@
 
 import { createFileSyncSchema } from "@livestore-filesync/core/schema"
 
+type FileSyncSchema = ReturnType<typeof createFileSyncSchema>
+
 /**
  * Pre-configured file sync schema
  *
@@ -35,4 +37,4 @@ import { createFileSyncSchema } from "@livestore-filesync/core/schema"
  * })
  * ```
  */
-export const fileSyncSchema = createFileSyncSchema()
+export const fileSyncSchema: FileSyncSchema = createFileSyncSchema()
