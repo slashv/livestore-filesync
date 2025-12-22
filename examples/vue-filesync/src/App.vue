@@ -28,13 +28,19 @@ const storeOptions = {
   adapter,
   storeId: 'vue_filesync_store',
 }
+
+// Auth headers for file sync API
+const authToken = 'dev-token-change-in-production'
+const getAuthHeaders = () => ({
+  'Authorization': `Bearer ${authToken}`,
+})
 </script>
 
 <template>
   <Suspense>
     <template #default>
       <LiveStoreProvider :options="storeOptions">
-        <FileSyncProvider>
+        <FileSyncProvider :auth-headers="getAuthHeaders">
           <Gallery />
         </FileSyncProvider>
       </LiveStoreProvider>
