@@ -8,19 +8,14 @@ import { schema } from './livestore/schema.ts'
 import LiveStoreWorker from './livestore.worker.ts?worker'
 import Gallery from './components/Gallery.vue'
 
-const resetPersistence = import.meta.env.DEV && new URLSearchParams(window.location.search).get('reset') !== null
-
-if (resetPersistence) {
-  const searchParams = new URLSearchParams(window.location.search)
-  searchParams.delete('reset')
-  window.history.replaceState(null, '', `${window.location.pathname}?${searchParams.toString()}`)
-}
+// Allow storeId to be set via query param for testing isolation
+const urlParams = new URLSearchParams(window.location.search)
+const storeId = urlParams.get('storeId') || 'vue_filesync_store'
 
 const adapter = makePersistedAdapter({
   storage: { type: 'opfs' },
   worker: LiveStoreWorker,
   sharedWorker: LiveStoreSharedWorker,
-  resetPersistence,
 })
 
 const authToken = import.meta.env.VITE_AUTH_TOKEN
@@ -28,7 +23,7 @@ const authToken = import.meta.env.VITE_AUTH_TOKEN
 const storeOptions = {
   schema,
   adapter,
-  storeId: 'vue_filesync_store',
+  storeId,
   syncPayload: { authToken }
 }
 
