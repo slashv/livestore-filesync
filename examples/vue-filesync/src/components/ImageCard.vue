@@ -45,9 +45,16 @@ const filename = computed(() => props.file.path.split('/').pop())
 </script>
 
 <template>
-  <div :style="cardStyle" data-testid="file-card">
+  <div
+    :style="cardStyle"
+    data-testid="file-card"
+  >
     <div :style="imageContainerStyle">
-      <div v-if="isLoading" :style="placeholderStyle" data-testid="loading">Loading...</div>
+      <div
+        v-if="isLoading"
+        :style="placeholderStyle"
+        data-testid="loading"
+      >Loading...</div>
       <img
         v-else-if="url"
         :src="url"
@@ -55,12 +62,21 @@ const filename = computed(() => props.file.path.split('/').pop())
         :style="imageStyle"
         data-testid="file-image"
       />
-      <div v-else :style="placeholderStyle">No preview</div>
+      <div
+        v-else
+        :style="placeholderStyle"
+      >No preview</div>
     </div>
     <div :style="infoStyle">
-      <div :style="filenameStyle" data-testid="file-name">{{ filename }}</div>
+      <div
+        :style="filenameStyle"
+        data-testid="file-name"
+      >{{ filename }}</div>
       <div :style="statusRowStyle">
-        <span :style="statusBadgeStyle" data-testid="file-status">
+        <span
+          :style="statusBadgeStyle"
+          data-testid="file-status"
+        >
           {{ file.remoteUrl ? 'Synced' : 'Local' }}
         </span>
         <button
