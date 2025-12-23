@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { queryDb } from '@livestore/livestore'
-import { useStore, useQuery } from 'vue-livestore'
+import { useQuery } from 'vue-livestore'
 import { useFileSync } from '@livestore-filesync/vue'
 import { tables } from '../livestore/schema.ts'
 import ImageCard from './ImageCard.vue'
@@ -14,11 +14,10 @@ interface FileRecord {
   deletedAt: Date | null
 }
 
-const { store } = useStore()
 const fileSync = useFileSync()
 const inputRef = ref<HTMLInputElement | null>(null)
 
-const filesQuery = queryDb((tables.files as any).where({ deletedAt: null }), { label: 'files' })
+const filesQuery = queryDb(tables.files.where({ deletedAt: null }), { label: 'files' })
 const files = useQuery(filesQuery) as unknown as ReturnType<typeof ref<FileRecord[]>>
 
 const isOnline = ref(fileSync.isOnline())
@@ -52,7 +51,10 @@ const handleFileChange = async (e: Event) => {
 </script>
 
 <template>
-  <div class="container" data-testid="gallery">
+  <div
+    class="container"
+    data-testid="gallery"
+  >
     <div class="toolbar">
       <button
         type="button"
@@ -69,16 +71,29 @@ const handleFileChange = async (e: Event) => {
         class="hidden"
         data-testid="file-input"
       />
-      <div class="status" data-testid="status-indicator">
-        <span class="status-dot" :class="{ online: isOnline }" />
+      <div
+        class="status"
+        data-testid="status-indicator"
+      >
+        <span
+          class="status-dot"
+          :class="{ online: isOnline }"
+        />
         {{ isOnline ? 'Online' : 'Offline' }}
       </div>
     </div>
 
-    <div v-if="!files || files.length === 0" class="empty" data-testid="empty-state">
+    <div
+      v-if="!files || files.length === 0"
+      class="empty"
+      data-testid="empty-state"
+    >
       <p>No images yet. Upload one to get started!</p>
     </div>
-    <div v-else class="grid">
+    <div
+      v-else
+      class="grid"
+    >
       <ImageCard
         v-for="file in files"
         :key="file.id"

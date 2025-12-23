@@ -81,7 +81,7 @@ const getFileHandle = (
 ): Effect.Effect<FileSystemFileHandle, FileSystemError> => {
   const { directory, filename } = parsePath(path)
 
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const dirHandle = yield* getDirectoryHandle(root, directory, create, true)
     return yield* Effect.tryPromise({
       try: () => dirHandle.getFileHandle(filename, { create }),
@@ -102,7 +102,7 @@ export const makeOpfsFileSystem = (
   const baseDirectory = options.baseDirectory
 
   const readFile = (path: string): Effect.Effect<Uint8Array, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const fileHandle = yield* getFileHandle(root, resolvedPath, false)
@@ -133,7 +133,7 @@ export const makeOpfsFileSystem = (
     })
 
   const writeFile = (path: string, data: Uint8Array): Effect.Effect<void, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const fileHandle = yield* getFileHandle(root, resolvedPath, true)
@@ -162,7 +162,7 @@ export const makeOpfsFileSystem = (
     })
 
   const readDirectory = (path: string): Effect.Effect<ReadonlyArray<string>, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const dirHandle = yield* getDirectoryHandle(root, resolvedPath, false, true)
@@ -192,7 +192,7 @@ export const makeOpfsFileSystem = (
     path: string,
     options: FileSystemMakeDirectoryOptions = {}
   ): Effect.Effect<void, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       if (path === "" || path === ".") return
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
@@ -203,7 +203,7 @@ export const makeOpfsFileSystem = (
     path: string,
     options: FileSystemRemoveOptions = {}
   ): Effect.Effect<void, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const { directory, filename } = parsePath(resolvedPath)
@@ -222,7 +222,7 @@ export const makeOpfsFileSystem = (
     })
 
   const exists = (path: string): Effect.Effect<boolean, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       if (path === "" || path === ".") return true
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
@@ -278,7 +278,7 @@ export const makeOpfsFileSystem = (
     })
 
   const stat = (path: string): Effect.Effect<FileSystemStat, FileSystemError> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       if (path === "" || path === ".") {
         return { type: "directory" as const }
       }

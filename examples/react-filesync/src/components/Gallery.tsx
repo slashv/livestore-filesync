@@ -1,60 +1,68 @@
-import React from 'react'
-import { queryDb } from '@livestore/livestore'
-import { useStore } from '@livestore/react'
-import { useFileSync } from '@livestore-filesync/react'
-import { tables } from '../livestore/schema.ts'
-import { ImageCard } from './ImageCard.tsx'
+import React from "react";
+import { queryDb } from "@livestore/livestore";
+import { useStore } from "@livestore/react";
+import { useFileSync } from "@livestore-filesync/react";
+import { tables } from "../livestore/schema.ts";
+import { ImageCard } from "./ImageCard.tsx";
 
 interface FileRecord {
-  id: string
-  path: string
-  remoteUrl: string | null
-  contentHash: string
-  deletedAt: Date | null
+  id: string;
+  path: string;
+  remoteUrl: string | null;
+  contentHash: string;
+  deletedAt: Date | null;
 }
 
-const filesQuery = queryDb((tables.files as any).where({ deletedAt: null }), { label: 'files' })
+const filesQuery = queryDb(tables.files.where({ deletedAt: null }), {
+  label: "files",
+});
 
 export const Gallery: React.FC = () => {
-  const { store } = useStore()
-  const fileSync = useFileSync()
-  const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const { store } = useStore();
+  const fileSync = useFileSync();
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const files = store.useQuery(filesQuery) as unknown as FileRecord[]
-  const [isOnline, setIsOnline] = React.useState(fileSync.isOnline())
+  const files = store.useQuery(filesQuery) as unknown as FileRecord[];
+  const [isOnline, setIsOnline] = React.useState(fileSync.isOnline());
 
   React.useEffect(() => {
     const interval = window.setInterval(() => {
-      setIsOnline(fileSync.isOnline())
-    }, 1000)
+      setIsOnline(fileSync.isOnline());
+    }, 1000);
 
-    return () => window.clearInterval(interval)
-  }, [fileSync])
+    return () => window.clearInterval(interval);
+  }, [fileSync]);
 
   const handleUploadClick = () => {
-    inputRef.current?.click()
-  }
+    inputRef.current?.click();
+  };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const handleFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
     try {
-      const result = await fileSync.saveFile(file)
-      console.log('File saved:', result)
+      const result = await fileSync.saveFile(file);
+      console.log("File saved:", result);
     } catch (error) {
-      console.error('Failed to save file:', error)
+      console.error("Failed to save file:", error);
     }
 
     if (inputRef.current) {
-      inputRef.current.value = ''
+      inputRef.current.value = "";
     }
-  }
+  };
 
   return (
     <div className="container" data-testid="gallery">
       <div className="toolbar">
-        <button type="button" onClick={handleUploadClick} data-testid="upload-button">
+        <button
+          type="button"
+          onClick={handleUploadClick}
+          data-testid="upload-button"
+        >
           + Upload Image
         </button>
         <input
@@ -66,8 +74,8 @@ export const Gallery: React.FC = () => {
           data-testid="file-input"
         />
         <div className="status" data-testid="status-indicator">
-          <span className={`status-dot${isOnline ? ' online' : ''}`} />
-          {isOnline ? 'Online' : 'Offline'}
+          <span className={`status-dot${isOnline ? " online" : ""}`} />
+          {isOnline ? "Online" : "Offline"}
         </div>
       </div>
 
@@ -83,5 +91,5 @@ export const Gallery: React.FC = () => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};

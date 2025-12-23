@@ -197,7 +197,7 @@ export function createFileSyncSchema() {
         deletedAt: Schema.Date
       })
     }),
-    localFileStateSet: (tables.localFileState as any).set
+    localFileStateSet: tables.localFileState.set
   }
 
   // Create materializers function
@@ -209,7 +209,7 @@ export function createFileSyncSchema() {
       createdAt,
       updatedAt
     }: FileCreatedPayload) =>
-      (appTables.files as any).insert({ id, path, contentHash, createdAt, updatedAt }),
+      appTables.files.insert({ id, path, contentHash, createdAt, updatedAt }),
     "v1.FileUpdated": ({
       id,
       path,
@@ -217,9 +217,9 @@ export function createFileSyncSchema() {
       contentHash,
       updatedAt
     }: FileUpdatedPayload) =>
-      (appTables.files as any).update({ path, remoteUrl, contentHash, updatedAt }).where({ id }),
+      appTables.files.update({ path, remoteUrl, contentHash, updatedAt }).where({ id }),
     "v1.FileDeleted": ({ id, deletedAt }: FileDeletedPayload) =>
-      (appTables.files as any).update({ deletedAt }).where({ id })
+      appTables.files.update({ deletedAt }).where({ id })
   })
 
   return {

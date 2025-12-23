@@ -32,10 +32,10 @@ export const events = {
   uiStateSet: uiStateDoc.set
 }
 
-const materializers = State.SQLite.materializers(events as any, {
-  ...fileSyncSchema.createMaterializers(tables as any)
+const materializers = State.SQLite.materializers(events, {
+  ...fileSyncSchema.createMaterializers(tables)
 })
 
-const state = State.SQLite.makeState({ tables: tables as any, materializers })
+const state = State.SQLite.makeState({ tables: tables, materializers })
 
-export const schema = makeSchema({ events: events as any, state })
+export const schema = makeSchema({ events: events, state })
