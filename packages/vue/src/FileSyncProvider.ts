@@ -107,9 +107,9 @@ export const FileSyncProvider = defineComponent({
     const fileSync: FileSyncInstance = createFileSync({
       store,
       schema: {
-        tables: fileSyncSchema.tables as any,
-        events: fileSyncSchema.events as any,
-        queryDb: queryDb as any
+        tables: fileSyncSchema.tables,
+        events: fileSyncSchema.events,
+        queryDb: queryDb
       },
       remote: remoteConfig,
       fileSystem: props.fileSystem,
