@@ -1,5 +1,5 @@
 import { makeSchema, Schema, SessionIdSymbol, State } from '@livestore/livestore'
-import { fileSyncSchema } from '@livestore-filesync/react'
+import { fileSyncSchema } from '@livestore-filesync/react/schema'
 
 // Shared sync payload schema for authentication
 export const SyncPayload = Schema.Struct({ authToken: Schema.String })
