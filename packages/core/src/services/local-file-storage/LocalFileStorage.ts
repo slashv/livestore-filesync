@@ -1,9 +1,9 @@
 /**
  * LocalFileStorage Service
  *
- * Provides an Effect-based abstraction over the Origin Private File System (OPFS).
- * This service handles all local file operations including reading, writing,
- * deleting, and listing files stored in OPFS.
+ * Provides an Effect-based abstraction over a pluggable FileSystem service.
+ * This service handles local file operations including reading, writing,
+ * deleting, and listing files, with optional metadata preservation.
  *
  * @module
  */
@@ -12,44 +12,53 @@ import { Context, Effect, Layer } from "effect"
 import {
   DirectoryNotFoundError,
   FileNotFoundError,
-  OPFSNotAvailableError,
   StorageError
 } from "../../errors/index.js"
 import { joinPath, parsePath } from "../../utils/path.js"
+import { FileSystem, type FileSystemService } from "../FileSystem.js"
+
+interface FileMetadata {
+  readonly type?: string
+  readonly lastModified?: number
+}
+
+const META_SUFFIX = ".meta.json"
+
+const metadataPath = (path: string): string => `${path}${META_SUFFIX}`
 
 /**
  * LocalFileStorage service interface
  */
 export interface LocalFileStorageService {
   /**
-   * Write a file to OPFS at the specified path
+   * Write a file at the specified path
    * Creates parent directories as needed
    */
   readonly writeFile: (path: string, file: File) => Effect.Effect<void, StorageError>
 
   /**
-   * Write raw bytes to OPFS at the specified path
+   * Write raw bytes at the specified path
    * Creates parent directories as needed
    */
   readonly writeBytes: (path: string, data: Uint8Array, mimeType?: string) => Effect.Effect<void, StorageError>
 
   /**
-   * Read a file from OPFS
+   * Read a file
    */
   readonly readFile: (path: string) => Effect.Effect<File, FileNotFoundError | StorageError>
 
   /**
-   * Read raw bytes from OPFS
+   * Read raw bytes
    */
   readonly readBytes: (path: string) => Effect.Effect<Uint8Array, FileNotFoundError | StorageError>
 
   /**
-   * Check if a file exists in OPFS
+   * Check if a file exists
    */
   readonly fileExists: (path: string) => Effect.Effect<boolean, StorageError>
 
   /**
-   * Delete a file from OPFS
+   * Delete a file
    */
   readonly deleteFile: (path: string) => Effect.Effect<void, StorageError>
 
@@ -63,16 +72,6 @@ export interface LocalFileStorageService {
    * List all files in a directory
    */
   readonly listFiles: (directory: string) => Effect.Effect<string[], DirectoryNotFoundError | StorageError>
-
-  /**
-   * Get the OPFS root directory handle
-   */
-  readonly getRoot: () => Effect.Effect<FileSystemDirectoryHandle, OPFSNotAvailableError>
-
-  /**
-   * Ensure a directory exists, creating it if necessary
-   */
-  readonly ensureDirectory: (path: string) => Effect.Effect<FileSystemDirectoryHandle, StorageError>
 }
 
 /**
@@ -83,327 +82,313 @@ export class LocalFileStorage extends Context.Tag("LocalFileStorage")<
   LocalFileStorageService
 >() {}
 
-/**
- * Get the OPFS root directory handle
- */
-const getOPFSRoot = (): Effect.Effect<FileSystemDirectoryHandle, OPFSNotAvailableError> =>
-  Effect.tryPromise({
-    try: () => navigator.storage.getDirectory(),
-    catch: () => OPFSNotAvailableError.default
-  })
+const encodeMetadata = (metadata: FileMetadata): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(metadata))
 
-/**
- * Navigate to a directory handle from a path, optionally creating directories
- */
-const getDirectoryHandle = (
-  root: FileSystemDirectoryHandle,
-  path: string,
-  create: boolean
-): Effect.Effect<FileSystemDirectoryHandle, DirectoryNotFoundError | StorageError> => {
-  if (path === "" || path === ".") {
-    return Effect.succeed(root)
+const decodeMetadata = (data: Uint8Array): FileMetadata => {
+  try {
+    return JSON.parse(new TextDecoder().decode(data)) as FileMetadata
+  } catch {
+    return {}
   }
+}
 
-  const segments = path.split("/").filter((s) => s.length > 0)
-
-  return Effect.reduce(
-    segments,
-    root,
-    (currentDir, segment) =>
-      Effect.tryPromise({
-        try: () => currentDir.getDirectoryHandle(segment, { create }),
-        catch: (error) => {
-          if (error instanceof DOMException && error.name === "NotFoundError") {
-            return new DirectoryNotFoundError({ path })
-          }
-          return new StorageError({
-            message: `Failed to access directory: ${path}`,
+const ensureParentDirectory = (fs: FileSystemService, path: string) =>
+  Effect.gen(function*() {
+    const { directory } = parsePath(path)
+    if (!directory) return
+    yield* fs.makeDirectory(directory, { recursive: true }).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to create directory: ${directory}`,
             cause: error
           })
-        }
-      })
-  )
-}
-
-/**
- * Get a file handle from a path
- */
-const getFileHandle = (
-  root: FileSystemDirectoryHandle,
-  path: string,
-  create: boolean
-): Effect.Effect<FileSystemFileHandle, FileNotFoundError | StorageError> => {
-  const { directory, filename } = parsePath(path)
-
-  return Effect.gen(function*() {
-    const dirHandle = yield* getDirectoryHandle(root, directory, create).pipe(
-      Effect.catchTag("DirectoryNotFoundError", () =>
-        Effect.fail(new FileNotFoundError({ path }))
       )
     )
-
-    return yield* Effect.tryPromise({
-      try: () => dirHandle.getFileHandle(filename, { create }),
-      catch: (error) => {
-        if (error instanceof DOMException && error.name === "NotFoundError") {
-          return new FileNotFoundError({ path })
-        }
-        return new StorageError({
-          message: `Failed to access file: ${path}`,
-          cause: error
-        })
-      }
-    })
   })
-}
+
+const readMetadataFile = (
+  fs: FileSystemService,
+  path: string
+): Effect.Effect<FileMetadata | null, StorageError> =>
+  Effect.gen(function*() {
+    const metaPath = metadataPath(path)
+    const exists = yield* fs.exists(metaPath).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to check metadata: ${metaPath}`,
+            cause: error
+          })
+      )
+    )
+    if (!exists) return null
+    const data = yield* fs.readFile(metaPath).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to read metadata: ${metaPath}`,
+            cause: error
+          })
+      )
+    )
+    return decodeMetadata(data)
+  })
+
+const writeMetadataFile = (
+  fs: FileSystemService,
+  path: string,
+  metadata: FileMetadata
+) =>
+  Effect.gen(function*() {
+    const metaPath = metadataPath(path)
+    yield* fs.writeFile(metaPath, encodeMetadata(metadata)).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to write metadata: ${metaPath}`,
+            cause: error
+          })
+      )
+    )
+  })
+
+const removeMetadataFile = (fs: FileSystemService, path: string): Effect.Effect<void, StorageError> =>
+  Effect.gen(function*() {
+    const metaPath = metadataPath(path)
+    const exists = yield* fs.exists(metaPath).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to check metadata: ${metaPath}`,
+            cause: error
+          })
+      )
+    )
+    if (!exists) return
+    yield* fs.remove(metaPath).pipe(
+      Effect.mapError(
+        (error) =>
+          new StorageError({
+            message: `Failed to remove metadata: ${metaPath}`,
+            cause: error
+          })
+      )
+    )
+  })
 
 /**
  * Create the live LocalFileStorage service implementation
  */
-const make = (): LocalFileStorageService => {
-  const getRoot = () => getOPFSRoot()
+const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem
 
-  const ensureDirectory = (path: string): Effect.Effect<FileSystemDirectoryHandle, StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-      return yield* getDirectoryHandle(root, path, true).pipe(
-        Effect.mapError((e) =>
-          e._tag === "StorageError"
-            ? e
-            : new StorageError({ message: e.message })
-        )
-      )
-    })
+    const writeFile = (path: string, file: File): Effect.Effect<void, StorageError> =>
+      Effect.gen(function*() {
+        yield* ensureParentDirectory(fs, path)
 
-  const writeFile = (path: string, file: File): Effect.Effect<void, StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const fileHandle = yield* getFileHandle(root, path, true).pipe(
-        Effect.mapError((e) =>
-          e._tag === "StorageError"
-            ? e
-            : new StorageError({ message: e.message })
-        )
-      )
-
-      yield* Effect.tryPromise({
-        try: async () => {
-          const writable = await fileHandle.createWritable()
-          try {
-            await writable.write(file)
-          } finally {
-            await writable.close()
-          }
-        },
-        catch: (error) =>
-          new StorageError({
-            message: `Failed to write file: ${path}`,
-            cause: error
-          })
-      })
-    })
-
-  const writeBytes = (
-    path: string,
-    data: Uint8Array,
-    mimeType = "application/octet-stream"
-  ): Effect.Effect<void, StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const fileHandle = yield* getFileHandle(root, path, true).pipe(
-        Effect.mapError((e) =>
-          e._tag === "StorageError"
-            ? e
-            : new StorageError({ message: e.message })
-        )
-      )
-
-      yield* Effect.tryPromise({
-        try: async () => {
-          const writable = await fileHandle.createWritable()
-          try {
-            // Cast Uint8Array to ArrayBuffer for Blob compatibility
-            const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-            await writable.write(new Blob([buffer], { type: mimeType }))
-          } finally {
-            await writable.close()
-          }
-        },
-        catch: (error) =>
-          new StorageError({
-            message: `Failed to write bytes: ${path}`,
-            cause: error
-          })
-      })
-    })
-
-  const readFile = (path: string): Effect.Effect<File, FileNotFoundError | StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const fileHandle = yield* getFileHandle(root, path, false)
-
-      return yield* Effect.tryPromise({
-        try: () => fileHandle.getFile(),
-        catch: (error) =>
-          new StorageError({
-            message: `Failed to read file: ${path}`,
-            cause: error
-          })
-      })
-    })
-
-  const readBytes = (path: string): Effect.Effect<Uint8Array, FileNotFoundError | StorageError> =>
-    Effect.gen(function*() {
-      const file = yield* readFile(path)
-      const buffer = yield* Effect.tryPromise({
-        try: () => file.arrayBuffer(),
-        catch: (error) =>
-          new StorageError({
-            message: `Failed to read file bytes: ${path}`,
-            cause: error
-          })
-      })
-      return new Uint8Array(buffer)
-    })
-
-  const fileExists = (path: string): Effect.Effect<boolean, StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const result = yield* getFileHandle(root, path, false).pipe(
-        Effect.map(() => true),
-        Effect.catchTag("FileNotFoundError", () => Effect.succeed(false))
-      )
-
-      return result
-    })
-
-  const deleteFile = (path: string): Effect.Effect<void, StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const { directory, filename } = parsePath(path)
-
-      const dirHandle = yield* getDirectoryHandle(root, directory, false).pipe(
-        Effect.catchTag("DirectoryNotFoundError", () => Effect.succeed(root))
-      )
-
-      yield* Effect.tryPromise({
-        try: () => dirHandle.removeEntry(filename),
-        catch: (error) => {
-          // Ignore NotFoundError - file already doesn't exist
-          if (error instanceof DOMException && error.name === "NotFoundError") {
-            return
-          }
-          throw error
-        }
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.fail(
+        const buffer = yield* Effect.tryPromise({
+          try: () => file.arrayBuffer(),
+          catch: (error) =>
             new StorageError({
-              message: `Failed to delete file: ${path}`,
+              message: `Failed to read file data: ${path}`,
               cause: error
             })
+        })
+
+        yield* fs.writeFile(path, new Uint8Array(buffer)).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to write file: ${path}`,
+                cause: error
+              })
           )
         )
-      )
-    })
 
-  const getFileUrl = (path: string): Effect.Effect<string, FileNotFoundError | StorageError> =>
-    Effect.gen(function*() {
-      const file = yield* readFile(path)
-      return URL.createObjectURL(file)
-    })
-
-  const listFiles = (
-    directory: string
-  ): Effect.Effect<string[], DirectoryNotFoundError | StorageError> =>
-    Effect.gen(function*() {
-      const root = yield* getOPFSRoot().pipe(
-        Effect.mapError((e) => new StorageError({ message: e.message }))
-      )
-
-      const dirHandle = yield* getDirectoryHandle(root, directory, false)
-
-      return yield* Effect.tryPromise({
-        try: async () => {
-          const files: string[] = []
-          // Cast to iterable - FileSystemDirectoryHandle is iterable in browsers
-          const entries = (dirHandle as any).entries() as AsyncIterable<[string, FileSystemHandle]>
-          for await (const [name, handle] of entries) {
-            if (handle.kind === "file") {
-              files.push(joinPath(directory, name))
-            } else if (handle.kind === "directory") {
-              // Recursively list files in subdirectories
-              const subFiles = await listFilesRecursive(
-                handle as FileSystemDirectoryHandle,
-                joinPath(directory, name)
-              )
-              files.push(...subFiles)
-            }
-          }
-          return files
-        },
-        catch: (error) =>
-          new StorageError({
-            message: `Failed to list files in directory: ${directory}`,
-            cause: error
-          })
+        yield* writeMetadataFile(fs, path, {
+          type: file.type || undefined,
+          lastModified: file.lastModified || undefined
+        })
       })
-    })
 
-  return {
-    writeFile,
-    writeBytes,
-    readFile,
-    readBytes,
-    fileExists,
-    deleteFile,
-    getFileUrl,
-    listFiles,
-    getRoot,
-    ensureDirectory
-  }
-}
+    const writeBytes = (
+      path: string,
+      data: Uint8Array,
+      mimeType = "application/octet-stream"
+    ): Effect.Effect<void, StorageError> =>
+      Effect.gen(function*() {
+        yield* ensureParentDirectory(fs, path)
+        yield* fs.writeFile(path, data).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to write bytes: ${path}`,
+                cause: error
+              })
+          )
+        )
+        yield* writeMetadataFile(fs, path, { type: mimeType, lastModified: Date.now() })
+      })
 
-/**
- * Helper function to recursively list files
- */
-const listFilesRecursive = async (
-  dirHandle: FileSystemDirectoryHandle,
-  basePath: string
-): Promise<string[]> => {
-  const files: string[] = []
-  // Cast to iterable - FileSystemDirectoryHandle is iterable in browsers
-  const entries = (dirHandle as any).entries() as AsyncIterable<[string, FileSystemHandle]>
-  for await (const [name, handle] of entries) {
-    const fullPath = joinPath(basePath, name)
-    if (handle.kind === "file") {
-      files.push(fullPath)
-    } else if (handle.kind === "directory") {
-      const subFiles = await listFilesRecursive(handle as FileSystemDirectoryHandle, fullPath)
-      files.push(...subFiles)
+    const readBytes = (path: string): Effect.Effect<Uint8Array, FileNotFoundError | StorageError> =>
+      Effect.gen(function*() {
+        const exists = yield* fs.exists(path).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to check file existence: ${path}`,
+                cause: error
+              })
+          )
+        )
+        if (!exists) {
+          return yield* Effect.fail(new FileNotFoundError({ path }))
+        }
+        return yield* fs.readFile(path).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to read bytes: ${path}`,
+                cause: error
+              })
+          )
+        )
+      })
+
+    const readFile = (path: string): Effect.Effect<File, FileNotFoundError | StorageError> =>
+      Effect.gen(function*() {
+        const data = yield* readBytes(path)
+        const metadata = yield* readMetadataFile(fs, path)
+        const { filename } = parsePath(path)
+        const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+
+        return new File([buffer], filename, {
+          type: metadata?.type || "application/octet-stream",
+          ...(metadata?.lastModified !== undefined ? { lastModified: metadata.lastModified } : {})
+        })
+      })
+
+    const fileExists = (path: string): Effect.Effect<boolean, StorageError> =>
+      Effect.gen(function*() {
+        const exists = yield* fs.exists(path).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to check file existence: ${path}`,
+                cause: error
+              })
+          )
+        )
+        if (!exists) return false
+        const stat = yield* fs.stat(path).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to stat path: ${path}`,
+                cause: error
+              })
+          )
+        )
+        return stat.type === "file"
+      })
+
+    const deleteFile = (path: string): Effect.Effect<void, StorageError> =>
+      Effect.gen(function*() {
+        const exists = yield* fileExists(path)
+        if (exists) {
+          yield* fs.remove(path).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: `Failed to delete file: ${path}`,
+                  cause: error
+                })
+            )
+          )
+        }
+
+        yield* removeMetadataFile(fs, path)
+      })
+
+    const getFileUrl = (path: string): Effect.Effect<string, FileNotFoundError | StorageError> =>
+      Effect.gen(function*() {
+        const file = yield* readFile(path)
+        return URL.createObjectURL(file)
+      })
+
+    const listFiles = (
+      directory: string
+    ): Effect.Effect<string[], DirectoryNotFoundError | StorageError> =>
+      Effect.gen(function*() {
+        const shouldCheckExists = directory !== "" && directory !== "."
+        const exists = shouldCheckExists
+          ? yield* fs.exists(directory).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: `Failed to check directory: ${directory}`,
+                  cause: error
+                })
+            )
+          )
+          : true
+        if (!exists && shouldCheckExists) {
+          return yield* Effect.fail(new DirectoryNotFoundError({ path: directory }))
+        }
+        const files = yield* listFilesRecursive(directory)
+        return files.filter((path) => !path.endsWith(META_SUFFIX))
+      })
+
+    const listFilesRecursive = (directory: string): Effect.Effect<string[], StorageError> =>
+      Effect.gen(function*() {
+        const entries = yield* fs.readDirectory(directory).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: `Failed to list files in directory: ${directory}`,
+                cause: error
+              })
+          )
+        )
+
+        const files: string[] = []
+        for (const entry of entries) {
+          const entryPath = joinPath(directory, entry)
+          const stat = yield* fs.stat(entryPath).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: `Failed to stat path: ${entryPath}`,
+                  cause: error
+                })
+            )
+          )
+          if (stat.type === "file") {
+            files.push(entryPath)
+          } else {
+            const subFiles = yield* listFilesRecursive(entryPath)
+            files.push(...subFiles)
+          }
+        }
+        return files
+      })
+
+    return {
+      writeFile,
+      writeBytes,
+      readFile,
+      readBytes,
+      fileExists,
+      deleteFile,
+      getFileUrl,
+      listFiles
     }
-  }
-  return files
-}
+  })
 
 /**
- * Live layer for LocalFileStorage using OPFS
+ * Live layer for LocalFileStorage using FileSystem
  */
-export const LocalFileStorageLive = Layer.succeed(LocalFileStorage, make())
+export const LocalFileStorageLive = Layer.effect(LocalFileStorage, make())

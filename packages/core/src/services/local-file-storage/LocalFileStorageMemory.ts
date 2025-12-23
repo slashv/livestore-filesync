@@ -145,14 +145,6 @@ export const makeMemoryLocalFileStorage = (
       return files
     })
 
-  // Mock implementations for OPFS-specific methods
-  const getRoot = () =>
-    Effect.die(new Error("getRoot is not available in memory implementation"))
-
-  const ensureDirectory = (_path: string) =>
-    // In memory implementation, directories are implicit
-    Effect.die(new Error("ensureDirectory is not needed in memory implementation"))
-
   return {
     writeFile,
     writeBytes,
@@ -161,9 +153,7 @@ export const makeMemoryLocalFileStorage = (
     fileExists,
     deleteFile,
     getFileUrl,
-    listFiles,
-    getRoot: getRoot as any,
-    ensureDirectory: ensureDirectory as any
+    listFiles
   }
 }
 

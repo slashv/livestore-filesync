@@ -8,9 +8,15 @@
  */
 
 import { defineComponent, onMounted, onUnmounted, provide, type PropType } from "vue"
+import type { Layer } from "effect"
 import { useStore } from "vue-livestore"
 import { queryDb } from "@livestore/livestore"
-import { createFileSync, type FileSyncInstance, type SyncEvent } from "@livestore-filesync/core"
+import {
+  createFileSync,
+  type FileSyncInstance,
+  type SyncEvent,
+  type FileSystem
+} from "@livestore-filesync/core"
 import { FileSyncKey } from "./context.js"
 import { fileSyncSchema } from "./schema.js"
 
@@ -33,6 +39,11 @@ export interface FileSyncProviderProps {
    * Optional event callback
    */
   onEvent?: (event: SyncEvent) => void
+
+  /**
+   * Optional filesystem layer override
+   */
+  fileSystem?: Layer.Layer<FileSystem>
 }
 
 /**
@@ -67,6 +78,10 @@ export const FileSyncProvider = defineComponent({
     onEvent: {
       type: Function as PropType<(event: SyncEvent) => void>,
       default: undefined
+    },
+    fileSystem: {
+      type: Object as PropType<Layer.Layer<FileSystem>>,
+      default: undefined
     }
   },
 
@@ -97,6 +112,7 @@ export const FileSyncProvider = defineComponent({
         queryDb: queryDb as any
       },
       remote: remoteConfig,
+      ...(props.fileSystem ? { fileSystem: props.fileSystem } : {}),
       options: optionsConfig
     })
 

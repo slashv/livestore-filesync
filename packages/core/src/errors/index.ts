@@ -74,6 +74,16 @@ export class HashError extends Data.TaggedError("HashError")<{
 }> {}
 
 /**
+ * Error when file system operations fail
+ */
+export class FileSystemError extends Data.TaggedError("FileSystemError")<{
+  readonly message: string
+  readonly operation: string
+  readonly path?: string
+  readonly cause?: unknown
+}> {}
+
+/**
  * Error when OPFS is not available in the current environment
  */
 export class OPFSNotAvailableError extends Data.TaggedError("OPFSNotAvailableError")<{
@@ -91,6 +101,7 @@ export type FileStorageError =
   | StorageError
   | FileNotFoundError
   | DirectoryNotFoundError
+  | FileSystemError
   | UploadError
   | DownloadError
   | DeleteError

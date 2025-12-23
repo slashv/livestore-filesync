@@ -5,7 +5,7 @@
  */
 
 /**
- * Base directory for file storage in OPFS
+ * Base directory for file storage
  */
 export const FILES_DIRECTORY = "files"
 

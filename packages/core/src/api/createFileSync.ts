@@ -16,6 +16,8 @@ import {
   FileStorageLive,
   FileSync,
   FileSyncLive,
+  FileSystem,
+  FileSystemOpfsLive,
   LocalFileStorage,
   LocalFileStorageLive,
   RemoteStorage,
@@ -86,6 +88,9 @@ export interface CreateFileSyncConfig {
     baseUrl: string
     authHeaders?: () => HeadersInit
   }
+
+  /** Optional filesystem layer override */
+  fileSystem?: Layer.Layer<FileSystem>
 
   /** Optional configuration */
   options?: {
@@ -172,7 +177,7 @@ export interface FileSyncInstance {
  * ```
  */
 export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
-  const { store, schema, remote, options = {} } = config
+  const { store, schema, remote, fileSystem, options = {} } = config
 
   // State
   let online = typeof navigator !== "undefined" ? navigator.onLine : true
@@ -209,8 +214,11 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.gcDelayMs !== undefined ? { gcDelayMs: options.gcDelayMs } : {})
   }
 
+  const FileSystemLive = fileSystem ?? FileSystemOpfsLive()
+
   const BaseLayer = Layer.mergeAll(
     Layer.scope,
+    FileSystemLive,
     LocalFileStorageLive,
     RemoteStorageLive
   )
