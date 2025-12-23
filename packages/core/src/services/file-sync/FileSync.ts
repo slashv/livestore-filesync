@@ -509,7 +509,6 @@ export const makeFileSync = (
 
     const checkAndSync = (): Effect.Effect<void> =>
       Effect.gen(function* () {
-        console.log("checkAndSync")
         yield* updateLocalFileState()
         yield* syncFiles()
         yield* scheduleCleanupIfIdle()
@@ -523,8 +522,6 @@ export const makeFileSync = (
 
         yield* Ref.set(runningRef, true)
 
-        console.log("start")
-
         // Start the executor
         yield* executor.start()
 
@@ -532,8 +529,7 @@ export const makeFileSync = (
         const unsubscribe = yield* Effect.sync(() => {
           const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
           return store.subscribe(fileQuery, () => {
-            console.log("file changed")
-            Effect.runPromise(checkAndSync()).catch(() => {})
+            Effect.runPromise(checkAndSync()).catch(() => { })
           })
         })
 

@@ -58,44 +58,27 @@ const filename = computed(() => props.file.path.split('/').pop())
 </script>
 
 <template>
-  <div
-    :style="cardStyle"
-    data-testid="file-card"
-  >
-    <div :style="imageContainerStyle">
-      <div
-        v-if="isLoading"
-        :style="placeholderStyle"
-        data-testid="loading"
-      >Loading...</div>
+  <div class="card" data-testid="file-card">
+    <div class="image-container">
+      <div v-if="isLoading" class="placeholder" data-testid="loading">Loading...</div>
       <img
         v-else-if="url"
         :src="url"
         :alt="file.path"
-        :style="imageStyle"
+        class="image"
         data-testid="file-image"
       />
-      <div
-        v-else
-        :style="placeholderStyle"
-      >No preview</div>
+      <div v-else class="placeholder">No preview</div>
     </div>
-    <div :style="infoStyle">
-      <div
-        :style="filenameStyle"
-        data-testid="file-name"
-      >{{ filename }}</div>
-      <div :style="statusRowStyle">
-        <span
-          :style="statusBadgeStyle"
-          data-testid="file-status"
-        >
+    <div class="info">
+      <div class="filename" data-testid="file-name">{{ filename }}</div>
+      <div class="actions">
+        <span class="status" data-testid="file-status">
           {{ file.remoteUrl ? 'Synced' : 'Local' }}
         </span>
         <button
           type="button"
           @click="handleDelete"
-          :style="deleteButtonStyle"
           data-testid="delete-button"
         >
           Delete
@@ -105,71 +88,49 @@ const filename = computed(() => props.file.path.split('/').pop())
   </div>
 </template>
 
-<script lang="ts">
-const cardStyle = {
-  backgroundColor: '#fff',
-  borderRadius: '8px',
-  overflow: 'hidden',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  transition: 'transform 0.2s, box-shadow 0.2s'
+<style scoped>
+.card {
+  border: 1px solid #ccc;
 }
 
-const imageContainerStyle = {
-  width: '100%',
-  height: '200px',
-  backgroundColor: '#f5f5f5',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center'
+.image-container {
+  height: 150px;
+  background: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-const imageStyle = {
-  width: '100%',
-  height: '100%',
-  objectFit: 'cover' as const
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-const placeholderStyle = {
-  color: '#999',
-  fontSize: '14px'
+.placeholder {
+  color: #666;
 }
 
-const infoStyle = {
-  padding: '16px'
+.info {
+  padding: 0.5rem;
 }
 
-const filenameStyle = {
-  fontSize: '14px',
-  fontWeight: 'bold',
-  color: '#333',
-  marginBottom: '8px',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap' as const
+.filename {
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-const statusRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between'
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-const statusBadgeStyle = {
-  padding: '4px 8px',
-  borderRadius: '4px',
-  fontSize: '12px',
-  fontWeight: 'bold',
-  color: '#fff',
-  backgroundColor: '#4caf50'
+.status {
+  font-size: 0.875rem;
+  color: #666;
 }
-
-const deleteButtonStyle = {
-  padding: '4px 12px',
-  fontSize: '12px',
-  color: '#f44336',
-  backgroundColor: 'transparent',
-  border: '1px solid #f44336',
-  borderRadius: '4px',
-  cursor: 'pointer'
-}
-</script>
+</style>

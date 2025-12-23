@@ -46,7 +46,13 @@ const getAuthHeaders = () => ({
       </LiveStoreProvider>
     </template>
     <template #fallback>
-      <div>Loading LiveStore...</div>
+      <div class="loading">Loading...</div>
     </template>
   </Suspense>
 </template>
+
+<style scoped>
+.loading {
+  padding: 2rem;
+}
+</style>

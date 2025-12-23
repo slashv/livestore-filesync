@@ -49,21 +49,14 @@ const handleFileChange = async (e: Event) => {
     inputRef.value.value = ''
   }
 }
-
-const statusDotStyle = {
-  width: '10px',
-  height: '10px',
-  borderRadius: '50%',
-}
 </script>
 
 <template>
-  <div :style="containerStyle" data-testid="gallery">
-    <div :style="toolbarStyle">
+  <div class="container" data-testid="gallery">
+    <div class="toolbar">
       <button
         type="button"
         @click="handleUploadClick"
-        :style="uploadButtonStyle"
         data-testid="upload-button"
       >
         + Upload Image
@@ -73,22 +66,19 @@ const statusDotStyle = {
         type="file"
         accept="image/*"
         @change="handleFileChange"
-        :style="hiddenInputStyle"
+        class="hidden"
         data-testid="file-input"
       />
-      <div
-        :style="statusStyle"
-        data-testid="status-indicator"
-      >
-        <span :style="{ ...statusDotStyle, backgroundColor: isOnline ? '#4caf50' : '#f44336' }" />
+      <div class="status" data-testid="status-indicator">
+        <span class="status-dot" :class="{ online: isOnline }" />
         {{ isOnline ? 'Online' : 'Offline' }}
       </div>
     </div>
 
-    <div v-if="!files || files.length === 0" :style="emptyStyle" data-testid="empty-state">
+    <div v-if="!files || files.length === 0" class="empty" data-testid="empty-state">
       <p>No images yet. Upload one to get started!</p>
     </div>
-    <div v-else :style="gridStyle">
+    <div v-else class="grid">
       <ImageCard
         v-for="file in files"
         :key="file.id"
@@ -98,60 +88,50 @@ const statusDotStyle = {
   </div>
 </template>
 
-<script lang="ts">
-const containerStyle = {
-  width: '100%'
+<style scoped>
+.container {
+  padding: 1rem;
 }
 
-const toolbarStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: '24px',
-  padding: '16px',
-  backgroundColor: '#fff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-const uploadButtonStyle = {
-  padding: '12px 24px',
-  fontSize: '16px',
-  fontWeight: 'bold',
-  color: '#fff',
-  backgroundColor: '#2196f3',
-  border: 'none',
-  borderRadius: '8px',
-  cursor: 'pointer',
-  transition: 'background-color 0.2s'
+.hidden {
+  display: none;
 }
 
-const hiddenInputStyle = {
-  display: 'none'
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-const statusStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  fontSize: '14px',
-  color: '#666'
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #999;
 }
 
-const emptyStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '80px 20px',
-  backgroundColor: '#fff',
-  borderRadius: '8px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-  color: '#999'
+.status-dot.online {
+  background-color: #090;
 }
 
-const gridStyle = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-  gap: '20px'
+.empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #666;
 }
-</script>
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+</style>
