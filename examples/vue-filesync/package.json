@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
+    "@livestore-filesync/adapter-web": "workspace:*",
     "@livestore-filesync/cloudflare": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/vue": "workspace:*",

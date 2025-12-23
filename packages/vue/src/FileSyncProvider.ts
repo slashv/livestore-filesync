@@ -41,9 +41,9 @@ export interface FileSyncProviderProps {
   onEvent?: (event: SyncEvent) => void
 
   /**
-   * Optional filesystem layer override
+   * Filesystem layer to use for local file storage
    */
-  fileSystem?: Layer.Layer<FileSystem>
+  fileSystem: Layer.Layer<FileSystem>
 }
 
 /**
@@ -56,7 +56,7 @@ export interface FileSyncProviderProps {
  * ```vue
  * <template>
  *   <LiveStoreProvider :options="storeOptions">
- *     <FileSyncProvider remote-url="/api">
+ *     <FileSyncProvider :file-system="fileSystem" remote-url="/api">
  *       <YourApp />
  *     </FileSyncProvider>
  *   </LiveStoreProvider>
@@ -81,7 +81,7 @@ export const FileSyncProvider = defineComponent({
     },
     fileSystem: {
       type: Object as PropType<Layer.Layer<FileSystem>>,
-      default: undefined
+      required: true
     }
   },
 
@@ -112,7 +112,7 @@ export const FileSyncProvider = defineComponent({
         queryDb: queryDb as any
       },
       remote: remoteConfig,
-      ...(props.fileSystem ? { fileSystem: props.fileSystem } : {}),
+      fileSystem: props.fileSystem,
       options: optionsConfig
     })
 

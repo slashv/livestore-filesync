@@ -91,6 +91,9 @@ importers:
 
   examples/vue-filesync:
     dependencies:
+      '@livestore-filesync/adapter-web':
+        specifier: workspace:*
+        version: link:../../packages/adapter-web
       '@livestore-filesync/cloudflare':
         specifier: workspace:*
         version: link:../../packages/cloudflare
