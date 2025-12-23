@@ -12,6 +12,9 @@ catalogs:
     '@effect/platform-node':
       specifier: 0.98.4
       version: 0.98.4
+    '@livestore/adapter-node':
+      specifier: 0.4.0-dev.20
+      version: 0.4.0-dev.20
     '@livestore/adapter-web':
       specifier: 0.4.0-dev.20
       version: 0.4.0-dev.20
@@ -82,6 +85,37 @@ importers:
       eslint-plugin-sort-destructure-keys:
         specifier: ^2.0.0
         version: 2.0.0(eslint@9.37.0)
+      tsx:
+        specifier: ^4.17.0
+        version: 4.20.6
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+
+  examples/node-filesync:
+    dependencies:
+      '@livestore-filesync/adapter-node':
+        specifier: workspace:*
+        version: link:../../packages/adapter-node
+      '@livestore-filesync/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@livestore/adapter-node':
+        specifier: 'catalog:'
+        version: 0.4.0-dev.20(2fd449b886329d5b788e2f97ecae0e9e)
+      '@livestore/livestore':
+        specifier: 'catalog:'
+        version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
+      '@livestore/sync-cf':
+        specifier: 'catalog:'
+        version: 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      effect:
+        specifier: 'catalog:'
+        version: 3.18.4
+    devDependencies:
+      '@types/node':
+        specifier: ^22.5.2
+        version: 22.18.10
       tsx:
         specifier: ^4.17.0
         version: 4.20.6
@@ -247,7 +281,7 @@ importers:
         version: 3.5.26(typescript@5.9.3)
       vue-livestore:
         specifier: 0.3.0-0
-        version: 0.3.0-0(1bfd67c552ef542d2a3b85ec6d544b53)
+        version: 0.3.0-0(fd035a3211ee8bef4a29eedf4d9d23ca)
 
 packages:
 
@@ -1155,6 +1189,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
+
+  '@livestore/adapter-node@0.4.0-dev.20':
+    resolution: {integrity: sha512-0LpnYTYzf14fgygV/UxD11opR8fa2Q9rQqtiBZXa1ysncKHupG0DUpfQrkQbbumFMO8zGvQ+oA9BCwMeDI/G2Q==}
 
   '@livestore/adapter-web@0.4.0-dev.20':
     resolution: {integrity: sha512-9292KY4hz6QmT6koN9He/2xAemGCe52/rskY1ibtU76eHF1ERu1GZLpVi0Pm3t8IuUwTBWyTMMjvLqWL5kBrQw==}
@@ -3542,6 +3579,46 @@ packages:
       yaml:
         optional: true
 
+  vite@7.2.4:
+    resolution: {integrity: sha512-NL8jTlbo0Tn4dUEXEsUg8KeyG/Lkmc4Fnzb8JXN/Ykm9G4HNImjtABMJgkQoVjOBN/j2WAwDTRytdqJbZsah7w==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    hasBin: true
+    peerDependencies:
+      '@types/node': ^20.19.0 || >=22.12.0
+      jiti: '>=1.21.0'
+      less: ^4.0.0
+      lightningcss: ^1.21.0
+      sass: ^1.70.0
+      sass-embedded: ^1.70.0
+      stylus: '>=0.54.8'
+      sugarss: ^5.0.0
+      terser: ^5.16.0
+      tsx: ^4.8.1
+      yaml: ^2.4.2
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+      jiti:
+        optional: true
+      less:
+        optional: true
+      lightningcss:
+        optional: true
+      sass:
+        optional: true
+      sass-embedded:
+        optional: true
+      stylus:
+        optional: true
+      sugarss:
+        optional: true
+      terser:
+        optional: true
+      tsx:
+        optional: true
+      yaml:
+        optional: true
+
   vitest@3.2.4:
     resolution: {integrity: sha512-LUCP5ev3GURDysTWiP47wRRUpLKMOfPh+yKTx3kVIEiu5KOMeqzpnYNsKyOoVrULivR8tLcks4+lga33Whn90A==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
@@ -4553,6 +4630,44 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@livestore/adapter-node@0.4.0-dev.20(2fd449b886329d5b788e2f97ecae0e9e)':
+    dependencies:
+      '@livestore/common': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
+      '@livestore/devtools-vite': 0.4.0-dev.20(376868e2fdfb3089ddf66f343ee4472a)
+      '@livestore/sqlite-wasm': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      '@livestore/utils': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      '@livestore/webmesh': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      '@opentelemetry/api': 1.9.0
+      vite: 7.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
+    transitivePeerDependencies:
+      - '@effect/ai'
+      - '@effect/cli'
+      - '@effect/cluster'
+      - '@effect/experimental'
+      - '@effect/opentelemetry'
+      - '@effect/platform'
+      - '@effect/platform-browser'
+      - '@effect/platform-bun'
+      - '@effect/platform-node'
+      - '@effect/printer'
+      - '@effect/printer-ansi'
+      - '@effect/rpc'
+      - '@effect/sql'
+      - '@effect/typeclass'
+      - '@opentelemetry/resources'
+      - '@types/node'
+      - effect
+      - jiti
+      - less
+      - lightningcss
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
+
   '@livestore/adapter-web@0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)':
     dependencies:
       '@livestore/common': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -4623,6 +4738,30 @@ snapshots:
       - '@effect/rpc'
       - '@effect/sql'
       - '@effect/typeclass'
+      - '@opentelemetry/resources'
+      - effect
+
+  '@livestore/devtools-vite@0.4.0-dev.20(376868e2fdfb3089ddf66f343ee4472a)':
+    dependencies:
+      '@livestore/adapter-web': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
+      '@livestore/utils': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      vite: 7.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
+    transitivePeerDependencies:
+      - '@effect/ai'
+      - '@effect/cli'
+      - '@effect/cluster'
+      - '@effect/experimental'
+      - '@effect/opentelemetry'
+      - '@effect/platform'
+      - '@effect/platform-browser'
+      - '@effect/platform-bun'
+      - '@effect/platform-node'
+      - '@effect/printer'
+      - '@effect/printer-ansi'
+      - '@effect/rpc'
+      - '@effect/sql'
+      - '@effect/typeclass'
+      - '@opentelemetry/api'
       - '@opentelemetry/resources'
       - effect
 
@@ -7342,6 +7481,20 @@ snapshots:
       tsx: 4.20.6
       yaml: 2.8.2
 
+  vite@7.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2):
+    dependencies:
+      esbuild: 0.25.10
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.52.4
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 22.18.10
+      fsevents: 2.3.3
+      tsx: 4.20.6
+      yaml: 2.8.2
+
   vitest@3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2):
     dependencies:
       '@types/chai': 5.2.2
@@ -7389,6 +7542,47 @@ snapshots:
     dependencies:
       '@livestore/adapter-web': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
       '@livestore/devtools-vite': 0.4.0-dev.20(ec67c1295f456dc88cc8c5c86d17f141)
+      '@livestore/livestore': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
+      '@livestore/peer-deps': 0.4.0-dev.20(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@opentelemetry/semantic-conventions@1.38.0)
+      '@livestore/sync-cf': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
+      '@livestore/wa-sqlite': 0.4.0-dev.20
+      vue: 3.5.26(typescript@5.9.3)
+    transitivePeerDependencies:
+      - '@effect/ai'
+      - '@effect/cli'
+      - '@effect/cluster'
+      - '@effect/experimental'
+      - '@effect/opentelemetry'
+      - '@effect/platform'
+      - '@effect/platform-browser'
+      - '@effect/platform-bun'
+      - '@effect/platform-node'
+      - '@effect/printer'
+      - '@effect/printer-ansi'
+      - '@effect/rpc'
+      - '@effect/sql'
+      - '@effect/typeclass'
+      - '@effect/workflow'
+      - '@opentelemetry/api'
+      - '@opentelemetry/resources'
+      - '@opentelemetry/sdk-logs'
+      - '@opentelemetry/sdk-metrics'
+      - '@opentelemetry/sdk-trace-base'
+      - '@opentelemetry/sdk-trace-node'
+      - '@opentelemetry/sdk-trace-web'
+      - '@opentelemetry/semantic-conventions'
+      - bufferutil
+      - effect
+      - ioredis
+      - lmdb
+      - typescript
+      - utf-8-validate
+      - vite
+
+  vue-livestore@0.3.0-0(fd035a3211ee8bef4a29eedf4d9d23ca):
+    dependencies:
+      '@livestore/adapter-web': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
+      '@livestore/devtools-vite': 0.4.0-dev.20(376868e2fdfb3089ddf66f343ee4472a)
       '@livestore/livestore': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
       '@livestore/peer-deps': 0.4.0-dev.20(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@opentelemetry/semantic-conventions@1.38.0)
       '@livestore/sync-cf': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)

@@ -34,11 +34,7 @@ import type {
   LocalFilesState,
   TransferStatus
 } from "../types/index.js"
-import {
-  type SyncSchema,
-  type SyncStore,
-  type LiveStoreDeps
-} from "../livestore/types.js"
+import type { SyncSchema, SyncStore, LiveStoreDeps } from "../livestore/types.js"
 import type { FileSyncConfig } from "../services/file-sync/index.js"
 
 /**

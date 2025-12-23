@@ -7,7 +7,7 @@
  */
 
 import { queryDb } from "@livestore/livestore"
-import type { LiveStoreSchema, Store } from "@livestore/livestore"
+import type { Store } from "@livestore/livestore"
 import type { createFileSyncSchema } from "../schema/index.js"
 
 export type FileSyncSchema = ReturnType<typeof createFileSyncSchema>
@@ -22,7 +22,7 @@ export type SyncSchema = Pick<FileSyncSchema, "tables" | "events"> & {
 /**
  * LiveStore store instance type.
  */
-export type SyncStore<TSchema extends LiveStoreSchema = LiveStoreSchema.Any> = Store<TSchema>
+export type SyncStore = Store<any>
 
 /**
  * LiveStore store + schema dependencies.

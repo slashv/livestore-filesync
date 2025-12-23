@@ -1,0 +1,22 @@
+{
+  "name": "livestore-filesync-node-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@livestore-filesync/adapter-node": "workspace:*",
+    "@livestore-filesync/core": "workspace:*",
+    "@livestore/adapter-node": "catalog:",
+    "@livestore/livestore": "catalog:",
+    "@livestore/sync-cf": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.2",
+    "tsx": "^4.17.0",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts"
+  }
+}

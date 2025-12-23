@@ -4,6 +4,7 @@ packages:
 
 catalog:
   '@livestore/adapter-web': 0.4.0-dev.20
+  '@livestore/adapter-node': 0.4.0-dev.20
   '@livestore/livestore': 0.4.0-dev.20
   '@livestore/peer-deps': 0.4.0-dev.20
   '@livestore/react': 0.4.0-dev.20
