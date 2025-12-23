@@ -15,7 +15,7 @@ import {
   StorageError
 } from "../../errors/index.js"
 import { joinPath, parsePath } from "../../utils/path.js"
-import { FileSystem, type FileSystemService } from "../FileSystem.js"
+import { FileSystem, type FileSystemService } from "../file-system/FileSystem.js"
 
 interface FileMetadata {
   readonly type?: string

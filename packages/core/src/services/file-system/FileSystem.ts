@@ -5,7 +5,7 @@
  */
 
 import { Context, Effect } from "effect"
-import { FileSystemError } from "../errors/index.js"
+import { FileSystemError } from "../../errors/index.js"
 
 export type FileSystemEntryType = "file" | "directory"
 

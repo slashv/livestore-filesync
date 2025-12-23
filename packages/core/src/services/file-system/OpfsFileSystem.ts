@@ -5,8 +5,8 @@
  */
 
 import { Effect, Layer } from "effect"
-import { FileSystemError } from "../errors/index.js"
-import { joinPath, parsePath } from "../utils/path.js"
+import { FileSystemError } from "../../errors/index.js"
+import { joinPath, parsePath } from "../../utils/path.js"
 import {
   FileSystem,
   type FileSystemMakeDirectoryOptions,
