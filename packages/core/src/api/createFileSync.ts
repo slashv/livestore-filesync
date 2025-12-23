@@ -215,11 +215,12 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const FileSystemLive = fileSystem ?? FileSystemOpfsLive()
+  const LocalFileStorageLayer = Layer.provide(FileSystemLive)(LocalFileStorageLive)
 
   const BaseLayer = Layer.mergeAll(
     Layer.scope,
     FileSystemLive,
-    LocalFileStorageLive,
+    LocalFileStorageLayer,
     RemoteStorageLive
   )
 

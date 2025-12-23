@@ -4,7 +4,7 @@
  * @module
  */
 
-import path from "node:path"
+import * as path from "node:path"
 import { Effect, Layer } from "effect"
 import * as PlatformFileSystem from "@effect/platform/FileSystem"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"

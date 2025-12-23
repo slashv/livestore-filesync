@@ -208,10 +208,12 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
           )
         )
 
-        yield* writeMetadataFile(fs, path, {
-          type: file.type || undefined,
-          lastModified: file.lastModified || undefined
-        })
+        const metadata: FileMetadata = {
+          ...(file.type ? { type: file.type } : {}),
+          ...(typeof file.lastModified === "number" ? { lastModified: file.lastModified } : {})
+        }
+
+        yield* writeMetadataFile(fs, path, metadata)
       })
 
     const writeBytes = (
