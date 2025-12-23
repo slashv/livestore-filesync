@@ -19,6 +19,7 @@
     "test": "pnpm -r test",
     "dev": "pnpm -r --parallel dev",
     "dev:vue": "pnpm build:packages && pnpm --filter livestore-filesync-vue-example dev",
+    "dev:react": "pnpm build:packages && pnpm --filter livestore-filesync-react-example dev",
     "changeset-version": "changeset version",
     "changeset-publish": "pnpm build && changeset publish"
   },
