@@ -5,33 +5,14 @@ import { useFileSync } from "@livestore-filesync/react";
 import { tables } from "../livestore/schema.ts";
 import { ImageCard } from "./ImageCard.tsx";
 
-interface FileRecord {
-  id: string;
-  path: string;
-  remoteUrl: string | null;
-  contentHash: string;
-  deletedAt: Date | null;
-}
-
-const filesQuery = queryDb(tables.files.where({ deletedAt: null }), {
-  label: "files",
-});
-
 export const Gallery: React.FC = () => {
   const { store } = useStore();
   const fileSync = useFileSync();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const files = store.useQuery(filesQuery) as unknown as FileRecord[];
-  const [isOnline, setIsOnline] = React.useState(fileSync.isOnline());
-
-  React.useEffect(() => {
-    const interval = window.setInterval(() => {
-      setIsOnline(fileSync.isOnline());
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [fileSync]);
+  const files = store.useQuery(
+    queryDb(tables.files.where({ deletedAt: null }))
+  );
 
   const handleUploadClick = () => {
     inputRef.current?.click();
@@ -74,8 +55,10 @@ export const Gallery: React.FC = () => {
           data-testid="file-input"
         />
         <div className="status" data-testid="status-indicator">
-          <span className={`status-dot${isOnline ? " online" : ""}`} />
-          {isOnline ? "Online" : "Offline"}
+          <span
+            className={`status-dot${fileSync.isOnline() ? " online" : ""}`}
+          />
+          {fileSync.isOnline() ? "Online" : "Offline"}
         </div>
       </div>
 

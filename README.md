@@ -1,4 +1,4 @@
-# livestore-filesync
+# Livestore-Filesync
 
 Local-first file sync for LiveStore apps. Files write to OPFS first, are content-addressable by SHA-256, and sync to any HTTP backend in the background. React and Vue adapters start sync when mounted and expose the same API you get from the core package.
 

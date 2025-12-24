@@ -6,26 +6,10 @@ import { useFileSync } from '@livestore-filesync/vue'
 import { tables } from '../livestore/schema.ts'
 import ImageCard from './ImageCard.vue'
 
-interface FileRecord {
-  id: string
-  path: string
-  remoteUrl: string | null
-  contentHash: string
-  deletedAt: Date | null
-}
-
 const fileSync = useFileSync()
 const inputRef = ref<HTMLInputElement | null>(null)
 
-const filesQuery = queryDb(tables.files.where({ deletedAt: null }), { label: 'files' })
-const files = useQuery(filesQuery) as unknown as ReturnType<typeof ref<FileRecord[]>>
-
-const isOnline = ref(fileSync.isOnline())
-
-// Poll online status
-setInterval(() => {
-  isOnline.value = fileSync.isOnline()
-}, 1000)
+const files = useQuery(queryDb(tables.files.where({ deletedAt: null })))
 
 const handleUploadClick = () => {
   inputRef.value?.click()
@@ -77,9 +61,9 @@ const handleFileChange = async (e: Event) => {
       >
         <span
           class="status-dot"
-          :class="{ online: isOnline }"
+          :class="{ online: fileSync.isOnline() }"
         />
-        {{ isOnline ? 'Online' : 'Offline' }}
+        {{ fileSync.isOnline() ? 'Online' : 'Offline' }}
       </div>
     </div>
 
