@@ -50,7 +50,10 @@ export interface RemoteStorageAdapter {
    * Upload a file to remote storage
    * @returns The URL where the file is stored
    */
-  readonly upload: (file: File) => Effect.Effect<string, UploadError>
+  readonly upload: (
+    file: File,
+    options?: { key?: string }
+  ) => Effect.Effect<string, UploadError>
 
   /**
    * Download a file from remote storage
@@ -90,7 +93,7 @@ export class RemoteStorage extends Context.Tag("RemoteStorage")<
  * Create a generic HTTP-based remote storage adapter
  *
  * This adapter expects:
- * - POST /upload with FormData containing the file
+ * - POST /upload with FormData containing the file (optional `key` field)
  * - GET {url} to download files
  * - DELETE {url} to delete files
  * - GET /health for health checks
@@ -106,11 +109,18 @@ export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorag
     return headers
   }
 
-  const upload = (file: File): Effect.Effect<string, UploadError> =>
+  const upload = (
+    file: File,
+    options: { key?: string } = {}
+  ): Effect.Effect<string, UploadError> =>
     Effect.tryPromise({
       try: async () => {
         const formData = new FormData()
-        formData.append("file", file)
+        const key = options.key ?? file.name
+        formData.append("file", file, key)
+        if (options.key) {
+          formData.append("key", key)
+        }
 
         const response = await fetch(`${config.baseUrl}/upload`, {
           method: "POST",

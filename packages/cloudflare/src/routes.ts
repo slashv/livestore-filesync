@@ -36,17 +36,21 @@ export async function handleHealth(bucket: R2Bucket): Promise<Response> {
 export async function handleUpload(
   request: Request,
   bucket: R2Bucket,
-  origin: string
+  origin: string,
+  filesBasePath: string
 ): Promise<Response> {
   try {
     const formData = await request.formData()
     const file = formData.get('file')
+    const keyField = formData.get('key')
 
     if (!file || !(file instanceof File)) {
       return errorResponse('No file provided', 400)
     }
 
-    const key = file.name
+    const rawKey =
+      typeof keyField === 'string' && keyField.trim().length > 0 ? keyField : file.name
+    const key = rawKey.replace(/^\/+/, '')
     const contentType = file.type || 'application/octet-stream'
     const arrayBuffer = await file.arrayBuffer()
 
@@ -56,8 +60,10 @@ export async function handleUpload(
       },
     })
 
+    const basePath = filesBasePath.endsWith('/') ? filesBasePath.slice(0, -1) : filesBasePath
+    const encodedKey = key.split('/').map(encodeURIComponent).join('/')
     const response: UploadResponse = {
-      url: `${origin}/api/files/${encodeURIComponent(key)}`,
+      url: `${origin}${basePath}/${encodedKey}`,
       key,
       size: arrayBuffer.byteLength,
       contentType,

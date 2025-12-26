@@ -100,7 +100,7 @@ export class LocalFileStorage extends Context.Tag('LocalFileStorage')<
 import { Effect } from 'effect'
 
 export interface RemoteStorageAdapter {
-  readonly upload: (file: File) => Effect.Effect<string, UploadError>  // Returns URL
+  readonly upload: (file: File, options?: { key?: string }) => Effect.Effect<string, UploadError>  // Returns URL
   readonly download: (url: string) => Effect.Effect<File, DownloadError>
   readonly delete: (url: string) => Effect.Effect<void, DeleteError>
   readonly checkHealth: () => Effect.Effect<boolean, never>
@@ -253,7 +253,7 @@ export class SyncExecutor extends Context.Tag('SyncExecutor')<
 **Goal**: Seamless file URL handling
 
 1. **Service Worker Module**
-   - File request interception (`/files/*`)
+   - File request interception (`/livestore-filesync-files/*`)
    - OPFS-first lookup with remote fallback
    - Proper caching headers
 

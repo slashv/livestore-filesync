@@ -53,7 +53,10 @@ export const makeMemoryRemoteStorage = (
 ): RemoteStorageService => {
   const baseUrl = "https://test-storage.local"
 
-  const upload = (file: File): Effect.Effect<string, UploadError> =>
+  const upload = (
+    file: File,
+    uploadOptions: { key?: string } = {}
+  ): Effect.Effect<string, UploadError> =>
     Effect.gen(function*() {
       const options = yield* Ref.get(optionsRef)
 
@@ -74,8 +77,8 @@ export const makeMemoryRemoteStorage = (
           })
       })
 
-      const id = crypto.randomUUID()
-      const url = `${options.baseUrl || baseUrl}/files/${id}`
+      const key = uploadOptions.key ?? crypto.randomUUID()
+      const url = `${options.baseUrl || baseUrl}/${key}`
 
       yield* Ref.update(storeRef, (store) => {
         const newStore = new Map(store)

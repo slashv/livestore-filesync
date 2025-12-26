@@ -5,6 +5,7 @@ import {
   LocalFileStorage,
   LocalFileStorageMemory
 } from "../src/services/local-file-storage/index.js"
+import { joinPath, makeStoreRoot } from "../src/utils/index.js"
 
 describe("LocalFileStorage", () => {
   const runWithStorage = <A, E>(
@@ -177,22 +178,23 @@ describe("LocalFileStorage", () => {
 
   describe("listFiles", () => {
     it("should list files in a directory", async () => {
+      const storeRoot = makeStoreRoot("store-1")
       const result = await runWithStorage(
         Effect.gen(function*() {
           const storage = yield* LocalFileStorage
 
-          yield* storage.writeFile("files/a.txt", new File(["a"], "a.txt"))
-          yield* storage.writeFile("files/b.txt", new File(["b"], "b.txt"))
-          yield* storage.writeFile("files/c.txt", new File(["c"], "c.txt"))
+          yield* storage.writeFile(joinPath(storeRoot, "a.txt"), new File(["a"], "a.txt"))
+          yield* storage.writeFile(joinPath(storeRoot, "b.txt"), new File(["b"], "b.txt"))
+          yield* storage.writeFile(joinPath(storeRoot, "c.txt"), new File(["c"], "c.txt"))
 
-          return yield* storage.listFiles("files")
+          return yield* storage.listFiles(storeRoot)
         })
       )
 
       expect(result).toHaveLength(3)
-      expect(result).toContain("files/a.txt")
-      expect(result).toContain("files/b.txt")
-      expect(result).toContain("files/c.txt")
+      expect(result).toContain(joinPath(storeRoot, "a.txt"))
+      expect(result).toContain(joinPath(storeRoot, "b.txt"))
+      expect(result).toContain(joinPath(storeRoot, "c.txt"))
     })
 
     it("should list files in nested directories", async () => {

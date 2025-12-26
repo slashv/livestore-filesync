@@ -16,7 +16,7 @@ declare const self: ServiceWorkerGlobalScope
  */
 export interface FileSyncSWConfig {
   /**
-   * URL path prefix for file requests (default: '/files/')
+   * URL path prefix for file requests (default: '/livestore-filesync-files/')
    */
   pathPrefix: string
 
@@ -27,18 +27,20 @@ export interface FileSyncSWConfig {
 
   /**
    * Function to get the remote URL for a file path
-   * This is called when the file is not found in OPFS
+   * This is called when the file is not found in OPFS.
+   * The path includes the full storage prefix (no leading slash).
    */
   getRemoteUrl?: (path: string) => Promise<string | null>
 
   /**
    * Optional headers to include when fetching remote files
+   * The path includes the full storage prefix (no leading slash).
    */
   getRemoteHeaders?: (path: string) => Promise<HeadersInit | null> | HeadersInit | null
 }
 
 const defaultConfig: FileSyncSWConfig = {
-  pathPrefix: "/files/",
+  pathPrefix: "/livestore-filesync-files/",
   cacheRemoteResponses: true
 }
 
@@ -110,13 +112,10 @@ async function handleFileRequest(
   config: FileSyncSWConfig
 ): Promise<Response> {
   const url = new URL(request.url)
-  const path = url.pathname.slice(config.pathPrefix.length)
-
-  // Normalize path - remove leading slash if present
-  const normalizedPath = path.startsWith("/") ? path.slice(1) : path
+  const storedPath = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname
 
   // Try to get from OPFS first
-  const localFile = await opfs.getFile(`files/${normalizedPath}`)
+  const localFile = await opfs.getFile(storedPath)
   if (localFile) {
     return new Response(localFile, {
       headers: {
@@ -129,11 +128,11 @@ async function handleFileRequest(
 
   // If not in OPFS, try to get remote URL
   if (config.getRemoteUrl) {
-    const remoteUrl = await config.getRemoteUrl(normalizedPath)
+    const remoteUrl = await config.getRemoteUrl(storedPath)
     if (remoteUrl) {
       try {
         const remoteHeaders = config.getRemoteHeaders
-          ? await config.getRemoteHeaders(normalizedPath)
+          ? await config.getRemoteHeaders(storedPath)
           : null
         const response = await fetch(remoteUrl, remoteHeaders ? { headers: remoteHeaders } : undefined)
         if (response.ok) {
@@ -142,7 +141,7 @@ async function handleFileRequest(
             const clonedResponse = response.clone()
             const data = await clonedResponse.arrayBuffer()
             const mimeType = clonedResponse.headers.get("Content-Type") || "application/octet-stream"
-            await opfs.writeFile(`files/${normalizedPath}`, data, mimeType)
+            await opfs.writeFile(storedPath, data, mimeType)
           }
 
           // Return response with source header
@@ -178,10 +177,10 @@ async function handleFileRequest(
  * import { initFileSyncServiceWorker } from 'livestore-filesync/worker'
  *
  * initFileSyncServiceWorker({
- *   pathPrefix: '/files/',
+ *   pathPrefix: '/livestore-filesync-files/',
  *   getRemoteUrl: async (path) => {
  *     // Look up remote URL from your app state
- *     return `https://cdn.example.com/files/${path}`
+ *     return `https://cdn.example.com/${path}`
  *   }
  * })
  * ```

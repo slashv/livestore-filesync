@@ -5,27 +5,31 @@ import {
   FILES_DIRECTORY,
   joinPath,
   makeStoredPath,
-  parsePath
+  makeStoreRoot,
+  parsePath,
+  sanitizeStoreId
 } from "../src/utils/index.js"
 
 describe("path utilities", () => {
   describe("makeStoredPath", () => {
     it("should create a path with the files directory prefix", () => {
+      const storeId = "store-1"
       const hash = "abc123def456"
-      const path = makeStoredPath(hash)
-      expect(path).toBe(`${FILES_DIRECTORY}/${hash}`)
+      const path = makeStoredPath(storeId, hash)
+      expect(path).toBe(`${FILES_DIRECTORY}/${storeId}/${hash}`)
     })
   })
 
   describe("extractHashFromPath", () => {
     it("should extract hash from a stored path", () => {
+      const storeId = "store-1"
       const hash = "abc123def456"
-      const path = `${FILES_DIRECTORY}/${hash}`
+      const path = `${FILES_DIRECTORY}/${storeId}/${hash}`
       expect(extractHashFromPath(path)).toBe(hash)
     })
 
-    it("should return the path unchanged if it does not have the prefix", () => {
-      const path = "other/path/to/file"
+    it("should return the path unchanged when there are no slashes", () => {
+      const path = "abc123def456"
       expect(extractHashFromPath(path)).toBe(path)
     })
   })
@@ -62,6 +66,19 @@ describe("path utilities", () => {
 
     it("should handle empty input", () => {
       expect(joinPath()).toBe("")
+    })
+  })
+
+  describe("sanitizeStoreId", () => {
+    it("should replace unsafe characters", () => {
+      expect(sanitizeStoreId("store/one")).toBe("store_one")
+      expect(sanitizeStoreId("store:one")).toBe("store_one")
+    })
+  })
+
+  describe("makeStoreRoot", () => {
+    it("should build a store-scoped root path", () => {
+      expect(makeStoreRoot("store/one")).toBe(`${FILES_DIRECTORY}/store_one`)
     })
   })
 })

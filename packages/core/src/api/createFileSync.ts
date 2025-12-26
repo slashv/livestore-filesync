@@ -23,6 +23,7 @@ import {
   RemoteStorage,
   makeHttpRemoteStorage
 } from "../services/index.js"
+import { sanitizeStoreId } from "../utils/index.js"
 import type { FileStorageService } from "../services/file-storage/index.js"
 import type { FileSyncService } from "../services/file-sync/index.js"
 import { defaultConfig as defaultExecutorConfig } from "../services/sync-executor/index.js"
@@ -184,7 +185,8 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let fileSyncService: FileSyncService | null = null
   let fileStorageService: FileStorageService | null = null
 
-  const deps: LiveStoreDeps = { store, schema }
+  const storeId = sanitizeStoreId(store.storeId)
+  const deps: LiveStoreDeps = { store, schema, storeId }
 
   const remoteStorageConfig: { baseUrl: string; headers?: Record<string, string> } = {
     baseUrl: remote.baseUrl

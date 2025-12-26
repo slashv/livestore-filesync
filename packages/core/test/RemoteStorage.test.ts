@@ -5,6 +5,7 @@ import {
   makeMemoryRemoteStorage,
   type MemoryRemoteStorageOptions
 } from "../src/services/remote-file-storage/index.js"
+import { makeStoredPath } from "../src/utils/index.js"
 
 describe("RemoteStorage", () => {
   const createTestStorage = () =>
@@ -21,10 +22,11 @@ describe("RemoteStorage", () => {
         Effect.gen(function*() {
           const { service } = yield* createTestStorage()
           const file = new File(["hello world"], "test.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "abc123def456")
 
-          const url = yield* service.upload(file)
+          const url = yield* service.upload(file, { key })
 
-          expect(url).toContain("https://test-storage.local/files/")
+          expect(url).toBe(`https://test-storage.local/${key}`)
           return url
         })
       )
@@ -37,8 +39,9 @@ describe("RemoteStorage", () => {
         Effect.gen(function*() {
           const { service } = yield* createTestStorage()
           const originalFile = new File(["hello world"], "test.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "abc123def456")
 
-          const url = yield* service.upload(originalFile)
+          const url = yield* service.upload(originalFile, { key })
           const downloadedFile = yield* service.download(url)
 
           return {
@@ -58,7 +61,8 @@ describe("RemoteStorage", () => {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function*() {
           const { service } = yield* createTestStorage()
-          return yield* service.download("https://test-storage.local/files/nonexistent")
+          const key = makeStoredPath("store-1", "nonexistent")
+          return yield* service.download(`https://test-storage.local/${key}`)
         })
       )
 
@@ -75,8 +79,9 @@ describe("RemoteStorage", () => {
         Effect.gen(function*() {
           const { service } = yield* createTestStorage()
           const file = new File(["to delete"], "delete-me.txt")
+          const key = makeStoredPath("store-1", "delete-me")
 
-          const url = yield* service.upload(file)
+          const url = yield* service.upload(file, { key })
           yield* service.delete(url)
 
           // Attempting to download should fail
@@ -137,7 +142,8 @@ describe("RemoteStorage", () => {
 
           // First upload while online
           const file = new File(["test"], "test.txt")
-          const url = yield* service.upload(file)
+          const key = makeStoredPath("store-1", "abc123def456")
+          const url = yield* service.upload(file, { key })
 
           // Then go offline and try to download
           yield* Ref.set(optionsRef, { offline: true })
@@ -160,7 +166,8 @@ describe("RemoteStorage", () => {
 
           // First upload while working
           const file = new File(["test"], "test.txt")
-          const url = yield* service.upload(file)
+          const key = makeStoredPath("store-1", "abc123def456")
+          const url = yield* service.upload(file, { key })
 
           // Enable upload failures
           yield* Ref.set(optionsRef, { failUploads: true })
@@ -170,7 +177,11 @@ describe("RemoteStorage", () => {
           expect(downloaded.name).toBe("test.txt")
 
           // Uploads should fail
-          const uploadResult = yield* Effect.either(service.upload(new File(["new"], "new.txt")))
+          const uploadResult = yield* Effect.either(
+            service.upload(new File(["new"], "new.txt"), {
+              key: makeStoredPath("store-1", "new-file")
+            })
+          )
           expect(uploadResult._tag).toBe("Left")
         })
       )

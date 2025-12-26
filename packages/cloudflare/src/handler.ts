@@ -30,6 +30,7 @@ export function createFileSyncHandler(config: FileSyncHandlerConfig = {}) {
   const {
     bucketBinding = 'FILE_BUCKET',
     basePath = '/api',
+    filesBasePath = '/livestore-filesync-files',
     getAuthToken,
   } = config
 
@@ -45,13 +46,25 @@ export function createFileSyncHandler(config: FileSyncHandlerConfig = {}) {
     const { pathname } = url
     const method = request.method
 
-    // Handle CORS preflight for all /api routes
-    if (method === 'OPTIONS' && pathname.startsWith(basePath)) {
+    const normalizedBasePath = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
+    const normalizedFilesBasePath = filesBasePath.endsWith('/')
+      ? filesBasePath.slice(0, -1)
+      : filesBasePath
+    const filesPrefix = `${normalizedFilesBasePath}/`
+
+    // Handle CORS preflight for all control/data routes
+    if (
+      method === 'OPTIONS' &&
+      (pathname.startsWith(normalizedBasePath) || pathname.startsWith(normalizedFilesBasePath))
+    ) {
       return handleCorsPreflightRequest()
     }
 
     // Check if this is a file sync route
-    if (!pathname.startsWith(basePath)) {
+    if (
+      !pathname.startsWith(normalizedBasePath) &&
+      !pathname.startsWith(normalizedFilesBasePath)
+    ) {
       return null
     }
 
@@ -77,7 +90,9 @@ export function createFileSyncHandler(config: FileSyncHandlerConfig = {}) {
     }
 
     // Route matching
-    const relativePath = pathname.slice(basePath.length)
+    const relativePath = pathname.startsWith(normalizedBasePath)
+      ? pathname.slice(normalizedBasePath.length)
+      : ''
 
     // GET /api/health
     if (method === 'GET' && relativePath === '/health') {
@@ -86,18 +101,18 @@ export function createFileSyncHandler(config: FileSyncHandlerConfig = {}) {
 
     // POST /api/upload
     if (method === 'POST' && relativePath === '/upload') {
-      return handleUpload(request, bucket, url.origin)
+      return handleUpload(request, bucket, url.origin, normalizedFilesBasePath)
     }
 
-    // GET /api/files/:key
-    if (method === 'GET' && relativePath.startsWith('/files/')) {
-      const key = decodeURIComponent(relativePath.slice('/files/'.length))
+    // GET /livestore-filesync-files/:key
+    if (method === 'GET' && pathname.startsWith(filesPrefix)) {
+      const key = decodeURIComponent(pathname.slice(filesPrefix.length))
       return handleDownload(bucket, key)
     }
 
-    // DELETE /api/files/:key
-    if (method === 'DELETE' && relativePath.startsWith('/files/')) {
-      const key = decodeURIComponent(relativePath.slice('/files/'.length))
+    // DELETE /livestore-filesync-files/:key
+    if (method === 'DELETE' && pathname.startsWith(filesPrefix)) {
+      const key = decodeURIComponent(pathname.slice(filesPrefix.length))
       return handleDelete(bucket, key)
     }
 

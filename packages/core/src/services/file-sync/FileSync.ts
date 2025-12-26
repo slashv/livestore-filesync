@@ -17,7 +17,7 @@ import {
   type TransferKind,
   type TransferStatus
 } from "../sync-executor/index.js"
-import { FILES_DIRECTORY } from "../../utils/path.js"
+import { makeStoreRoot } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
 import type {
@@ -123,7 +123,7 @@ export const makeFileSync = (
   Effect.gen(function* () {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
-    const { store, schema } = deps
+    const { store, schema, storeId } = deps
     const { tables, events, queryDb } = schema
 
     // State
@@ -228,7 +228,7 @@ export const makeFileSync = (
     // Cleanup deleted local files when idle
     const cleanDeletedLocalFiles = (): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const diskPaths = yield* localStorage.listFiles(FILES_DIRECTORY).pipe(
+        const diskPaths = yield* localStorage.listFiles(makeStoreRoot(storeId)).pipe(
           Effect.catchAll(() => Effect.succeed<string[]>([]))
         )
 
@@ -376,7 +376,7 @@ export const makeFileSync = (
         }
 
         const localFile = yield* localStorage.readFile(file.path)
-        const remoteUrl = yield* remoteStorage.upload(localFile)
+        const remoteUrl = yield* remoteStorage.upload(localFile, { key: file.path })
 
         yield* updateFileRemoteUrl(fileId, remoteUrl)
 

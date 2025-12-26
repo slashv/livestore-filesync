@@ -5,9 +5,32 @@
  */
 
 /**
+ * Join path segments
+ */
+export const joinPath = (...segments: string[]): string =>
+  segments.filter((s) => s.length > 0).join("/")
+
+/**
  * Base directory for file storage
  */
-export const FILES_DIRECTORY = "files"
+export const FILES_ROOT = "livestore-filesync-files"
+
+/**
+ * Backwards-compatible alias
+ */
+export const FILES_DIRECTORY = FILES_ROOT
+
+/**
+ * Sanitize storeId for filesystem-safe usage
+ */
+export const sanitizeStoreId = (storeId: string): string =>
+  storeId.replace(/[^A-Za-z0-9._-]/g, "_")
+
+/**
+ * Build the store-scoped root path
+ */
+export const makeStoreRoot = (storeId: string): string =>
+  joinPath(FILES_ROOT, sanitizeStoreId(storeId))
 
 /**
  * Generate a storage path from a content hash
@@ -17,25 +40,23 @@ export const FILES_DIRECTORY = "files"
  *
  * @example
  * ```ts
- * makeStoredPath("abc123...") // => "files/abc123..."
+ * makeStoredPath("store-1", "abc123...") // => "livestore-filesync-files/store-1/abc123..."
  * ```
  */
-export const makeStoredPath = (hash: string): string => `${FILES_DIRECTORY}/${hash}`
+export const makeStoredPath = (storeId: string, hash: string): string =>
+  joinPath(makeStoreRoot(storeId), hash)
 
 /**
  * Extract the hash from a stored path
  *
  * @example
  * ```ts
- * extractHashFromPath("files/abc123...") // => "abc123..."
+ * extractHashFromPath("livestore-filesync-files/store-1/abc123...") // => "abc123..."
  * ```
  */
 export const extractHashFromPath = (path: string): string => {
-  const prefix = `${FILES_DIRECTORY}/`
-  if (path.startsWith(prefix)) {
-    return path.slice(prefix.length)
-  }
-  return path
+  const parts = path.split("/").filter((segment) => segment.length > 0)
+  return parts[parts.length - 1] ?? path
 }
 
 /**
@@ -55,5 +76,3 @@ export const parsePath = (path: string): { directory: string; filename: string }
 /**
  * Join path segments
  */
-export const joinPath = (...segments: string[]): string =>
-  segments.filter((s) => s.length > 0).join("/")

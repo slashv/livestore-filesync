@@ -23,10 +23,16 @@ export interface FileSyncHandlerConfig {
   bucketBinding?: string
 
   /**
-   * Base path for file routes
+   * Base path for control routes (health/upload)
    * @default '/api'
    */
   basePath?: string
+
+  /**
+   * Base path for file data routes (download/delete)
+   * @default '/livestore-filesync-files'
+   */
+  filesBasePath?: string
 
   /**
    * Function to get auth token from env

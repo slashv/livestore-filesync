@@ -9,8 +9,8 @@
 ## Current State (Core vs Reference)
 
 Reference web flow (from `reference/vue-livestore-filesync/public/sw.js`):
-- Intercepts same-origin requests to `/files/*`.
-- Tries OPFS first; on miss, fetches remote `FILES_BASE_URL` (default `http://localhost:8787/api/files`).
+- Intercepts same-origin requests to `/livestore-filesync-files/*`.
+- Tries OPFS first; on miss, fetches remote `FILES_BASE_URL` (default `http://localhost:8787/livestore-filesync-files`).
 - Optional bearer token via service worker script query params (`?token=...`).
 - Sets content-type from local file or a small mime guesser; adds `cache-control: no-store`.
 - Does not cache remote responses into OPFS.
@@ -24,7 +24,7 @@ Current core flow:
 ## Options and Trade-offs
 
 ### Option A: Service Worker First (Web)
-Use `file.path` as a URL (`/files/<hash>`), and the SW resolves local vs remote.
+Use `file.path` as a URL (`/livestore-filesync-files/<storeId>/<hash>`), and the SW resolves local vs remote.
 
 Pros:
 - Best ergonomics for UI: no `loadUrl`, no object URL lifecycle.
@@ -66,14 +66,14 @@ Cons:
 Adopt the hybrid approach:
 - Web: encourage the SW path proxy so `file.path` is a direct URL (no `loadUrl`).
 - Node/SSR: provide a helper `fileUrl` or `resolveFileUrl` that falls back to remote or local file system paths.
-- Keep `file.path` as the storage path (`files/<hash>`), but add a tiny helper to make it a URL-safe path (prefix with `/` and optional cache-busting query).
+- Keep `file.path` as the storage path (`livestore-filesync-files/<storeId>/<hash>`), but add a tiny helper to make it a URL-safe path (prefix with `/` and optional cache-busting query).
 
 ## Proposed Implementation Steps
 1. Document the SW-first workflow in README and examples:
    - Register the SW on app startup.
    - Use `<img src={file.path}>` or `<img src={fileUrl(file.path)}>`.
 2. Add a small helper in core (name TBD) to convert a stored path to a URL:
-   - `filePathToUrl(path, { pathPrefix = "/files/" })`.
+   - `filePathToUrl(path, { pathPrefix = "/livestore-filesync-files/" })`.
    - Ensures leading slash and handles optional query params for cache busting.
 3. Extend SW configuration to accept remote base URL and auth headers:
    - Keep query params like reference (`?filesBaseUrl=...&token=...`).
@@ -89,6 +89,6 @@ Adopt the hybrid approach:
 ## Decisions
 - Use query params for SW config (reference-style).
 - Keep current cache behavior in the core SW.
-- Keep `file.path` stored as `files/<hash>`, with a helper that prefixes `/` for URL usage.
+- Keep `file.path` stored as `livestore-filesync-files/<storeId>/<hash>`, with a helper that prefixes `/` for URL usage.
 - Keep SW registration manual.
 - Defer node URL strategy until after web is complete.

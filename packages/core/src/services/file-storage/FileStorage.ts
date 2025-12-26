@@ -86,7 +86,7 @@ export const makeFileStorage = (
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
     const fileSync = yield* FileSync
-    const { store, schema } = deps
+    const { store, schema, storeId } = deps
     const { tables, events, queryDb } = schema
 
     const getFileRecord = (id: string): Effect.Effect<FileRecord | undefined> =>
@@ -146,7 +146,7 @@ export const makeFileStorage = (
         const contentHash = yield* hashFile(file)
 
         // Generate path from hash (content-addressable)
-        const path = makeStoredPath(contentHash)
+        const path = makeStoredPath(storeId, contentHash)
 
         // Write to local storage
         yield* localStorage.writeFile(path, file)
@@ -173,7 +173,7 @@ export const makeFileStorage = (
 
         // Hash new content
         const contentHash = yield* hashFile(file)
-        const path = makeStoredPath(contentHash)
+        const path = makeStoredPath(storeId, contentHash)
 
         // Only update if content changed
         if (contentHash !== existingFile.contentHash) {

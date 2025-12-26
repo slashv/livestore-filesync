@@ -22,7 +22,7 @@ export type SyncSchema = Pick<FileSyncSchema, "tables" | "events"> & {
 /**
  * LiveStore store instance type.
  */
-export type SyncStore = Store<any>
+export type SyncStore = Store<any> & { storeId: string }
 
 /**
  * LiveStore store + schema dependencies.
@@ -30,4 +30,5 @@ export type SyncStore = Store<any>
 export interface LiveStoreDeps {
   store: SyncStore
   schema: SyncSchema
+  storeId: string
 }

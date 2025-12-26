@@ -6,7 +6,7 @@ What you use:
 - Providers for React and Vue with `useFileSync`
 - Schema helper to add file tables/events/materializers to your LiveStore schema
 - File system adapters for web (OPFS) and Node
-- Service worker helper to serve `/files/*` from OPFS before falling back to remote
+- Service worker helper to serve `/livestore-filesync-files/*` from OPFS before falling back to remote
 
 ## Packages
 
@@ -34,7 +34,7 @@ pnpm add @livestore-filesync/core effect
 - Files are stored locally in OPFS and named by SHA-256 so duplicates collapse automatically.
 - Remote sync uses simple HTTP endpoints under `remoteUrl` with optional `authHeaders`.
 - Schema helper adds a `files` table plus local-only state; you merge it with your own tables/events.
-- Service worker helper can proxy `/files/*` to OPFS before hitting remote storage.
+- Service worker helper can proxy `/livestore-filesync-files/*` to OPFS before hitting remote storage.
 
 ## React quick start (see `examples/react-filesync`)
 
@@ -93,7 +93,7 @@ const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
   syncPayloadSchema={SyncPayload}
   syncPayload={{ authToken }}
 >
-  <FileSyncProvider fileSystem={fileSystem} authHeaders={getAuthHeaders} remoteUrl="/api/files">
+  <FileSyncProvider fileSystem={fileSystem} authHeaders={getAuthHeaders} remoteUrl="/api">
     <Gallery />
   </FileSyncProvider>
 </LiveStoreProvider>
@@ -166,7 +166,7 @@ const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
 
 <template>
   <LiveStoreProvider :options="storeOptions">
-    <FileSyncProvider :file-system="fileSystem" :auth-headers="getAuthHeaders" remote-url="/api/files">
+    <FileSyncProvider :file-system="fileSystem" :auth-headers="getAuthHeaders" remote-url="/api">
       <Gallery />
     </FileSyncProvider>
   </LiveStoreProvider>
@@ -201,9 +201,9 @@ Use `@livestore-filesync/core/worker` to serve cached files and prefetch:
 import { initFileSyncServiceWorker } from '@livestore-filesync/core/worker'
 
 initFileSyncServiceWorker({
-  pathPrefix: '/files/',
+  pathPrefix: '/livestore-filesync-files/',
   cacheRemoteResponses: true,
-  getRemoteUrl: async (path) => `https://cdn.example.com/files/${path}`
+  getRemoteUrl: async (path) => `https://cdn.example.com/${path}`
 })
 ```
 
@@ -213,7 +213,7 @@ Register from the main thread:
 import { registerFileSyncServiceWorker, prefetchFiles } from '@livestore-filesync/core/worker'
 
 await registerFileSyncServiceWorker({ scriptUrl: '/sw.js' })
-await prefetchFiles(['/files/example'])
+await prefetchFiles(['/livestore-filesync-files/example'])
 ```
 
 ## Core API (headless usage)
@@ -227,7 +227,7 @@ import { queryDb } from '@livestore/livestore'
 const fileSync = createFileSync({
   store,
   schema: { tables, events, queryDb },
-  remote: { baseUrl: 'https://api.example.com/files', authHeaders: () => ({ Authorization: `Bearer ${token}` }) }
+  remote: { baseUrl: 'https://api.example.com/api', authHeaders: () => ({ Authorization: `Bearer ${token}` }) }
 })
 
 fileSync.start()
@@ -237,10 +237,10 @@ await fileSync.stop()
 
 ## Remote storage expectations
 
-Default remote adapter issues HTTP calls against `remoteUrl`:
-- `POST /files` with file body returns `{ id, path, contentHash, remoteUrl? }`
-- `GET /files/:id` returns file body
-- `DELETE /files/:id` removes remote file
+Default remote adapter issues HTTP calls against `remoteUrl` (control base):
+- `POST /upload` with form data returns `{ url, key, size, contentType }`
+- `GET /health` reports remote storage availability
+File downloads/deletes use the `url` returned by upload (typically `/livestore-filesync-files/{storeId}/{hash}`).
 
 Swap in your own HTTP endpoint or adapter if those routes differ.
 
