@@ -37,11 +37,6 @@ catalogs:
       specifier: 3.18.4
       version: 3.18.4
 
-patchedDependencies:
-  '@changesets/get-github-info@0.6.0':
-    hash: 1387c42d40315dc7805094fb3085da092ec802de277560db46fb53567ba583ec
-    path: patches/@changesets__get-github-info@0.6.0.patch
-
 importers:
 
   .:
@@ -128,18 +123,12 @@ importers:
 
   examples/react-filesync:
     dependencies:
-      '@livestore-filesync/adapter-web':
-        specifier: workspace:*
-        version: link:../../packages/adapter-web
       '@livestore-filesync/cloudflare':
         specifier: workspace:*
         version: link:../../packages/cloudflare
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@livestore-filesync/react':
-        specifier: workspace:*
-        version: link:../../packages/react
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -198,18 +187,12 @@ importers:
 
   examples/vue-filesync:
     dependencies:
-      '@livestore-filesync/adapter-web':
-        specifier: workspace:*
-        version: link:../../packages/adapter-web
       '@livestore-filesync/cloudflare':
         specifier: workspace:*
         version: link:../../packages/cloudflare
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@livestore-filesync/vue':
-        specifier: workspace:*
-        version: link:../../packages/vue
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -333,59 +316,6 @@ importers:
       '@types/node':
         specifier: ^22.18.10
         version: 22.18.10
-
-  packages/react:
-    dependencies:
-      '@livestore-filesync/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@livestore/livestore':
-        specifier: 'catalog:'
-        version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
-      '@livestore/react':
-        specifier: 'catalog:'
-        version: 0.4.0-dev.20(2a6329437386bb2bc7745c1771bb4bfa)
-      '@types/react':
-        specifier: ^19.1.13
-        version: 19.2.7
-      '@types/react-dom':
-        specifier: ^19.1.9
-        version: 19.2.3(@types/react@19.2.7)
-      effect:
-        specifier: 'catalog:'
-        version: 3.18.4
-      react:
-        specifier: ^19.1.0
-        version: 19.2.3
-      react-dom:
-        specifier: ^19.1.0
-        version: 19.2.3(react@19.2.3)
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
-
-  packages/vue:
-    dependencies:
-      '@livestore-filesync/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@livestore/livestore':
-        specifier: 'catalog:'
-        version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
-      effect:
-        specifier: 'catalog:'
-        version: 3.18.4
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
-      vue:
-        specifier: ^3.5.0
-        version: 3.5.26(typescript@5.9.3)
-      vue-livestore:
-        specifier: 0.3.0-0
-        version: 0.3.0-0(fd035a3211ee8bef4a29eedf4d9d23ca)
 
 packages:
 
@@ -4166,7 +4096,7 @@ snapshots:
 
   '@changesets/changelog-github@0.5.1':
     dependencies:
-      '@changesets/get-github-info': 0.6.0(patch_hash=1387c42d40315dc7805094fb3085da092ec802de277560db46fb53567ba583ec)
+      '@changesets/get-github-info': 0.6.0
       '@changesets/types': 6.1.0
       dotenv: 8.6.0
     transitivePeerDependencies:
@@ -4226,7 +4156,7 @@ snapshots:
       picocolors: 1.1.1
       semver: 7.7.3
 
-  '@changesets/get-github-info@0.6.0(patch_hash=1387c42d40315dc7805094fb3085da092ec802de277560db46fb53567ba583ec)':
+  '@changesets/get-github-info@0.6.0':
     dependencies:
       dataloader: 1.4.0
       node-fetch: 2.7.0
@@ -7864,47 +7794,6 @@ snapshots:
     dependencies:
       '@livestore/adapter-web': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
       '@livestore/devtools-vite': 0.4.0-dev.20(ec67c1295f456dc88cc8c5c86d17f141)
-      '@livestore/livestore': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
-      '@livestore/peer-deps': 0.4.0-dev.20(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@opentelemetry/semantic-conventions@1.38.0)
-      '@livestore/sync-cf': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
-      '@livestore/wa-sqlite': 0.4.0-dev.20
-      vue: 3.5.26(typescript@5.9.3)
-    transitivePeerDependencies:
-      - '@effect/ai'
-      - '@effect/cli'
-      - '@effect/cluster'
-      - '@effect/experimental'
-      - '@effect/opentelemetry'
-      - '@effect/platform'
-      - '@effect/platform-browser'
-      - '@effect/platform-bun'
-      - '@effect/platform-node'
-      - '@effect/printer'
-      - '@effect/printer-ansi'
-      - '@effect/rpc'
-      - '@effect/sql'
-      - '@effect/typeclass'
-      - '@effect/workflow'
-      - '@opentelemetry/api'
-      - '@opentelemetry/resources'
-      - '@opentelemetry/sdk-logs'
-      - '@opentelemetry/sdk-metrics'
-      - '@opentelemetry/sdk-trace-base'
-      - '@opentelemetry/sdk-trace-node'
-      - '@opentelemetry/sdk-trace-web'
-      - '@opentelemetry/semantic-conventions'
-      - bufferutil
-      - effect
-      - ioredis
-      - lmdb
-      - typescript
-      - utf-8-validate
-      - vite
-
-  vue-livestore@0.3.0-0(fd035a3211ee8bef4a29eedf4d9d23ca):
-    dependencies:
-      '@livestore/adapter-web': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
-      '@livestore/devtools-vite': 0.4.0-dev.20(376868e2fdfb3089ddf66f343ee4472a)
       '@livestore/livestore': 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
       '@livestore/peer-deps': 0.4.0-dev.20(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@opentelemetry/semantic-conventions@1.38.0)
       '@livestore/sync-cf': 0.4.0-dev.20(6a0f952861c4aa649c307396c2b3d4f2)
