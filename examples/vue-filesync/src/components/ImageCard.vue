@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
 import { computed } from 'vue'
-import { deleteFile } from '@livestore-filesync/core'
+import { deleteFile, readFile, updateFile } from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
+import { invertImageFile } from '../utils/image.utils'
 
 const props = defineProps<{
   file: FileType
@@ -19,6 +20,16 @@ const handleDelete = async () => {
     await deleteFile(props.file.id)
   } catch (error) {
     console.error('Failed to delete:', error)
+  }
+}
+
+const handleEdit = async () => {
+  try {
+    const srcFile = await readFile(props.file.path)
+    const edited = await invertImageFile(srcFile)
+    await updateFile(props.file.id, edited)
+  } catch (error) {
+    console.error('Failed to edit:', error)
   }
 }
 
@@ -50,6 +61,13 @@ const filename = computed(() => props.file.path.split('/').pop())
         >
           {{ localFile?.downloadStatus ?? 'Pending' }}
         </span>
+        <button
+          type="button"
+          @click="handleEdit"
+          data-testid="edit-button"
+        >
+          Edit
+        </button>
         <button
           type="button"
           @click="handleDelete"

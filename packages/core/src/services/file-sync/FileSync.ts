@@ -451,35 +451,38 @@ export const makeFileSync = (
               downloadStatus: remoteMismatch ? "pending" : "done",
               uploadStatus: "done"
             }
-          } else if (file.remoteUrl) {
-            // Not known locally but exists remotely: mark as pending download
-            nextLocalFilesState[file.id] = {
-              path: file.path,
-              localHash: "",
-              downloadStatus: "pending",
-              uploadStatus: "done",
-              lastSyncError: ""
-            }
           }
         }
 
-        // Pass 2: detect local files that need upload (disk I/O)
+        // Pass 2: detect local files or mark downloads when no local state exists (disk I/O)
         const additions: LocalFilesState = {}
 
         for (const file of files) {
           if (file.id in nextLocalFilesState) continue
 
           const exists = yield* localStorage.fileExists(file.path)
-          if (!exists) continue
+          if (!exists) {
+            if (file.remoteUrl) {
+              additions[file.id] = {
+                path: file.path,
+                localHash: "",
+                downloadStatus: "pending",
+                uploadStatus: "done",
+                lastSyncError: ""
+              }
+            }
+            continue
+          }
 
           const f = yield* localStorage.readFile(file.path)
           const localHash = yield* hashFile(f)
+          const remoteMismatch = localHash !== file.contentHash
           const shouldUpload = !file.remoteUrl
 
           additions[file.id] = {
             path: file.path,
             localHash,
-            downloadStatus: "done",
+            downloadStatus: remoteMismatch && file.remoteUrl ? "pending" : "done",
             uploadStatus: shouldUpload ? "pending" : "done",
             lastSyncError: ""
           }

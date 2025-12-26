@@ -116,7 +116,12 @@ export const makeFileStorage = (
         )
       })
 
-    const updateFileRecord = (params: { id: string; path: string; contentHash: string }) =>
+    const updateFileRecord = (params: {
+      id: string
+      path: string
+      contentHash: string
+      remoteUrl?: string
+    }) =>
       Effect.sync(() => {
         const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: params.id })))
         const file = files[0]
@@ -125,7 +130,7 @@ export const makeFileStorage = (
           events.fileUpdated({
             id: params.id,
             path: params.path,
-            remoteUrl: file.remoteUrl,
+            remoteUrl: params.remoteUrl ?? file.remoteUrl,
             contentHash: params.contentHash,
             updatedAt: new Date()
           })
@@ -180,8 +185,8 @@ export const makeFileStorage = (
           // Write new file to local storage
           yield* localStorage.writeFile(path, file)
 
-          // Update file record
-          yield* updateFileRecord({ id: fileId, path, contentHash })
+          // Update file record (clear remoteUrl until upload completes)
+          yield* updateFileRecord({ id: fileId, path, contentHash, remoteUrl: "" })
 
           // Clean up old file if path changed
           if (path !== existingFile.path) {

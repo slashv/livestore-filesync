@@ -108,4 +108,51 @@ test.describe('File Sync', () => {
     await context1.close()
     await context2.close()
   })
+
+  test('should sync edited images across browsers', async ({ browser }) => {
+    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const url = `/?storeId=${storeId}`
+
+    const context1 = await browser.newContext()
+    const context2 = await browser.newContext()
+
+    const page1 = await context1.newPage()
+    const page2 = await context2.newPage()
+
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStore(page1)
+    await waitForLiveStore(page2)
+
+    const testImage = createTestImage()
+    await page1.locator('input[type="file"]').setInputFiles(testImage)
+
+    const page1Image = page1.locator('[data-testid="file-image"]')
+    const page2Image = page2.locator('[data-testid="file-image"]')
+
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+    await waitForImageLoaded(page1Image, 10000)
+
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    })
+    await waitForImageLoaded(page2Image, 15000)
+
+    const initialSrc = await page2Image.getAttribute('src')
+    expect(initialSrc).not.toBeNull()
+
+    await page1.locator('[data-testid="edit-button"]').click()
+
+    await expect
+      .poll(async () => page2Image.getAttribute('src'), { timeout: 15000 })
+      .not.toBe(initialSrc)
+
+    await waitForImageLoaded(page2Image, 15000)
+
+    await context1.close()
+    await context2.close()
+  })
 })
