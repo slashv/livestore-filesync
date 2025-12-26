@@ -1,13 +1,12 @@
 import React from "react";
 import { queryDb } from "@livestore/livestore";
 import { useStore } from "@livestore/react";
-import { useFileSync } from "@livestore-filesync/react";
+import { isOnline, saveFile } from "@livestore-filesync/core";
 import { tables } from "../livestore/schema.ts";
 import { ImageCard } from "./ImageCard.tsx";
 
 export const Gallery: React.FC = () => {
   const { store } = useStore();
-  const fileSync = useFileSync();
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const files = store.useQuery(
@@ -25,7 +24,7 @@ export const Gallery: React.FC = () => {
     if (!file) return;
 
     try {
-      const result = await fileSync.saveFile(file);
+      const result = await saveFile(file);
       console.log("File saved:", result);
     } catch (error) {
       console.error("Failed to save file:", error);
@@ -56,9 +55,9 @@ export const Gallery: React.FC = () => {
         />
         <div className="status" data-testid="status-indicator">
           <span
-            className={`status-dot${fileSync.isOnline() ? " online" : ""}`}
+            className={`status-dot${isOnline() ? " online" : ""}`}
           />
-          {fileSync.isOnline() ? "Online" : "Offline"}
+          {isOnline() ? "Online" : "Offline"}
         </div>
       </div>
 

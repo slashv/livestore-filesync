@@ -1,5 +1,8 @@
 # Stage 2
 
+Note: React/Vue adapter packages have been removed in favor of the core singleton API.
+This document is retained for historical context and may be out of date.
+
 ## Simplify framework adapters
 
 The current Vue and React adapters re-implement way too much custom code. These should be super light. The only component they should really need to implement is the FileSyncProvider and even that should be extremely light weight. If you look at vue-livestore-filesync/src/components/file-sync-provider.vue you can see how simple it is for Vue.

@@ -2,11 +2,10 @@
 import { ref } from 'vue'
 import { queryDb } from '@livestore/livestore'
 import { useQuery } from 'vue-livestore'
-import { useFileSync } from '@livestore-filesync/vue'
+import { isOnline, saveFile } from '@livestore-filesync/core'
 import { tables } from '../livestore/schema.ts'
 import ImageCard from './ImageCard.vue'
 
-const fileSync = useFileSync()
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const files = useQuery(queryDb(tables.files.where({ deletedAt: null })))
@@ -21,7 +20,7 @@ const handleFileChange = async (e: Event) => {
   if (!file) return
 
   try {
-    const result = await fileSync.saveFile(file)
+    const result = await saveFile(file)
     console.log('File saved:', result)
   } catch (error) {
     console.error('Failed to save file:', error)
@@ -61,9 +60,9 @@ const handleFileChange = async (e: Event) => {
       >
         <span
           class="status-dot"
-          :class="{ online: fileSync.isOnline() }"
+          :class="{ online: isOnline() }"
         />
-        {{ fileSync.isOnline() ? 'Online' : 'Offline' }}
+        {{ isOnline() ? 'Online' : 'Offline' }}
       </div>
     </div>
 

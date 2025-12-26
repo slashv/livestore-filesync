@@ -1,13 +1,12 @@
 import { makePersistedAdapter } from '@livestore/adapter-web'
 import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker'
 import { LiveStoreProvider } from '@livestore/react'
-import { FileSyncProvider } from '@livestore-filesync/react'
-import { makeAdapter as makeFileSystemAdapter } from '@livestore-filesync/adapter-web'
 import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 
 import { schema, SyncPayload } from './livestore/schema.ts'
 import LiveStoreWorker from './livestore.worker.ts?worker'
 import { Gallery } from './components/Gallery.tsx'
+import { FileSyncProvider } from './components/FileSyncProvider.tsx'
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
@@ -18,8 +17,6 @@ const adapter = makePersistedAdapter({
   worker: LiveStoreWorker,
   sharedWorker: LiveStoreSharedWorker,
 })
-
-const fileSystem = makeFileSystemAdapter()
 
 const authToken = import.meta.env.VITE_AUTH_TOKEN
 
@@ -40,7 +37,7 @@ export const App = () => (
     renderLoading={() => <div className="loading">Loading...</div>}
     batchUpdates={batchUpdates}
   >
-    <FileSyncProvider authHeaders={getAuthHeaders} fileSystem={fileSystem}>
+    <FileSyncProvider authHeaders={getAuthHeaders}>
       <Gallery />
     </FileSyncProvider>
   </LiveStoreProvider>

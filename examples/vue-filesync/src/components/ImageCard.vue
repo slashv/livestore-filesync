@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
 import { computed } from 'vue'
-import { useFileSync } from '@livestore-filesync/vue'
+import { deleteFile } from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
 
@@ -9,7 +9,6 @@ const props = defineProps<{
   file: FileType
 }>()
 
-const fileSync = useFileSync()
 const { store } = useStore()
 
 const { localFiles } = store.useClientDocument(tables.localFileState)
@@ -17,7 +16,7 @@ const localFile = computed(() => localFiles.value[props.file.id])
 
 const handleDelete = async () => {
   try {
-    await fileSync.deleteFile(props.file.id)
+    await deleteFile(props.file.id)
   } catch (error) {
     console.error('Failed to delete:', error)
   }

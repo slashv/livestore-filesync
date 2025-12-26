@@ -1,7 +1,9 @@
 import { makeSchema, Schema, State } from '@livestore/livestore'
-import { fileSyncSchema } from '@livestore-filesync/react/schema'
+import { createFileSyncSchema } from '@livestore-filesync/core/schema'
 
 export const SyncPayload = Schema.Struct({ authToken: Schema.String })
+
+export const fileSyncSchema = createFileSyncSchema()
 
 export const tables = {
   ...fileSyncSchema.tables

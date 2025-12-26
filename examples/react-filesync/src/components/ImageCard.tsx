@@ -1,18 +1,17 @@
 import { useStore } from '@livestore/react'
-import { useFileSync } from '@livestore-filesync/react'
+import { deleteFile } from '@livestore-filesync/core'
 import { tables } from '../livestore/schema.ts'
 import type { FileType } from '../types'
 
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const { store } = useStore()
-  const fileSync = useFileSync()
 
   const [localFileState] = store.useClientDocument(tables.localFileState)
   const localFile = localFileState?.localFiles?.[file.id]
 
   const handleDelete = async () => {
     try {
-      await fileSync.deleteFile(file.id)
+      await deleteFile(file.id)
     } catch (error) {
       console.error('Failed to delete:', error)
     }

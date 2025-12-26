@@ -1,9 +1,9 @@
 # Livestore-Filesync
 
-Local-first file sync for LiveStore apps. Files write to OPFS first, are content-addressable by SHA-256, and sync to any HTTP backend in the background. React and Vue adapters start sync when mounted and expose the same API you get from the core package.
+Local-first file sync for LiveStore apps. Files write to OPFS first, are content-addressable by SHA-256, and sync to any HTTP backend in the background. Initialize once with the core singleton helpers and import file operations anywhere.
 
 What you use:
-- Providers for React and Vue with `useFileSync`
+- Core singleton helpers (`initFileSync`, `saveFile`, `readFile`, etc.)
 - Schema helper to add file tables/events/materializers to your LiveStore schema
 - File system adapters for web (OPFS) and Node
 - Service worker helper to serve `/livestore-filesync-files/*` from OPFS before falling back to remote
@@ -11,22 +11,18 @@ What you use:
 ## Packages
 
 - `@livestore-filesync/core` — framework-agnostic API, schema helper, service worker utilities
-- `@livestore-filesync/react` — React provider + schema preset
-- `@livestore-filesync/vue` — Vue provider + schema preset
 - `@livestore-filesync/adapter-web` — OPFS filesystem layer for browsers
 - `@livestore-filesync/adapter-node` — filesystem layer for Node/CLI tooling
+- `@livestore-filesync/cloudflare` — Cloudflare Worker handler for file storage endpoints
 
 ## Install
 
 ```bash
-# React (web)
-pnpm add @livestore-filesync/react @livestore-filesync/adapter-web @livestore/react @livestore/adapter-web @livestore/livestore effect
+# Web app (React/Vue/etc)
+pnpm add @livestore-filesync/core @livestore/livestore effect
 
-# Vue (web)
-pnpm add @livestore-filesync/vue @livestore-filesync/adapter-web vue-livestore @livestore/adapter-web @livestore/livestore effect
-
-# Core only (headless usage or custom runtime)
-pnpm add @livestore-filesync/core effect
+# Node
+pnpm add @livestore-filesync/core @livestore-filesync/adapter-node @livestore/livestore effect
 ```
 
 ## How it works (short version)
@@ -42,7 +38,9 @@ pnpm add @livestore-filesync/core effect
 
 ```typescript
 import { makeSchema, Schema, SessionIdSymbol, State } from '@livestore/livestore'
-import { fileSyncSchema } from '@livestore-filesync/react/schema'
+import { createFileSyncSchema } from '@livestore-filesync/core/schema'
+
+const fileSyncSchema = createFileSyncSchema()
 
 const uiState = State.SQLite.clientDocument({
   name: 'uiState',
@@ -66,15 +64,16 @@ export const schema = makeSchema({ events, state })
 export const SyncPayload = Schema.Struct({ authToken: Schema.String })
 ```
 
-2) Wire LiveStore and FileSync providers:
+2) Wire LiveStore and initialize FileSync once:
 
 ```tsx
+import { useEffect } from 'react'
 import { LiveStoreProvider } from '@livestore/react'
-import { FileSyncProvider } from '@livestore-filesync/react'
 import { makePersistedAdapter } from '@livestore/adapter-web'
 import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker'
 import LiveStoreWorker from './livestore.worker.ts?worker'
-import { makeAdapter as makeFileSystemAdapter } from '@livestore-filesync/adapter-web'
+import { useStore } from '@livestore/react'
+import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@livestore-filesync/core'
 import { schema, SyncPayload } from './livestore/schema'
 
 const adapter = makePersistedAdapter({
@@ -82,9 +81,21 @@ const adapter = makePersistedAdapter({
   worker: LiveStoreWorker,
   sharedWorker: LiveStoreSharedWorker
 })
-const fileSystem = makeFileSystemAdapter()
 const authToken = import.meta.env.VITE_AUTH_TOKEN
 const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
+
+const FileSyncProvider = ({ children }) => {
+  const { store } = useStore()
+  initFileSync(store, { remote: { baseUrl: '/api', authHeaders: getAuthHeaders } })
+  useEffect(() => {
+    startFileSync()
+    return () => {
+      stopFileSync()
+      void disposeFileSync()
+    }
+  }, [store])
+  return children
+}
 
 <LiveStoreProvider
   schema={schema}
@@ -93,27 +104,26 @@ const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
   syncPayloadSchema={SyncPayload}
   syncPayload={{ authToken }}
 >
-  <FileSyncProvider fileSystem={fileSystem} authHeaders={getAuthHeaders} remoteUrl="/api">
+  <FileSyncProvider>
     <Gallery />
   </FileSyncProvider>
 </LiveStoreProvider>
 ```
 
-3) Use the sync API anywhere under the provider:
+3) Use the sync API anywhere after initialization:
 
 ```tsx
-import { useFileSync } from '@livestore-filesync/react'
+import { saveFile, getFileUrl } from '@livestore-filesync/core'
 import { useStore } from '@livestore/react'
 import { queryDb } from '@livestore/livestore'
 import { tables } from './livestore/schema'
 
-const fileSync = useFileSync()
 const { store } = useStore()
 const files = store.useQuery(queryDb(tables.files.where({ deletedAt: null })))
 
 const onFile = async (file: File) => {
-  const result = await fileSync.saveFile(file)
-  const url = await fileSync.getFileUrl(result.path)
+  const result = await saveFile(file)
+  const url = await getFileUrl(result.path)
   console.log({ result, url })
 }
 ```
@@ -124,7 +134,9 @@ const onFile = async (file: File) => {
 
 ```typescript
 import { makeSchema, Schema, SessionIdSymbol, State } from '@livestore/livestore'
-import { fileSyncSchema } from '@livestore-filesync/vue'
+import { createFileSyncSchema } from '@livestore-filesync/core/schema'
+
+const fileSyncSchema = createFileSyncSchema()
 
 const uiState = State.SQLite.clientDocument({
   name: 'uiState',
@@ -145,20 +157,42 @@ const state = State.SQLite.makeState({ tables, materializers })
 export const schema = makeSchema({ events, state })
 ```
 
-2) Wire providers:
+2) Create a local FileSyncProvider component:
+
+```vue
+<script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
+import { useStore } from 'vue-livestore'
+import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@livestore-filesync/core'
+
+const props = defineProps<{ authHeaders?: () => HeadersInit }>()
+
+const { store } = useStore()
+initFileSync(store, { remote: { baseUrl: '/api', authHeaders: props.authHeaders } })
+onMounted(() => startFileSync())
+onUnmounted(() => {
+  stopFileSync()
+  void disposeFileSync()
+})
+</script>
+
+<template>
+  <slot />
+</template>
+```
+
+3) Use it under LiveStoreProvider:
 
 ```vue
 <script setup lang="ts">
 import { LiveStoreProvider } from 'vue-livestore'
-import { FileSyncProvider } from '@livestore-filesync/vue'
 import { makePersistedAdapter } from '@livestore/adapter-web'
 import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker'
 import LiveStoreWorker from './livestore.worker.ts?worker'
-import { makeAdapter as makeFileSystemAdapter } from '@livestore-filesync/adapter-web'
 import { schema } from './livestore/schema'
+import FileSyncProvider from './components/FileSyncProvider.vue'
 
 const adapter = makePersistedAdapter({ storage: { type: 'opfs' }, worker: LiveStoreWorker, sharedWorker: LiveStoreSharedWorker })
-const fileSystem = makeFileSystemAdapter()
 const authToken = import.meta.env.VITE_AUTH_TOKEN
 const storeOptions = { schema, adapter, storeId: 'vue_filesync_store', syncPayload: { authToken } }
 const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
@@ -166,23 +200,22 @@ const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
 
 <template>
   <LiveStoreProvider :options="storeOptions">
-    <FileSyncProvider :file-system="fileSystem" :auth-headers="getAuthHeaders" remote-url="/api">
+    <FileSyncProvider :auth-headers="getAuthHeaders">
       <Gallery />
     </FileSyncProvider>
   </LiveStoreProvider>
 </template>
 ```
 
-3) Use the sync API:
+4) Use the sync API:
 
 ```vue
 <script setup lang="ts">
-import { useFileSync } from '@livestore-filesync/vue'
+import { saveFile, getFileUrl } from '@livestore-filesync/core'
 
-const fileSync = useFileSync()
 const save = async (file: File) => {
-  const result = await fileSync.saveFile(file)
-  const url = await fileSync.getFileUrl(result.path)
+  const result = await saveFile(file)
+  const url = await getFileUrl(result.path)
   console.log({ result, url })
 }
 </script>
@@ -216,9 +249,19 @@ await registerFileSyncServiceWorker({ scriptUrl: '/sw.js' })
 await prefetchFiles(['/livestore-filesync-files/example'])
 ```
 
-## Core API (headless usage)
+## Core API (singleton or instance)
 
-You can skip the React/Vue providers and call the core factory directly:
+Singleton helpers (recommended for apps with a single store):
+
+```typescript
+import { initFileSync, startFileSync, saveFile } from '@livestore-filesync/core'
+
+initFileSync(store, { remote: { baseUrl: 'https://api.example.com/api' } })
+startFileSync()
+const result = await saveFile(file)
+```
+
+Create a dedicated instance when you need multiple stores or custom wiring:
 
 ```typescript
 import { createFileSync } from '@livestore-filesync/core'

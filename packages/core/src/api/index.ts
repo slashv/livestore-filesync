@@ -20,3 +20,19 @@ export {
   type SyncLocalFilesState,
   type SyncTransferStatus
 } from "./createFileSync.js"
+
+// Singleton helpers
+export {
+  initFileSync,
+  startFileSync,
+  stopFileSync,
+  disposeFileSync,
+  saveFile,
+  updateFile,
+  deleteFile,
+  readFile,
+  getFileUrl,
+  isOnline,
+  triggerSync,
+  type InitFileSyncConfig
+} from "./singleton.js"
