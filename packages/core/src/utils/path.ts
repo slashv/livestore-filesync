@@ -47,6 +47,18 @@ export const makeStoredPath = (storeId: string, hash: string): string =>
   joinPath(makeStoreRoot(storeId), hash)
 
 /**
+ * Strip the files root prefix from a stored path for remote storage keys.
+ */
+export const stripFilesRoot = (path: string): string => {
+  const normalized = path.startsWith("/") ? path.slice(1) : path
+  const prefix = `${FILES_ROOT}/`
+  if (normalized.startsWith(prefix)) {
+    return normalized.slice(prefix.length)
+  }
+  return normalized
+}
+
+/**
  * Extract the hash from a stored path
  *
  * @example

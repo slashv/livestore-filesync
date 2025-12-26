@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -32,6 +32,18 @@ async function waitForLiveStore(page: Page): Promise<void> {
   await page.waitForSelector('[data-testid="gallery"]', { timeout: 30000 })
 }
 
+async function waitForImageLoaded(
+  locator: Locator,
+  timeoutMs = 10000
+): Promise<void> {
+  await expect(locator).toBeVisible({ timeout: timeoutMs })
+  await expect.poll(
+    async () =>
+      locator.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+    { timeout: timeoutMs }
+  ).toBe(true)
+}
+
 test.describe('File Sync', () => {
   test('should add a file', async ({ page }) => {
     // Use a unique storeId for test isolation
@@ -50,6 +62,7 @@ test.describe('File Sync', () => {
     await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
       timeout: 10000,
     })
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
   })
 
   test('should sync files across browsers', async ({ browser }) => {
@@ -83,17 +96,13 @@ test.describe('File Sync', () => {
     await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, {
       timeout: 10000,
     })
-    await expect(page1.locator('[data-testid="file-image"]')).toBeVisible({
-      timeout: 10000,
-    })
+    await waitForImageLoaded(page1.locator('[data-testid="file-image"]'), 10000)
 
     // Verify file syncs to browser 2 with image loaded
     await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
       timeout: 15000,
     })
-    await expect(page2.locator('[data-testid="file-image"]')).toBeVisible({
-      timeout: 15000,
-    })
+    await waitForImageLoaded(page2.locator('[data-testid="file-image"]'), 15000)
 
     // Cleanup
     await context1.close()

@@ -17,7 +17,7 @@ import {
   type TransferKind,
   type TransferStatus
 } from "../sync-executor/index.js"
-import { makeStoreRoot } from "../../utils/path.js"
+import { makeStoreRoot, stripFilesRoot } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
 import type {
@@ -376,7 +376,8 @@ export const makeFileSync = (
         }
 
         const localFile = yield* localStorage.readFile(file.path)
-        const remoteUrl = yield* remoteStorage.upload(localFile, { key: file.path })
+        const remoteKey = stripFilesRoot(file.path)
+        const remoteUrl = yield* remoteStorage.upload(localFile, { key: remoteKey })
 
         yield* updateFileRemoteUrl(fileId, remoteUrl)
 
