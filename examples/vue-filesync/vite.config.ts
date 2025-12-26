@@ -9,7 +9,7 @@ const defaultPort = 60004
 export default defineConfig({
   server: {
     port: process.env.PORT ? Number(process.env.PORT) : defaultPort,
-    fs: { strict: false },
+    fs: { strict: false }
   },
   worker: { format: 'es' },
   plugins: [

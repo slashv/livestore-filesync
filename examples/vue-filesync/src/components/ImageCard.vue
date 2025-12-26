@@ -34,6 +34,7 @@ const filename = computed(() => props.file.path.split('/').pop())
     <div class="image-container">
       <img
         :src="file.path"
+        :alt="file.path"
         class="image"
         data-testid="file-image"
       />

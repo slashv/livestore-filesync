@@ -30,6 +30,11 @@ export interface FileSyncSWConfig {
    * This is called when the file is not found in OPFS
    */
   getRemoteUrl?: (path: string) => Promise<string | null>
+
+  /**
+   * Optional headers to include when fetching remote files
+   */
+  getRemoteHeaders?: (path: string) => Promise<HeadersInit | null> | HeadersInit | null
 }
 
 const defaultConfig: FileSyncSWConfig = {
@@ -127,7 +132,10 @@ async function handleFileRequest(
     const remoteUrl = await config.getRemoteUrl(normalizedPath)
     if (remoteUrl) {
       try {
-        const response = await fetch(remoteUrl)
+        const remoteHeaders = config.getRemoteHeaders
+          ? await config.getRemoteHeaders(normalizedPath)
+          : null
+        const response = await fetch(remoteUrl, remoteHeaders ? { headers: remoteHeaders } : undefined)
         if (response.ok) {
           // Cache in OPFS if enabled
           if (config.cacheRemoteResponses) {

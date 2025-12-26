@@ -29,6 +29,11 @@ export interface RegisterOptions {
   updateViaCache?: ServiceWorkerUpdateViaCache
 
   /**
+   * Script type
+   */
+  type?: "classic" | "module"
+
+  /**
    * Callback when registration succeeds
    */
   onSuccess?: (registration: ServiceWorkerRegistration) => void
@@ -73,6 +78,7 @@ export async function registerFileSyncServiceWorker(
     scriptUrl = "/file-sync-sw.js",
     scope = "/",
     updateViaCache = "imports",
+    type,
     onSuccess,
     onError,
     onUpdate
@@ -87,7 +93,8 @@ export async function registerFileSyncServiceWorker(
   try {
     const registration = await navigator.serviceWorker.register(scriptUrl, {
       scope,
-      updateViaCache
+      updateViaCache,
+      ...(type ? { type } : {})
     })
 
     // Check for updates
