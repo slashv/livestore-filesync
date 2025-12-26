@@ -1,50 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useStore } from 'vue-livestore'
+import { tables } from '../livestore/schema'
+import { computed } from 'vue'
 import { useFileSync } from '@livestore-filesync/vue'
-import { tables } from '../livestore/schema.ts'
-
-interface FileRecord {
-  id: string
-  path: string
-  remoteUrl: string | null
-  contentHash: string
-  deletedAt: Date | null
-}
+import { useStore } from 'vue-livestore'
+import type { FileType } from '../types'
 
 const props = defineProps<{
-  file: FileRecord
+  file: FileType
 }>()
 
-const { store } = useStore()
 const fileSync = useFileSync()
-const url = ref<string | null>(null)
-const isLoading = ref(true)
+const { store } = useStore()
+
 const { localFiles } = store.useClientDocument(tables.localFileState)
 const localFile = computed(() => localFiles.value[props.file.id])
-
-// Load file URL on mount and when file changes
-const loadUrl = async () => {
-  isLoading.value = true
-  try {
-    url.value = await fileSync.getFileUrl(props.file.path)
-  } catch (error) {
-    console.error('Failed to load file URL:', error)
-    url.value = null
-  }
-  isLoading.value = false
-}
-
-onMounted(loadUrl)
-watch(() => props.file.path, loadUrl)
-watch(
-  () => localFile.value?.downloadStatus,
-  (status, prevStatus) => {
-    if (status === 'done' && status !== prevStatus) {
-      void loadUrl()
-    }
-  }
-)
 
 const handleDelete = async () => {
   try {
@@ -58,23 +27,28 @@ const filename = computed(() => props.file.path.split('/').pop())
 </script>
 
 <template>
-  <div class="card" data-testid="file-card">
+  <div
+    class="card"
+    data-testid="file-card"
+  >
     <div class="image-container">
-      <div v-if="isLoading" class="placeholder" data-testid="loading">Loading...</div>
       <img
-        v-else-if="url"
-        :src="url"
-        :alt="file.path"
+        :src="file.path"
         class="image"
         data-testid="file-image"
       />
-      <div v-else class="placeholder">No preview</div>
     </div>
     <div class="info">
-      <div class="filename" data-testid="file-name">{{ filename }}</div>
+      <div
+        class="filename"
+        data-testid="file-name"
+      >{{ filename }}</div>
       <div class="actions">
-        <span class="status" data-testid="file-status">
-          {{ file.remoteUrl ? 'Synced' : 'Local' }}
+        <span
+          class="status"
+          data-testid="file-status"
+        >
+          {{ localFile?.downloadStatus ?? 'Pending' }}
         </span>
         <button
           type="button"
