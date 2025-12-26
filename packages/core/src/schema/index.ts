@@ -40,47 +40,6 @@ import { Events, Schema, SessionIdSymbol, State } from "@livestore/livestore"
 export type { TransferStatus } from "../services/sync-executor/index.js"
 
 /**
- * Schema definitions for LiveStore integration
- *
- * These are type definitions only. The actual schema creation requires
- * the @livestore/livestore package which is a peer dependency.
- */
-
-/**
- * Transfer status literal type
- */
-export const TRANSFER_STATUS = ["pending", "queued", "inProgress", "done", "error"] as const
-
-/**
- * Local file state shape (for reference)
- */
-export interface LocalFileStateShape {
-  path: string
-  localHash: string
-  downloadStatus: typeof TRANSFER_STATUS[number]
-  uploadStatus: typeof TRANSFER_STATUS[number]
-  lastSyncError: string
-}
-
-/**
- * Local files state map shape
- */
-export type LocalFilesStateShape = Record<string, LocalFileStateShape>
-
-/**
- * Files table columns shape
- */
-export interface FilesTableColumns {
-  id: string
-  path: string
-  remoteUrl: string
-  contentHash: string
-  createdAt: Date
-  updatedAt: Date
-  deletedAt: Date | null
-}
-
-/**
  * File created event payload
  */
 export interface FileCreatedPayload {
@@ -121,11 +80,9 @@ export interface FileDeletedPayload {
  * ```
  */
 export function createFileSyncSchema() {
-
-  // Transfer status schema
+  // Schemas
   const transferStatus = Schema.Literal("pending", "queued", "inProgress", "done", "error")
 
-  // Local file state schema
   const localFileState = Schema.Struct({
     path: Schema.String,
     localHash: Schema.String,
@@ -134,7 +91,6 @@ export function createFileSyncSchema() {
     lastSyncError: Schema.String
   })
 
-  // Local files state map schema
   const localFilesState = Schema.Record({
     key: Schema.String,
     value: localFileState
@@ -233,12 +189,3 @@ export function createFileSyncSchema() {
     }
   }
 }
-
-/**
- * Event names used by file sync
- */
-export const FILE_SYNC_EVENT_NAMES = {
-  FILE_CREATED: "v1.FileCreated",
-  FILE_UPDATED: "v1.FileUpdated",
-  FILE_DELETED: "v1.FileDeleted"
-} as const
