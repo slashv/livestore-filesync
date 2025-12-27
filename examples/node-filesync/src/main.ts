@@ -5,7 +5,7 @@ import { createStorePromise, queryDb } from "@livestore/livestore"
 import { makeWsSync } from "@livestore/sync-cf/client"
 
 import { makeAdapter as makeFileSystemAdapter } from "@livestore-filesync/adapter-node"
-import { createFileSync } from "@livestore-filesync/core"
+import { createFileSync, type SyncStore } from "@livestore-filesync/core"
 
 import { SyncPayload, events, schema, tables } from "./livestore/schema.js"
 
@@ -24,13 +24,13 @@ const adapter = makeLiveStoreAdapter({
 
 const fileSystem = makeFileSystemAdapter({ baseDirectory: "tmp/filesync" })
 
-const store = await createStorePromise({
+const store = (await createStorePromise({
   adapter,
   schema,
   storeId,
   syncPayloadSchema: SyncPayload,
   syncPayload: { authToken }
-})
+})) as SyncStore
 
 const fileSync = createFileSync({
   store,
@@ -43,7 +43,10 @@ const fileSync = createFileSync({
     baseUrl: fileSyncBaseUrl,
     authHeaders: () => ({ Authorization: `Bearer ${authToken}` })
   },
-  fileSystem
+  fileSystem,
+  options: {
+    localPathRoot: "tmp/filesync"
+  }
 })
 
 fileSync.start()
@@ -54,6 +57,9 @@ const result = await fileSync.saveFile(file)
 console.log("Saved file", result)
 
 await new Promise((resolve) => setTimeout(resolve, 1000))
+
+const resolvedUrl = await fileSync.resolveFileUrl(result.fileId)
+console.log("Resolved file URL (node-friendly)", resolvedUrl)
 
 await fileSync.dispose()
 await store.shutdownPromise()

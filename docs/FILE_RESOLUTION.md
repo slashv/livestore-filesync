@@ -26,3 +26,12 @@ Components such as `examples/vue-filesync/src/components/ImageCard.vue` pass `fi
 ## Optional messaging hooks
 The worker exposes `createMessageHandler` to respond to `CLEAR_CACHE` and `PREFETCH` messages from the main thread (e.g., via `sendMessageToServiceWorker`). The example worker currently only initializes fetch handling; add `createMessageHandler` in the worker module if you need those commands.
 
+## Resolving file URLs in Node/Electron (no service worker)
+- Use the new `resolveFileUrl(fileId)` method from `createFileSync`. It returns a Node-friendly URL: `file://...` when the file exists locally, otherwise the remote URL stored in the record.
+- Pass `options.localPathRoot` when creating `fileSync` so local paths can be turned into `file://` URLs. In the Node example we set `localPathRoot: "tmp/filesync"` to match the FileSystem adapter base directory.
+- Example (`examples/node-filesync/src/main.ts`):
+  - Create `fileSync` with `options: { localPathRoot: "tmp/filesync" }`.
+  - After saving or syncing, call `const url = await fileSync.resolveFileUrl(result.fileId)`.
+  - Use that URL for serving or logging; when local it points to the on-disk copy, otherwise to the remote location.
+- Electron renderer can still use the service worker path approach; Electron main can use `resolveFileUrl` the same way Node does, or expose a custom protocol that serves those `file://` paths.
+

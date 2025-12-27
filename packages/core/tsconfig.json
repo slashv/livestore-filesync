@@ -3,7 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "./dist",
-    "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.tsbuildinfo",
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

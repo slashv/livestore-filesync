@@ -31,4 +31,5 @@ export interface LiveStoreDeps {
   store: SyncStore
   schema: SyncSchema
   storeId: string
+  localPathRoot?: string
 }

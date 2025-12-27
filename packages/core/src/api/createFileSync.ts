@@ -91,6 +91,8 @@ export interface CreateFileSyncConfig {
 
   /** Optional configuration */
   options?: {
+    /** Root path for local file storage (needed to produce file:// URLs in Node/Electron main) */
+    localPathRoot?: string
     maxConcurrentDownloads?: number
     maxConcurrentUploads?: number
     healthCheckIntervalMs?: number
@@ -123,6 +125,9 @@ export interface FileSyncInstance {
 
   /** Get a blob URL for a local file */
   getFileUrl: (path: string) => Promise<string | null>
+
+  /** Resolve a file URL with local->remote fallback by file ID */
+  resolveFileUrl: (fileId: string) => Promise<string | null>
 
   /** Check if currently online */
   isOnline: () => boolean
@@ -186,7 +191,12 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let fileStorageService: FileStorageService | null = null
 
   const storeId = sanitizeStoreId(store.storeId)
-  const deps: LiveStoreDeps = { store, schema, storeId }
+  const deps: LiveStoreDeps = {
+    store,
+    schema,
+    storeId,
+    ...(options.localPathRoot !== undefined ? { localPathRoot: options.localPathRoot } : {})
+  }
 
   const remoteStorageConfig: { baseUrl: string; headers?: Record<string, string> } = {
     baseUrl: remote.baseUrl
@@ -352,6 +362,11 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
       })
     )
 
+  const resolveFileUrl = async (fileId: string): Promise<string | null> => {
+    const fileStorage = await getFileStorageService()
+    return runEffect(fileStorage.getFileUrl(fileId))
+  }
+
   const triggerSync = () => {
     void (async () => {
       const fileSync = await getFileSyncService()
@@ -374,6 +389,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     deleteFile,
     readFile,
     getFileUrl,
+    resolveFileUrl,
     isOnline: () => online,
     triggerSync,
     dispose

@@ -8,6 +8,8 @@
  */
 
 import { Context, Effect, Layer } from "effect"
+import { pathToFileURL } from "node:url"
+import * as nodePath from "node:path"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
 import { FileSync } from "../file-sync/index.js"
@@ -74,15 +76,22 @@ export interface FileStorageService {
 export class FileStorage extends Context.Tag("FileStorage")<
   FileStorage,
   FileStorageService
->() {}
+>() { }
 
 /**
  * Create the FileStorage service
  */
+const isNode = (): boolean => typeof process !== "undefined" && !!process.versions?.node
+
+const resolveLocalFileUrl = (root: string | undefined, storedPath: string): string => {
+  const resolved = root ? nodePath.resolve(root, storedPath) : nodePath.resolve(storedPath)
+  return pathToFileURL(resolved).toString()
+}
+
 export const makeFileStorage = (
   deps: LiveStoreDeps
 ): Effect.Effect<FileStorageService, never, LocalFileStorage | RemoteStorage | FileSync> =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
     const fileSync = yield* FileSync
@@ -143,7 +152,7 @@ export const makeFileStorage = (
       })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // Generate ID
         const id = crypto.randomUUID()
 
@@ -169,7 +178,7 @@ export const makeFileStorage = (
       fileId: string,
       file: File
     ): Effect.Effect<FileOperationResult, Error | HashError | StorageError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // Get existing file
         const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
@@ -203,7 +212,7 @@ export const makeFileStorage = (
       })
 
     const deleteFileOp = (fileId: string): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // Get existing file
         const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
@@ -227,7 +236,7 @@ export const makeFileStorage = (
       })
 
     const getFileUrl = (fileId: string): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         // Get file record
         const file = yield* getFileRecord(fileId)
         if (!file) {
@@ -242,6 +251,9 @@ export const makeFileStorage = (
         if (local?.localHash) {
           const exists = yield* localStorage.fileExists(file.path)
           if (exists) {
+            if (isNode()) {
+              return resolveLocalFileUrl(deps.localPathRoot, file.path)
+            }
             return yield* localStorage.getFileUrl(file.path)
           }
         }
