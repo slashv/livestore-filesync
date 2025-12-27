@@ -1,11 +1,14 @@
 import { Effect, Exit, Ref } from "effect"
-import { describe, expect, it } from "vitest"
-import { DownloadError, UploadError } from "../src/errors/index.js"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
+
+type FormDataLike = { get: (name: string) => unknown }
 import {
+  makeHttpRemoteStorage,
   makeMemoryRemoteStorage,
   type MemoryRemoteStorageOptions
-} from "../src/services/remote-file-storage/index.js"
-import { makeStoredPath } from "../src/utils/index.js"
+} from "./index.js"
+import { makeStoredPath } from "../../utils/index.js"
 
 describe("RemoteStorage", () => {
   const createTestStorage = () =>
@@ -156,6 +159,21 @@ describe("RemoteStorage", () => {
         expect(exit.cause.error).toBeInstanceOf(DownloadError)
       }
     })
+
+    it("should fail deletes when offline", async () => {
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function*() {
+          const { service, optionsRef } = yield* createTestStorage()
+          yield* Ref.set(optionsRef, { offline: true })
+          return yield* service.delete("https://test-storage.local/file")
+        })
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(DeleteError)
+      }
+    })
   })
 
   describe("selective failure simulation", () => {
@@ -185,6 +203,124 @@ describe("RemoteStorage", () => {
           expect(uploadResult._tag).toBe("Left")
         })
       )
+    })
+  })
+
+  describe("options handling", () => {
+    it("should use the custom baseUrl when provided", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function*() {
+          const { service, optionsRef } = yield* createTestStorage()
+          yield* Ref.set(optionsRef, { baseUrl: "https://custom-storage.local" })
+          const url = yield* service.upload(new File(["data"], "data.txt"), {
+            key: "custom-key"
+          })
+          return url
+        })
+      )
+
+      expect(result).toBe("https://custom-storage.local/custom-key")
+    })
+
+    it("should fail downloads when failDownloads is true", async () => {
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function*() {
+          const { service, optionsRef } = yield* createTestStorage()
+          yield* Ref.set(optionsRef, { failDownloads: true })
+          return yield* service.download("https://test-storage.local/file")
+        })
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(DownloadError)
+      }
+    })
+  })
+
+  describe("HTTP adapter", () => {
+    const originalFetch = globalThis.fetch
+
+    beforeEach(() => {
+      globalThis.fetch = undefined as unknown as typeof fetch
+    })
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    it("should send auth headers and key on upload", async () => {
+      let capturedBody: FormDataLike | null = null
+      let capturedHeaders: Record<string, string> | null = null
+      globalThis.fetch = (async (_url, init) => {
+        capturedBody = init?.body as FormDataLike
+        capturedHeaders = init?.headers as Record<string, string>
+        return {
+          ok: true,
+          json: async () => ({ url: "https://files.local/uploaded" })
+        } as Response
+      }) as typeof fetch
+
+      const storage = makeHttpRemoteStorage({
+        baseUrl: "https://files.local",
+        authToken: "token-123",
+        headers: { "X-Custom": "value" }
+      })
+
+      const file = new File(["data"], "data.txt", { type: "text/plain" })
+      const url = await Effect.runPromise(storage.upload(file, { key: "custom-key" }))
+
+      expect(url).toBe("https://files.local/uploaded")
+      expect(capturedHeaders).toMatchObject({
+        Authorization: "Bearer token-123",
+        "X-Custom": "value"
+      })
+      const body = capturedBody as unknown as FormDataLike | null
+      expect(body?.get("key")).toBe("custom-key")
+      const bodyFile = body?.get("file")
+      expect(bodyFile).toBeInstanceOf(File)
+    })
+
+    it("should download and preserve file name", async () => {
+      globalThis.fetch = (async () => {
+        return {
+          ok: true,
+          blob: async () => new Blob(["download"], { type: "text/plain" })
+        } as Response
+      }) as typeof fetch
+
+      const storage = makeHttpRemoteStorage({ baseUrl: "https://files.local" })
+      const file = await Effect.runPromise(
+        storage.download("https://files.local/path/to/file.txt")
+      )
+
+      expect(file.name).toBe("file.txt")
+      expect(await file.text()).toBe("download")
+    })
+
+    it("should surface delete failures", async () => {
+      globalThis.fetch = (async () => {
+        return { ok: false, status: 500 } as Response
+      }) as typeof fetch
+
+      const storage = makeHttpRemoteStorage({ baseUrl: "https://files.local" })
+      const exit = await Effect.runPromiseExit(storage.delete("https://files.local/file"))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(DeleteError)
+      }
+    })
+
+    it("should return false on health check errors", async () => {
+      globalThis.fetch = (async () => {
+        throw new Error("network down")
+      }) as typeof fetch
+
+      const storage = makeHttpRemoteStorage({ baseUrl: "https://files.local" })
+      const healthy = await Effect.runPromise(storage.checkHealth())
+
+      expect(healthy).toBe(false)
     })
   })
 })

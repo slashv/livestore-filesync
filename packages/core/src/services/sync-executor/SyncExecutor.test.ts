@@ -1,9 +1,9 @@
-import { Effect, Ref, Scope } from "effect"
+import { Deferred, Effect, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   makeSyncExecutor,
   type SyncExecutorConfig
-} from "../src/services/sync-executor/index.js"
+} from "./index.js"
 
 describe("SyncExecutor", () => {
   const testConfig: SyncExecutorConfig = {
@@ -279,6 +279,74 @@ describe("SyncExecutor", () => {
           // Should have some items queued (at least 1-2)
           expect(queued.downloads).toBeGreaterThanOrEqual(0)
 
+          yield* executor.awaitIdle()
+        })
+      )
+    })
+  })
+
+  describe("concurrency limits", () => {
+    it("should respect max concurrent uploads", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const current = yield* Ref.make(0)
+          const max = yield* Ref.make(0)
+          const gate = yield* Deferred.make<void>()
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                const inFlight = yield* Ref.updateAndGet(current, (n) => n + 1)
+                yield* Ref.update(max, (n) => Math.max(n, inFlight))
+                yield* Deferred.await(gate)
+                yield* Ref.update(current, (n) => n - 1)
+              }),
+            { ...testConfig, maxConcurrentUploads: 1 }
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueUpload("u1")
+          yield* executor.enqueueUpload("u2")
+          yield* executor.enqueueUpload("u3")
+
+          yield* Effect.sleep("25 millis")
+          const maxSeen = yield* Ref.get(max)
+          expect(maxSeen).toBe(1)
+
+          yield* Deferred.succeed(gate, undefined)
+          yield* executor.awaitIdle()
+        })
+      )
+    })
+
+    it("should respect max concurrent downloads", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const current = yield* Ref.make(0)
+          const max = yield* Ref.make(0)
+          const gate = yield* Deferred.make<void>()
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                const inFlight = yield* Ref.updateAndGet(current, (n) => n + 1)
+                yield* Ref.update(max, (n) => Math.max(n, inFlight))
+                yield* Deferred.await(gate)
+                yield* Ref.update(current, (n) => n - 1)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueDownload("d1")
+          yield* executor.enqueueDownload("d2")
+          yield* executor.enqueueDownload("d3")
+
+          yield* Effect.sleep("25 millis")
+          const maxSeen = yield* Ref.get(max)
+          expect(maxSeen).toBe(1)
+
+          yield* Deferred.succeed(gate, undefined)
           yield* executor.awaitIdle()
         })
       )

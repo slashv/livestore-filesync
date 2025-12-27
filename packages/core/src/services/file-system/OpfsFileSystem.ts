@@ -240,8 +240,10 @@ export const makeOpfsFileSystem = (
       }).pipe(
         Effect.map(() => true),
         Effect.catchAll((cause) => {
-          if (cause instanceof DOMException && cause.name === "NotFoundError") {
-            return Effect.succeed(false)
+          if (cause instanceof DOMException) {
+            if (cause.name === "NotFoundError" || cause.name === "TypeMismatchError") {
+              return Effect.succeed(false)
+            }
           }
           return Effect.fail(
             new FileSystemError({
@@ -295,8 +297,10 @@ export const makeOpfsFileSystem = (
       }).pipe(
         Effect.map(() => true),
         Effect.catchAll((cause) => {
-          if (cause instanceof DOMException && cause.name === "NotFoundError") {
-            return Effect.succeed(false)
+          if (cause instanceof DOMException) {
+            if (cause.name === "NotFoundError" || cause.name === "TypeMismatchError") {
+              return Effect.succeed(false)
+            }
           }
           return Effect.fail(
             new FileSystemError({

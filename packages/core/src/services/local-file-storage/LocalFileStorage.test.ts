@@ -1,11 +1,10 @@
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { FileNotFoundError } from "../src/errors/index.js"
-import {
-  LocalFileStorage,
-  LocalFileStorageMemory
-} from "../src/services/local-file-storage/index.js"
-import { joinPath, makeStoreRoot } from "../src/utils/index.js"
+import { FileNotFoundError } from "../../errors/index.js"
+import { FileSystem, type FileSystemService } from "../file-system/index.js"
+import { FileSystemError } from "../../errors/index.js"
+import { LocalFileStorage, LocalFileStorageLive, LocalFileStorageMemory } from "./index.js"
+import { joinPath, makeStoreRoot } from "../../utils/index.js"
 
 describe("LocalFileStorage", () => {
   const runWithStorage = <A, E>(
@@ -17,6 +16,162 @@ describe("LocalFileStorage", () => {
     effect: Effect.Effect<A, E, LocalFileStorage>
   ): Promise<Exit.Exit<A, E>> =>
     Effect.runPromiseExit(Effect.provide(effect, LocalFileStorageMemory))
+
+  const createMemoryFileSystem = () => {
+    const files = new Map<string, Uint8Array>()
+    const directories = new Set<string>([""])
+
+    const normalize = (path: string): string =>
+      path
+        .split("/")
+        .filter((segment) => segment.length > 0)
+        .join("/")
+
+    const ensureDirectory = (path: string, recursive = true) => {
+      const normalized = normalize(path)
+      if (normalized === "") return
+      const segments = normalized.split("/")
+      let current = ""
+      for (const segment of segments) {
+        current = current ? `${current}/${segment}` : segment
+        if (!directories.has(current) && !recursive) {
+          throw new Error(`Missing directory: ${current}`)
+        }
+        directories.add(current)
+      }
+    }
+
+    const listDirectEntries = (directory: string): string[] => {
+      const normalized = normalize(directory)
+      const prefix = normalized === "" ? "" : `${normalized}/`
+      const entries = new Set<string>()
+
+      for (const dir of directories) {
+        if (dir === "" || !dir.startsWith(prefix)) continue
+        const rest = dir.slice(prefix.length)
+        if (rest.length === 0) continue
+        entries.add(rest.split("/")[0] ?? rest)
+      }
+
+      for (const filePath of files.keys()) {
+        if (!filePath.startsWith(prefix)) continue
+        const rest = filePath.slice(prefix.length)
+        entries.add(rest.split("/")[0] ?? rest)
+      }
+
+      return Array.from(entries)
+    }
+
+    const toError = (operation: string, path: string, cause: unknown) =>
+      new FileSystemError({
+        message: `Mock FileSystem ${operation} failed: ${path}`,
+        operation,
+        path,
+        cause
+      })
+
+    const service: FileSystemService = {
+      readFile: (path) =>
+        Effect.try({
+          try: () => {
+            const normalized = normalize(path)
+            const data = files.get(normalized)
+            if (!data) {
+              throw new Error(`Missing file: ${normalized}`)
+            }
+            return data
+          },
+          catch: (cause) => toError("readFile", path, cause)
+        }),
+      writeFile: (path, data) =>
+        Effect.try({
+          try: () => {
+            const normalized = normalize(path)
+            const { directory } = normalized.includes("/")
+              ? { directory: normalized.slice(0, normalized.lastIndexOf("/")) }
+              : { directory: "" }
+            ensureDirectory(directory, true)
+            files.set(normalized, data)
+          },
+          catch: (cause) => toError("writeFile", path, cause)
+        }),
+      readDirectory: (path) =>
+        Effect.try({
+          try: () => listDirectEntries(path),
+          catch: (cause) => toError("readDirectory", path, cause)
+        }),
+      makeDirectory: (path, options) =>
+        Effect.try({
+          try: () => ensureDirectory(path, options?.recursive ?? true),
+          catch: (cause) => toError("makeDirectory", path, cause)
+        }),
+      remove: (path, options) =>
+        Effect.try({
+          try: () => {
+            const normalized = normalize(path)
+            if (files.has(normalized)) {
+              files.delete(normalized)
+              return
+            }
+            const prefix = normalized === "" ? "" : `${normalized}/`
+            const hasChildren =
+              Array.from(files.keys()).some((entry) => entry.startsWith(prefix)) ||
+              Array.from(directories).some(
+                (entry) => entry !== normalized && entry.startsWith(prefix)
+              )
+            if (hasChildren && !options?.recursive) {
+              throw new Error(`Directory not empty: ${normalized}`)
+            }
+            for (const filePath of Array.from(files.keys())) {
+              if (filePath === normalized || filePath.startsWith(prefix)) {
+                files.delete(filePath)
+              }
+            }
+            for (const dir of Array.from(directories)) {
+              if (dir === normalized || dir.startsWith(prefix)) {
+                directories.delete(dir)
+              }
+            }
+          },
+          catch: (cause) => toError("remove", path, cause)
+        }),
+      exists: (path) =>
+        Effect.try({
+          try: () => {
+            const normalized = normalize(path)
+            return files.has(normalized) || directories.has(normalized)
+          },
+          catch: (cause) => toError("exists", path, cause)
+        }),
+      stat: (path) =>
+        Effect.try({
+          try: () => {
+            const normalized = normalize(path)
+            if (files.has(normalized)) {
+              return { type: "file" as const }
+            }
+            if (directories.has(normalized)) {
+              return { type: "directory" as const }
+            }
+            throw new Error(`Missing path: ${normalized}`)
+          },
+          catch: (cause) => toError("stat", path, cause)
+        })
+    }
+
+    return { service, files }
+  }
+
+  const runWithLiveStorage = <A, E>(
+    effect: Effect.Effect<A, E, LocalFileStorage>,
+    service: FileSystemService
+  ): Promise<A> =>
+    Effect.runPromise(
+      Effect.provide(
+        effect,
+        Layer.provide(Layer.succeed(FileSystem, service))(LocalFileStorageLive)
+      )
+    )
 
   describe("writeFile and readFile", () => {
     it("should write and read a file", async () => {
@@ -243,6 +398,58 @@ describe("LocalFileStorage", () => {
       )
 
       expect(result).toBe("updated")
+    })
+  })
+
+  describe("metadata handling", () => {
+    it("should preserve metadata from stored files", async () => {
+      const { service } = createMemoryFileSystem()
+      const result = await runWithLiveStorage(
+        Effect.gen(function*() {
+          const storage = yield* LocalFileStorage
+          const file = new File(["meta"], "meta.txt", { type: "text/plain", lastModified: 1234 })
+
+          yield* storage.writeFile("meta.txt", file)
+          const readFile = yield* storage.readFile("meta.txt")
+
+          return { type: readFile.type, lastModified: readFile.lastModified }
+        }),
+        service
+      )
+
+      expect(result.type).toBe("text/plain")
+      expect(result.lastModified).toBe(1234)
+    })
+
+    it("should filter metadata files from listFiles", async () => {
+      const { service, files } = createMemoryFileSystem()
+      const result = await runWithLiveStorage(
+        Effect.gen(function*() {
+          const storage = yield* LocalFileStorage
+          yield* storage.writeBytes("root/file.txt", new TextEncoder().encode("data"), "text/plain")
+          return yield* storage.listFiles("root")
+        }),
+        service
+      )
+
+      expect(result).toEqual(["root/file.txt"])
+      const hasMeta = Array.from(files.keys()).some((key) => key.endsWith(".meta.json"))
+      expect(hasMeta).toBe(true)
+    })
+
+    it("should remove metadata when deleting a file", async () => {
+      const { service, files } = createMemoryFileSystem()
+      await runWithLiveStorage(
+        Effect.gen(function*() {
+          const storage = yield* LocalFileStorage
+          yield* storage.writeFile("remove.txt", new File(["data"], "remove.txt"))
+          yield* storage.deleteFile("remove.txt")
+        }),
+        service
+      )
+
+      const remaining = Array.from(files.keys())
+      expect(remaining).toHaveLength(0)
     })
   })
 })
