@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "^0.25.1",
+    "@livestore/adapter-node": "catalog:",
     "@livestore/livestore": "catalog:",
     "@types/node": "^22.5.2",
     "effect": "catalog:",

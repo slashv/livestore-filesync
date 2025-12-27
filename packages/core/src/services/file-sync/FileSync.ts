@@ -210,6 +210,14 @@ export const makeFileSync = (
         ...patch
       }))
 
+    const removeLocalFileState = (fileId: string): Effect.Effect<void> =>
+      updateLocalFilesState((state) => {
+        if (!(fileId in state)) return state
+        const next = { ...state }
+        delete next[fileId]
+        return next
+      })
+
     const setLocalFileTransferStatus = (
       fileId: string,
       action: "upload" | "download",
@@ -375,9 +383,23 @@ export const makeFileSync = (
           return yield* Effect.fail(error)
         }
 
+        if (file.deletedAt) {
+          yield* removeLocalFileState(fileId)
+          yield* emit({ type: "upload:complete", fileId })
+          return
+        }
+
         const localFile = yield* localStorage.readFile(file.path)
         const remoteKey = stripFilesRoot(file.path)
         const remoteUrl = yield* remoteStorage.upload(localFile, { key: remoteKey })
+
+        const latestFile = yield* getFile(fileId)
+        if (!latestFile || latestFile.deletedAt) {
+          yield* remoteStorage.delete(remoteUrl).pipe(Effect.catchAll(() => Effect.void))
+          yield* removeLocalFileState(fileId)
+          yield* emit({ type: "upload:complete", fileId })
+          return
+        }
 
         yield* updateFileRemoteUrl(fileId, remoteUrl)
 

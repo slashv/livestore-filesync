@@ -292,6 +292,9 @@ importers:
       '@effect/vitest':
         specifier: ^0.25.1
         version: 0.25.1(effect@3.18.4)(vitest@3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2))
+      '@livestore/adapter-node':
+        specifier: 'catalog:'
+        version: 0.4.0-dev.20(2fd449b886329d5b788e2f97ecae0e9e)
       '@livestore/livestore':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
