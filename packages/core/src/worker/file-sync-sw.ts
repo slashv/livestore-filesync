@@ -194,8 +194,9 @@ export function initFileSyncServiceWorker(
   self.addEventListener("fetch", (event: FetchEvent) => {
     const url = new URL(event.request.url)
 
-    // Only handle requests matching our path prefix
-    if (url.pathname.startsWith(mergedConfig.pathPrefix)) {
+    // Only handle GET requests matching our path prefix
+    // Other methods (DELETE, PUT, POST) should pass through to the server
+    if (event.request.method === "GET" && url.pathname.startsWith(mergedConfig.pathPrefix)) {
       event.respondWith(handleFileRequest(event.request, mergedConfig))
     }
   })
