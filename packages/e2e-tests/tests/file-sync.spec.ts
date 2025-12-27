@@ -3,6 +3,13 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
+const authToken =
+  process.env.FILESYNC_AUTH_TOKEN ??
+  process.env.VITE_AUTH_TOKEN ??
+  process.env.WORKER_AUTH_TOKEN ??
+  'dev-token-change-in-production'
+const authHeaders = authToken ? { Authorization: `Bearer ${authToken}` } : {}
+
 // Create a test PNG file in temp directory
 function createTestImage(): string {
   const imagePath = path.join(os.tmpdir(), `test-${Date.now()}.png`)
@@ -44,6 +51,40 @@ async function waitForImageLoaded(
   ).toBe(true)
 }
 
+function withCacheBust(url: string): string {
+  const next = new URL(url)
+  next.searchParams.set('cache', Date.now().toString())
+  return next.toString()
+}
+
+async function getRemoteFileUrl(page: Page): Promise<string> {
+  const src = await page.locator('[data-testid="file-image"]').getAttribute('src')
+  if (!src) {
+    throw new Error('Expected file image src to be set')
+  }
+  const url = new URL(src, page.url())
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`Unexpected file URL: ${url.toString()}`)
+  }
+  return url.toString()
+}
+
+async function waitForRemoteStatus(
+  page: Page,
+  fileUrl: string,
+  expectedStatus: number
+): Promise<void> {
+  await expect.poll(
+    async () => {
+      const response = await page.request.get(withCacheBust(fileUrl), {
+        headers: authHeaders as Record<string, string> | undefined,
+      })
+      return response.status()
+    },
+    { timeout: 2000 }
+  ).toBe(expectedStatus)
+}
+
 test.describe('File Sync', () => {
   test('should add a file', async ({ page }) => {
     // Use a unique storeId for test isolation
@@ -63,6 +104,33 @@ test.describe('File Sync', () => {
       timeout: 10000,
     })
     await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+  })
+
+  test('should delete files from remote storage', async ({ page }) => {
+    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    const testImage = createTestImage()
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    const fileCard = page.locator('[data-testid="file-card"]')
+    const fileImage = page.locator('[data-testid="file-image"]')
+
+    await expect(fileCard).toHaveCount(1)
+    await waitForImageLoaded(fileImage, 2000)
+
+    const fileUrl = await getRemoteFileUrl(page)
+    await waitForRemoteStatus(page, fileUrl, 200)
+
+    await page.locator('[data-testid="delete-button"]').click()
+
+    await expect(fileCard).toHaveCount(0, { timeout: 2000 })
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    await waitForRemoteStatus(page, fileUrl, 404)
   })
 
   test('should sync files across browsers', async ({ browser }) => {

@@ -59,6 +59,10 @@ START_SERVER=1 SERVER_CWD=../../examples/web-filesync pnpm test
 BASE_URL=http://localhost:60004 pnpm test
 ```
 
+### Auth for Remote Storage Checks
+
+Some tests call the remote file storage endpoint directly. Set `FILESYNC_AUTH_TOKEN` to match your worker auth token (falls back to `VITE_AUTH_TOKEN`, `WORKER_AUTH_TOKEN`, or the default dev token).
+
 ### Testing Vue or Other Implementations
 
 ```bash
