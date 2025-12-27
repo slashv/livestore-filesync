@@ -8,8 +8,6 @@
  */
 
 import { Context, Effect, Layer } from "effect"
-import { pathToFileURL } from "node:url"
-import * as nodePath from "node:path"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
 import { FileSync } from "../file-sync/index.js"
@@ -84,8 +82,17 @@ export class FileStorage extends Context.Tag("FileStorage")<
 const isNode = (): boolean => typeof process !== "undefined" && !!process.versions?.node
 
 const resolveLocalFileUrl = (root: string | undefined, storedPath: string): string => {
-  const resolved = root ? nodePath.resolve(root, storedPath) : nodePath.resolve(storedPath)
-  return pathToFileURL(resolved).toString()
+  // Build a file:// URL (for Node/Electron main) without node:* imports so bundlers (Vite/webpack) don't externalize node modules in browser builds.
+  const normalize = (value: string): string => value.replace(/\\/g, "/")
+  const normalizedRoot = root ? normalize(root).replace(/\/+$/, "") : ""
+  const rootWithSlash = normalizedRoot
+    ? normalizedRoot.startsWith("/")
+      ? normalizedRoot
+      : `/${normalizedRoot}`
+    : ""
+  const normalizedPath = normalize(storedPath).replace(/^\/+/, "")
+  const fullPath = `${rootWithSlash || ""}/${normalizedPath}`.replace(/\/{2,}/g, "/")
+  return `file://${fullPath}`
 }
 
 export const makeFileStorage = (
