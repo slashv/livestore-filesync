@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { deleteFile, readFile, updateFile } from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
@@ -33,6 +33,15 @@ const handleEdit = async () => {
   }
 }
 
+const fileUrl = computed(() => {
+  if (localFile.value && localFile.value.downloadStatus === 'done') {
+    return localFile.value.path
+  } else if (!props.file.remoteUrl) {
+    return "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+  }
+  return props.file.remoteUrl
+})
+
 const filename = computed(() => props.file.path.split('/').pop())
 </script>
 
@@ -43,7 +52,7 @@ const filename = computed(() => props.file.path.split('/').pop())
   >
     <div class="image-container">
       <img
-        :src="file.path"
+        :src="fileUrl"
         :alt="file.path"
         class="image"
         data-testid="file-image"
