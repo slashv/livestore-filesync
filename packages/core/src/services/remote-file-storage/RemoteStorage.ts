@@ -99,7 +99,6 @@ export class RemoteStorage extends Context.Tag("RemoteStorage")<
  * - GET /health for health checks
  */
 export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorageService => {
-  console.log("makeHttpRemoteStorage", config)
   const makeHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {
       ...config.headers

@@ -261,11 +261,13 @@ export const makeFileStorage = (
             if (isNode()) {
               return resolveLocalFileUrl(deps.localPathRoot, file.path)
             }
+            console.log("returning local URL", file.path)
             return yield* localStorage.getFileUrl(file.path)
           }
         }
 
         // Fall back to remote URL when present
+        console.log("returning remote URL", file.remoteUrl)
         return file.remoteUrl || null
       })
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { deleteFile, readFile, updateFile, resolveFileUrl } from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
@@ -33,8 +33,13 @@ const handleEdit = async () => {
   }
 }
 
-const src = ref(props.file.path)
+const src = ref("")
 onMounted(async () => {
+  const url = await resolveFileUrl(props.file.id)
+  if (url) src.value = url
+})
+
+watch(() => props.file.updatedAt, async () => {
   const url = await resolveFileUrl(props.file.id)
   if (url) src.value = url
 })
@@ -45,7 +50,10 @@ onMounted(async () => {
     class="card"
     data-testid="file-card"
   >
-    <div class="image-container">
+    <div
+      class="image-container"
+      v-if="src"
+    >
       <img
         :src="src"
         :alt="file.path"
@@ -71,6 +79,10 @@ onMounted(async () => {
       </div>
       <table class="debug-table">
         <tbody>
+          <tr>
+            <td class="label">src</td>
+            <td>{{ src }}</td>
+          </tr>
           <tr>
             <td class="label">File: Path</td>
             <td>{{ file.path }}</td>
