@@ -16,9 +16,9 @@ import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
  */
 export interface RemoteStorageConfig {
   /**
-   * Base URL for the remote storage API
+   * Base URL for the signer API
    */
-  readonly baseUrl: string
+  readonly signerBaseUrl: string
 
   /**
    * Optional authorization token
@@ -32,12 +32,11 @@ export interface RemoteStorageConfig {
 }
 
 /**
- * Progress information for upload/download
+ * Result of an upload
  */
-export interface TransferProgress {
-  readonly loaded: number
-  readonly total: number
-  readonly percentage: number
+export interface RemoteUploadResult {
+  readonly key: string
+  readonly etag?: string
 }
 
 /**
@@ -47,23 +46,27 @@ export interface TransferProgress {
  */
 export interface RemoteStorageAdapter {
   /**
-   * Upload a file to remote storage
-   * @returns The URL where the file is stored
+   * Upload a file to remote storage under a stable remote key
    */
   readonly upload: (
     file: File,
-    options?: { key?: string }
-  ) => Effect.Effect<string, UploadError>
+    options: { key: string }
+  ) => Effect.Effect<RemoteUploadResult, UploadError>
 
   /**
    * Download a file from remote storage
    */
-  readonly download: (url: string) => Effect.Effect<File, DownloadError>
+  readonly download: (key: string) => Effect.Effect<File, DownloadError>
 
   /**
    * Delete a file from remote storage
    */
-  readonly delete: (url: string) => Effect.Effect<void, DeleteError>
+  readonly delete: (key: string) => Effect.Effect<void, DeleteError>
+
+  /**
+   * Get a short-lived download URL for a remote key
+   */
+  readonly getDownloadUrl: (key: string) => Effect.Effect<string, DownloadError>
 
   /**
    * Check if the remote storage is available
@@ -90,15 +93,18 @@ export class RemoteStorage extends Context.Tag("RemoteStorage")<
 >() { }
 
 /**
- * Create a generic HTTP-based remote storage adapter
+ * Create a signer-backed S3-compatible remote storage implementation.
  *
- * This adapter expects:
- * - POST /upload with FormData containing the file (optional `key` field)
- * - GET {url} to download files
- * - DELETE {url} to delete files
- * - GET /health for health checks
+ * The signer is responsible for minting presigned URLs against any S3-compatible
+ * endpoint and enforcing authorization.
+ *
+ * Expected signer endpoints:
+ * - GET /health
+ * - POST /v1/sign/upload   { key, contentType?, contentLength? } -> { method, url, headers?, expiresAt }
+ * - POST /v1/sign/download { key } -> { url, headers?, expiresAt }
+ * - POST /v1/delete        { key } -> 204
  */
-export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorageService => {
+export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteStorageService => {
   const makeHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {
       ...config.headers
@@ -109,69 +115,164 @@ export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorag
     return headers
   }
 
-  const upload = (
-    file: File,
-    options: { key?: string } = {}
-  ): Effect.Effect<string, UploadError> =>
+  const signerUrl = (path: string) =>
+    `${config.signerBaseUrl.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`
+
+  type SignUploadResponse = {
+    readonly method: "PUT" | "POST"
+    readonly url: string
+    readonly headers?: Record<string, string>
+    readonly expiresAt: string
+  }
+
+  type SignDownloadResponse = {
+    readonly url: string
+    readonly headers?: Record<string, string>
+    readonly expiresAt: string
+  }
+
+  const signUpload = (params: {
+    key: string
+    contentType?: string
+    contentLength?: number
+  }): Effect.Effect<SignUploadResponse, UploadError> =>
     Effect.tryPromise({
       try: async () => {
-        const formData = new FormData()
-        const key = options.key ?? file.name
-        formData.append("file", file, key)
-        if (options.key) {
-          formData.append("key", key)
-        }
-
-        const response = await fetch(`${config.baseUrl}/upload`, {
+        const response = await fetch(signerUrl("/v1/sign/upload"), {
           method: "POST",
-          headers: makeHeaders(),
-          body: formData
+          headers: {
+            "Content-Type": "application/json",
+            ...makeHeaders()
+          },
+          body: JSON.stringify(params)
         })
-
-        if (!response.ok) {
-          throw new Error(`Upload failed with status: ${response.status}`)
-        }
-
-        const result = await response.json()
-        return result.url as string
+        if (!response.ok) throw new Error(`Signer upload signing failed: ${response.status}`)
+        return (await response.json()) as SignUploadResponse
       },
       catch: (error) =>
         new UploadError({
-          message: `Failed to upload file: ${file.name}`,
+          message: `Failed to sign upload`,
           cause: error
         })
     })
 
-  const download = (url: string): Effect.Effect<File, DownloadError> =>
+  const signDownload = (key: string): Effect.Effect<SignDownloadResponse, DownloadError> =>
     Effect.tryPromise({
       try: async () => {
-        const response = await fetch(url, {
-          method: "GET",
-          headers: makeHeaders()
+        const response = await fetch(signerUrl("/v1/sign/download"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...makeHeaders()
+          },
+          body: JSON.stringify({ key })
         })
 
-        if (!response.ok) {
-          throw new Error(`Download failed with status: ${response.status}`)
-        }
-
-        const blob = await response.blob()
-        const filename = url.split("/").pop() || "file"
-        return new File([blob], filename, { type: blob.type })
+        if (!response.ok) throw new Error(`Signer download signing failed: ${response.status}`)
+        return (await response.json()) as SignDownloadResponse
       },
       catch: (error) =>
         new DownloadError({
-          message: `Failed to download file`,
-          url,
+          message: `Failed to sign download`,
+          url: key,
           cause: error
         })
     })
 
-  const deleteFile = (url: string): Effect.Effect<void, DeleteError> =>
+  const upload = (
+    file: File,
+    options: { key: string }
+  ): Effect.Effect<RemoteUploadResult, UploadError> =>
+    Effect.gen(function* () {
+      const signed = yield* signUpload({
+        key: options.key,
+        ...(file.type ? { contentType: file.type } : {}),
+        contentLength: file.size
+      })
+
+      const response = yield* Effect.tryPromise({
+        try: async () => {
+          const r = await fetch(signed.url, {
+            method: signed.method,
+            ...(signed.headers ? { headers: signed.headers } : {}),
+            body: file
+          })
+          return r
+        },
+        catch: (error) =>
+          new UploadError({
+            message: `Failed to upload`,
+            cause: error
+          })
+      })
+
+      if (!response.ok) {
+        return yield* Effect.fail(
+          new UploadError({
+            message: `Upload failed with status: ${response.status}`
+          })
+        )
+      }
+
+      const etag = response.headers.get("ETag")
+      return etag ? { key: options.key, etag } : { key: options.key }
+    })
+
+  const download = (key: string): Effect.Effect<File, DownloadError> =>
+    Effect.gen(function* () {
+      const signed = yield* signDownload(key)
+      const response = yield* Effect.tryPromise({
+        try: async () => {
+          const r = await fetch(signed.url, {
+            method: "GET",
+            ...(signed.headers ? { headers: signed.headers } : {})
+          })
+          return r
+        },
+        catch: (error) =>
+          new DownloadError({
+            message: `Failed to download`,
+            url: key,
+            cause: error
+          })
+      })
+
+      if (!response.ok) {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: `Download failed with status: ${response.status}`,
+            url: key
+          })
+        )
+      }
+
+      const blob = yield* Effect.tryPromise({
+        try: async () => await response.blob(),
+        catch: (error) =>
+          new DownloadError({
+            message: `Failed to read response body`,
+            url: key,
+            cause: error
+          })
+      })
+
+      const filename = key.split("/").pop() || "file"
+      return new File([blob], filename, { type: blob.type })
+    })
+
+  const getDownloadUrl = (key: string): Effect.Effect<string, DownloadError> =>
+    signDownload(key).pipe(Effect.map((r) => r.url))
+
+  const deleteFile = (key: string): Effect.Effect<void, DeleteError> =>
     Effect.tryPromise({
       try: async () => {
-        const response = await fetch(url, {
-          method: "DELETE",
-          headers: makeHeaders()
+        const response = await fetch(signerUrl("/v1/delete"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...makeHeaders()
+          },
+          body: JSON.stringify({ key })
         })
 
         if (!response.ok) {
@@ -181,7 +282,7 @@ export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorag
       catch: (error) =>
         new DeleteError({
           message: `Failed to delete file`,
-          path: url,
+          path: key,
           cause: error
         })
     })
@@ -189,7 +290,7 @@ export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorag
   const checkHealth = (): Effect.Effect<boolean, never> =>
     Effect.tryPromise({
       try: async () => {
-        const response = await fetch(`${config.baseUrl}/health`, {
+        const response = await fetch(signerUrl("/health"), {
           method: "GET",
           headers: makeHeaders()
         })
@@ -204,18 +305,19 @@ export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorag
     upload,
     download,
     delete: deleteFile,
+    getDownloadUrl,
     checkHealth,
     getConfig
   }
 }
 
 /**
- * Create a Layer for HTTP-based remote storage
+ * Create a Layer for signer-backed remote storage
  */
 export const makeRemoteStorageLive = (
   config: RemoteStorageConfig
 ): Layer.Layer<RemoteStorage> =>
-  Layer.succeed(RemoteStorage, makeHttpRemoteStorage(config))
+  Layer.succeed(RemoteStorage, makeS3SignerRemoteStorage(config))
 
 /**
  * RemoteStorageConfig service tag for dependency injection
@@ -233,6 +335,6 @@ export const RemoteStorageLive: Layer.Layer<RemoteStorage, never, RemoteStorageC
     RemoteStorage,
     Effect.gen(function* () {
       const config = yield* RemoteStorageConfigTag
-      return makeHttpRemoteStorage(config)
+      return makeS3SignerRemoteStorage(config)
     })
   )

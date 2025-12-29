@@ -21,7 +21,7 @@ import {
   LocalFileStorage,
   LocalFileStorageLive,
   RemoteStorage,
-  makeHttpRemoteStorage,
+  makeS3SignerRemoteStorage,
   type RemoteStorageConfig
 } from "../services/index.js"
 import { sanitizeStoreId } from "../utils/index.js"
@@ -83,7 +83,7 @@ export interface CreateFileSyncConfig {
 
   /** Remote storage configuration */
   remote: {
-    baseUrl: string
+    signerBaseUrl: string
     headers?: Record<string, string>
     authToken?: string
   }
@@ -165,7 +165,7 @@ export interface FileSyncInstance {
  *     queryDb
  *   },
  *   remote: {
- *     baseUrl: '/api',
+ *     signerBaseUrl: '/api',
  *     authHeaders: () => ({ Authorization: `Bearer ${token}` })
  *   }
  * })
@@ -201,14 +201,14 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const remoteStorageConfig: RemoteStorageConfig = {
-    baseUrl: remote.baseUrl,
+    signerBaseUrl: remote.signerBaseUrl,
     ...(remote.headers ? { headers: remote.headers } : {}),
     ...(remote.authToken ? { authToken: remote.authToken } : {})
   }
 
   const RemoteStorageLive = Layer.succeed(
     RemoteStorage,
-    makeHttpRemoteStorage(remoteStorageConfig)
+    makeS3SignerRemoteStorage(remoteStorageConfig)
   )
 
   const fileSyncConfig: FileSyncConfig = {

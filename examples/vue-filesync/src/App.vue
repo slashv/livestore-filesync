@@ -10,7 +10,8 @@ import FileSyncProvider from './components/FileSyncProvider.vue'
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
-const storeId = urlParams.get('storeId') || 'vue_filesync_store'
+// Bump default storeId when schema changes to avoid loading an incompatible persisted db in dev.
+const storeId = urlParams.get('storeId') || 'vue_filesync_store_v2'
 
 const adapter = makePersistedAdapter({
   storage: { type: 'opfs' },

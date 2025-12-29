@@ -33,6 +33,7 @@ const handleEdit = async () => {
   }
 }
 
+
 const src = ref("")
 onMounted(async () => {
   const url = await resolveFileUrl(props.file.id)
@@ -43,6 +44,30 @@ watch(() => props.file.updatedAt, async () => {
   const url = await resolveFileUrl(props.file.id)
   if (url) src.value = url
 })
+
+// const src = ref("")
+
+// const updateSrc = async () => {
+//   if (props.file.remoteKey) {
+//     const encoded = props.file.remoteKey
+//       .split('/')
+//       .filter((s) => s.length > 0)
+//       .map((s) => encodeURIComponent(s))
+//       .join('/')
+//     src.value = `/livestore-filesync-files/${encoded}`
+//     return
+//   }
+
+//   const url = await getFileUrl(props.file.path)
+//   if (url) src.value = url
+// }
+
+// onMounted(updateSrc)
+
+// watch(
+//   () => [props.file.updatedAt, props.file.remoteKey],
+//   updateSrc,
+// )
 </script>
 
 <template>
@@ -88,8 +113,8 @@ watch(() => props.file.updatedAt, async () => {
             <td>{{ file.path }}</td>
           </tr>
           <tr>
-            <td class="label">File: Remote URL</td>
-            <td>{{ file.remoteUrl }}</td>
+            <td class="label">File: Remote Key</td>
+            <td data-testid="file-remote-key">{{ file.remoteKey }}</td>
           </tr>
           <tr>
             <td class="label">File: Hash</td>

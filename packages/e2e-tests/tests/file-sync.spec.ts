@@ -69,6 +69,22 @@ async function getRemoteFileUrl(page: Page): Promise<string> {
   return url.toString()
 }
 
+async function getRemoteKey(page: Page): Promise<string> {
+  const locator = page.locator('[data-testid="file-remote-key"]')
+  await expect(locator).toBeVisible({ timeout: 10000 })
+  await expect.poll(async () => (await locator.textContent())?.trim() || '', { timeout: 15000 }).not.toBe('')
+  return (await locator.textContent())?.trim() || ''
+}
+
+function toRemoteUrl(baseUrl: string, remoteKey: string): string {
+  const encoded = remoteKey
+    .split('/')
+    .filter((s) => s.length > 0)
+    .map((s) => encodeURIComponent(s))
+    .join('/')
+  return new URL(`/livestore-filesync-files/${encoded}`, baseUrl).toString()
+}
+
 async function waitForRemoteStatus(
   page: Page,
   fileUrl: string,
@@ -122,7 +138,8 @@ test.describe('File Sync', () => {
     await expect(fileCard).toHaveCount(1)
     await waitForImageLoaded(fileImage, 2000)
 
-    const fileUrl = await getRemoteFileUrl(page)
+    const remoteKey = await getRemoteKey(page)
+    const fileUrl = toRemoteUrl(page.url(), remoteKey)
     await waitForRemoteStatus(page, fileUrl, 200)
 
     await page.locator('[data-testid="delete-button"]').click()

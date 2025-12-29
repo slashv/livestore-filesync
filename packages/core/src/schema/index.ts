@@ -56,7 +56,7 @@ export interface FileCreatedPayload {
 export interface FileUpdatedPayload {
   id: string
   path: string
-  remoteUrl: string
+  remoteKey: string
   contentHash: string
   updatedAt: Date
 }
@@ -103,7 +103,7 @@ export function createFileSyncSchema() {
       columns: {
         id: State.SQLite.text({ primaryKey: true }),
         path: State.SQLite.text({ default: "" }),
-        remoteUrl: State.SQLite.text({ default: "" }),
+        remoteKey: State.SQLite.text({ default: "" }),
         contentHash: State.SQLite.text({ default: "" }),
         createdAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
         updatedAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
@@ -141,7 +141,7 @@ export function createFileSyncSchema() {
       schema: Schema.Struct({
         id: Schema.String,
         path: Schema.String,
-        remoteUrl: Schema.String,
+        remoteKey: Schema.String,
         contentHash: Schema.String,
         updatedAt: Schema.Date
       })
@@ -169,11 +169,11 @@ export function createFileSyncSchema() {
     "v1.FileUpdated": ({
       id,
       path,
-      remoteUrl,
+      remoteKey,
       contentHash,
       updatedAt
     }: FileUpdatedPayload) =>
-      appTables.files.update({ path, remoteUrl, contentHash, updatedAt }).where({ id }),
+      appTables.files.update({ path, remoteKey, contentHash, updatedAt }).where({ id }),
     "v1.FileDeleted": ({ id, deletedAt }: FileDeletedPayload) =>
       appTables.files.update({ deletedAt }).where({ id })
   })

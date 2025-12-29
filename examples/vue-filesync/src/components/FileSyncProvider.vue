@@ -4,7 +4,7 @@ import { useStore } from 'vue-livestore'
 import { disposeFileSync, initFileSync, startFileSync, stopFileSync } from '@livestore-filesync/core'
 
 const props = defineProps<{
-  remoteUrl?: string
+  signerBaseUrl?: string
   headers?: Record<string, string>
   authToken?: string
 }>()
@@ -13,7 +13,7 @@ const { store } = useStore()
 
 initFileSync(store, {
   remote: {
-    baseUrl: props.remoteUrl ?? '/api',
+    signerBaseUrl: props.signerBaseUrl ?? '/api',
     headers: props.headers,
     authToken: props.authToken
   }

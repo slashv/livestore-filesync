@@ -4,7 +4,6 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@livestore-filesync/cloudflare": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore/adapter-web": "catalog:",
     "@livestore/devtools-vite": "0.4.0-dev.20",

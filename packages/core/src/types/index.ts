@@ -12,7 +12,7 @@ import type { TransferStatus } from "../services/sync-executor/index.js"
 export interface FileRecord {
   readonly id: string
   readonly path: string
-  readonly remoteUrl: string
+  readonly remoteKey: string
   readonly contentHash: string
   readonly createdAt: Date
   readonly updatedAt: Date

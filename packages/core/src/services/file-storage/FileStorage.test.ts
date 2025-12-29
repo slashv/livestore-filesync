@@ -2,6 +2,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import { makeStoredPath } from "../../utils/index.js"
+import { stripFilesRoot } from "../../utils/path.js"
 import { FileStorage, FileStorageLive } from "./index.js"
 import { FileSyncLive } from "../file-sync/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
@@ -114,7 +115,7 @@ describe("FileStorage", () => {
         events.fileUpdated({
           id: saved.fileId,
           path: saved.path,
-          remoteUrl: "https://remote.test/file",
+          remoteKey: stripFilesRoot(saved.path),
           contentHash: saved.contentHash,
           updatedAt: new Date()
         })
@@ -170,7 +171,7 @@ describe("FileStorage", () => {
         events.fileUpdated({
           id: remoteId,
           path: remotePath,
-          remoteUrl: "https://remote.test/file",
+          remoteKey: stripFilesRoot(remotePath),
           contentHash: "remote-hash",
           updatedAt: new Date()
         })
@@ -179,7 +180,7 @@ describe("FileStorage", () => {
       const remoteUrl = await runtime.runPromise(
         Scope.extend(fileStorage.getFileUrl(remoteId), scope)
       )
-      expect(remoteUrl).toBe("https://remote.test/file")
+      expect(remoteUrl).toBe(`https://test-storage.local/${stripFilesRoot(remotePath)}`)
 
       const records = store.query(
         deps.schema.queryDb(tables.files.where({ id: remoteId }))

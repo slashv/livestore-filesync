@@ -20,8 +20,8 @@
     "test:unit": "pnpm --filter @livestore-filesync/core test",
     "test:e2e": "pnpm --filter @livestore-filesync/e2e-tests test",
     "dev": "pnpm -r --parallel dev",
-    "dev:vue": "pnpm build:packages && pnpm --filter livestore-filesync-vue-example dev",
-    "dev:react": "pnpm build:packages && pnpm --filter livestore-filesync-react-example dev",
+    "dev:vue": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-vue-example dev",
+    "dev:react": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-react-example dev",
     "changeset-version": "changeset version",
     "changeset-publish": "pnpm build && changeset publish"
   },

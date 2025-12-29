@@ -14,7 +14,8 @@ import { FileSync } from "../file-sync/index.js"
 import { hashFile, makeStoredPath } from "../../utils/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
 import type { FileOperationResult, FileRecord, LocalFilesState } from "../../types/index.js"
-import type { HashError, StorageError, FileNotFoundError } from "../../errors/index.js"
+import { StorageError } from "../../errors/index.js"
+import type { HashError, FileNotFoundError } from "../../errors/index.js"
 
 /**
  * FileStorage service interface
@@ -136,7 +137,7 @@ export const makeFileStorage = (
       id: string
       path: string
       contentHash: string
-      remoteUrl?: string
+      remoteKey?: string
     }) =>
       Effect.sync(() => {
         const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: params.id })))
@@ -146,7 +147,7 @@ export const makeFileStorage = (
           events.fileUpdated({
             id: params.id,
             path: params.path,
-            remoteUrl: params.remoteUrl ?? file.remoteUrl,
+            remoteKey: params.remoteKey ?? file.remoteKey,
             contentHash: params.contentHash,
             updatedAt: new Date()
           })
@@ -201,8 +202,8 @@ export const makeFileStorage = (
           // Write new file to local storage
           yield* localStorage.writeFile(path, file)
 
-          // Update file record (clear remoteUrl until upload completes)
-          yield* updateFileRecord({ id: fileId, path, contentHash, remoteUrl: "" })
+          // Update file record (clear remoteKey until upload completes)
+          yield* updateFileRecord({ id: fileId, path, contentHash, remoteKey: "" })
 
           // Clean up old file if path changed
           if (path !== existingFile.path) {
@@ -235,8 +236,8 @@ export const makeFileStorage = (
         )
 
         // Best-effort remote cleanup
-        if (existingFile.remoteUrl) {
-          yield* remoteStorage.delete(existingFile.remoteUrl).pipe(
+        if (existingFile.remoteKey) {
+          yield* remoteStorage.delete(existingFile.remoteKey).pipe(
             Effect.catchAll(() => Effect.void) // Ignore errors
           )
         }
@@ -266,9 +267,17 @@ export const makeFileStorage = (
           }
         }
 
-        // Fall back to remote URL when present
-        console.log("returning remote URL", file.remoteUrl)
-        return file.remoteUrl || null
+        // Fall back to remote URL when present (minted on demand)
+        if (!file.remoteKey) return null
+        return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: "Failed to resolve remote URL",
+                cause: error
+              })
+          )
+        )
       })
 
     return {

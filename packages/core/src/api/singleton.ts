@@ -13,7 +13,7 @@ import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from
 import type { SyncSchema, SyncStore } from "../livestore/types.js"
 import type { FileSystem } from "../services/index.js"
 
-const DEFAULT_REMOTE_BASE_URL = "/api"
+const DEFAULT_SIGNER_BASE_URL = "/api"
 const REQUIRED_TABLES = ["files", "localFileState"] as const
 const REQUIRED_EVENTS = [
   "v1.FileCreated",
@@ -28,7 +28,7 @@ type SchemaFallback = Pick<SyncSchema, "tables" | "events"> & {
 
 export interface InitFileSyncConfig {
   remote?: {
-    baseUrl?: string
+    signerBaseUrl?: string
     headers?: Record<string, string>
     authToken?: string
   }
@@ -99,7 +99,7 @@ export const initFileSync = (store: SyncStore, config: InitFileSyncConfig = {}) 
 
   const schema = resolveSchema(store, config.schema)
   const remote: CreateFileSyncConfig["remote"] = {
-    baseUrl: config.remote?.baseUrl ?? DEFAULT_REMOTE_BASE_URL,
+    signerBaseUrl: config.remote?.signerBaseUrl ?? DEFAULT_SIGNER_BASE_URL,
     ...(config.remote?.headers ? { headers: config.remote.headers } : {}),
     ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {})
   }

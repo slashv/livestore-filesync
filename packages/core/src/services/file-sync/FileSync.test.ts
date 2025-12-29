@@ -2,6 +2,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import { makeStoredPath } from "../../utils/index.js"
+import { stripFilesRoot } from "../../utils/path.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import {
   makeRemoteStorageMemoryWithRefs,
@@ -55,7 +56,7 @@ describe("FileSync", () => {
       events.fileUpdated({
         id: fileId,
         path,
-        remoteUrl: "https://remote.test/file",
+        remoteKey: stripFilesRoot(path),
         contentHash: "remote-hash",
         updatedAt: new Date()
       })
@@ -140,7 +141,7 @@ describe("FileSync", () => {
       events.fileUpdated({
         id: fileId,
         path,
-        remoteUrl: "https://remote.test/file",
+        remoteKey: stripFilesRoot(path),
         contentHash: "remote-hash",
         updatedAt: new Date()
       })

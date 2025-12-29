@@ -141,7 +141,7 @@ export const makeFileSync = (
 
     const executorConfig: SyncExecutorConfig = {
       ...defaultExecutorConfig,
-      ...(config.executorConfig ?? {})
+      ...config.executorConfig
     }
 
     // Emit an event
@@ -188,7 +188,7 @@ export const makeFileSync = (
         store.commit(events.localFileStateSet({ localFiles: next }))
       })
 
-    const updateFileRemoteUrl = (fileId: string, remoteUrl: string): Effect.Effect<void> =>
+    const updateFileRemoteKey = (fileId: string, remoteKey: string): Effect.Effect<void> =>
       Effect.sync(() => {
         const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: fileId })))
         const file = files[0]
@@ -197,7 +197,7 @@ export const makeFileSync = (
           events.fileUpdated({
             id: fileId,
             path: file.path,
-            remoteUrl,
+            remoteKey,
             contentHash: file.contentHash,
             updatedAt: new Date()
           })
@@ -329,13 +329,13 @@ export const makeFileSync = (
         yield* emit({ type: "download:start", fileId })
 
         const file = yield* getFile(fileId)
-        if (!file || !file.remoteUrl) {
+        if (!file || !file.remoteKey) {
           const error = new Error("File not found or no remote URL")
           yield* emit({ type: "download:error", fileId, error })
           return yield* Effect.fail(error)
         }
 
-        const downloadedFile = yield* remoteStorage.download(file.remoteUrl)
+        const downloadedFile = yield* remoteStorage.download(file.remoteKey)
         yield* localStorage.writeFile(file.path, downloadedFile)
         const localHash = yield* hashFile(downloadedFile)
 
@@ -391,17 +391,17 @@ export const makeFileSync = (
 
         const localFile = yield* localStorage.readFile(file.path)
         const remoteKey = stripFilesRoot(file.path)
-        const remoteUrl = yield* remoteStorage.upload(localFile, { key: remoteKey })
+        const uploadResult = yield* remoteStorage.upload(localFile, { key: remoteKey })
 
         const latestFile = yield* getFile(fileId)
         if (!latestFile || latestFile.deletedAt) {
-          yield* remoteStorage.delete(remoteUrl).pipe(Effect.catchAll(() => Effect.void))
+          yield* remoteStorage.delete(uploadResult.key).pipe(Effect.catchAll(() => Effect.void))
           yield* removeLocalFileState(fileId)
           yield* emit({ type: "upload:complete", fileId })
           return
         }
 
-        yield* updateFileRemoteUrl(fileId, remoteUrl)
+        yield* updateFileRemoteKey(fileId, uploadResult.key)
 
         yield* updateLocalFilesState((state) => ({
           ...state,
@@ -484,7 +484,7 @@ export const makeFileSync = (
 
           const exists = yield* localStorage.fileExists(file.path)
           if (!exists) {
-            if (file.remoteUrl) {
+            if (file.remoteKey) {
               additions[file.id] = {
                 path: file.path,
                 localHash: "",
@@ -499,12 +499,12 @@ export const makeFileSync = (
           const f = yield* localStorage.readFile(file.path)
           const localHash = yield* hashFile(f)
           const remoteMismatch = localHash !== file.contentHash
-          const shouldUpload = !file.remoteUrl
+          const shouldUpload = !file.remoteKey
 
           additions[file.id] = {
             path: file.path,
             localHash,
-            downloadStatus: remoteMismatch && file.remoteUrl ? "pending" : "done",
+            downloadStatus: remoteMismatch && file.remoteKey ? "pending" : "done",
             uploadStatus: shouldUpload ? "pending" : "done",
             lastSyncError: ""
           }

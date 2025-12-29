@@ -55,9 +55,9 @@ export const makeMemoryRemoteStorage = (
 
   const upload = (
     file: File,
-    uploadOptions: { key?: string } = {}
-  ): Effect.Effect<string, UploadError> =>
-    Effect.gen(function*() {
+    uploadOptions: { key: string }
+  ): Effect.Effect<{ key: string; etag?: string }, UploadError> =>
+    Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
 
       if (options.offline || options.failUploads) {
@@ -77,12 +77,11 @@ export const makeMemoryRemoteStorage = (
           })
       })
 
-      const key = uploadOptions.key ?? crypto.randomUUID()
-      const url = `${options.baseUrl || baseUrl}/${key}`
+      const key = uploadOptions.key
 
       yield* Ref.update(storeRef, (store) => {
         const newStore = new Map(store)
-        newStore.set(url, {
+        newStore.set(key, {
           data: new Uint8Array(buffer),
           mimeType: file.type || "application/octet-stream",
           name: file.name
@@ -90,30 +89,30 @@ export const makeMemoryRemoteStorage = (
         return newStore
       })
 
-      return url
+      return { key }
     })
 
-  const download = (url: string): Effect.Effect<File, DownloadError> =>
-    Effect.gen(function*() {
+  const download = (key: string): Effect.Effect<File, DownloadError> =>
+    Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
 
       if (options.offline || options.failDownloads) {
         return yield* Effect.fail(
           new DownloadError({
             message: "Download failed: network unavailable",
-            url
+            url: key
           })
         )
       }
 
       const store = yield* Ref.get(storeRef)
-      const entry = store.get(url)
+      const entry = store.get(key)
 
       if (!entry) {
         return yield* Effect.fail(
           new DownloadError({
             message: "File not found",
-            url
+            url: key
           })
         )
       }
@@ -126,40 +125,55 @@ export const makeMemoryRemoteStorage = (
       return new File([buffer], entry.name, { type: entry.mimeType })
     })
 
-  const deleteFile = (url: string): Effect.Effect<void, DeleteError> =>
-    Effect.gen(function*() {
+  const deleteFile = (key: string): Effect.Effect<void, DeleteError> =>
+    Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
 
       if (options.offline) {
         return yield* Effect.fail(
           new DeleteError({
             message: "Delete failed: network unavailable",
-            path: url
+            path: key
           })
         )
       }
 
       yield* Ref.update(storeRef, (store) => {
         const newStore = new Map(store)
-        newStore.delete(url)
+        newStore.delete(key)
         return newStore
       })
     })
 
+  const getDownloadUrl = (key: string): Effect.Effect<string, DownloadError> =>
+    Effect.gen(function* () {
+      const options = yield* Ref.get(optionsRef)
+      if (options.offline || options.failDownloads) {
+        return yield* Effect.fail(
+          new DownloadError({
+            message: "Download signing failed: network unavailable",
+            url: key
+          })
+        )
+      }
+      return `${options.baseUrl || baseUrl}/${key}`
+    })
+
   const checkHealth = (): Effect.Effect<boolean, never> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
       return !options.offline
     })
 
   const getConfig = (): RemoteStorageConfig => ({
-    baseUrl
+    signerBaseUrl: baseUrl
   })
 
   return {
     upload,
     download,
     delete: deleteFile,
+    getDownloadUrl,
     checkHealth,
     getConfig
   }
@@ -170,7 +184,7 @@ export const makeMemoryRemoteStorage = (
  */
 export const RemoteStorageMemory: Layer.Layer<RemoteStorage> = Layer.effect(
   RemoteStorage,
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const storeRef = yield* Ref.make<MemoryFileStore>(new Map())
     const optionsRef = yield* Ref.make<MemoryRemoteStorageOptions>({})
     return makeMemoryRemoteStorage(storeRef, optionsRef)
@@ -180,7 +194,7 @@ export const RemoteStorageMemory: Layer.Layer<RemoteStorage> = Layer.effect(
 /**
  * Create a scoped Layer with access to the underlying refs for testing
  */
-export const makeRemoteStorageMemoryWithRefs = Effect.gen(function*() {
+export const makeRemoteStorageMemoryWithRefs = Effect.gen(function* () {
   const storeRef = yield* Ref.make<MemoryFileStore>(new Map())
   const optionsRef = yield* Ref.make<MemoryRemoteStorageOptions>({})
   return {
