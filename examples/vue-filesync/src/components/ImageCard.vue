@@ -96,6 +96,10 @@ watch(() => props.file.updatedAt, async () => {
             <td>{{ file.contentHash }}</td>
           </tr>
           <tr>
+            <td class="label">File: Updated At</td>
+            <td>{{ file.updatedAt }}</td>
+          </tr>
+          <tr>
             <td class="label">Local File: Hash</td>
             <td>{{ localFile?.localHash }}</td>
           </tr>
