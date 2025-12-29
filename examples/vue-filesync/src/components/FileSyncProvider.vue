@@ -5,7 +5,8 @@ import { disposeFileSync, initFileSync, startFileSync, stopFileSync } from '@liv
 
 const props = defineProps<{
   remoteUrl?: string
-  authHeaders?: () => HeadersInit
+  headers?: Record<string, string>
+  authToken?: string
 }>()
 
 const { store } = useStore()
@@ -13,7 +14,8 @@ const { store } = useStore()
 initFileSync(store, {
   remote: {
     baseUrl: props.remoteUrl ?? '/api',
-    authHeaders: props.authHeaders
+    headers: props.headers,
+    authToken: props.authToken
   }
 })
 

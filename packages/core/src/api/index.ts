@@ -32,6 +32,7 @@ export {
   deleteFile,
   readFile,
   getFileUrl,
+  resolveFileUrl,
   isOnline,
   triggerSync,
   type InitFileSyncConfig

@@ -26,18 +26,13 @@ const storeOptions = {
   storeId,
   syncPayload: { authToken }
 }
-
-// Auth headers for file sync API
-const getAuthHeaders = () => ({
-  'Authorization': `Bearer ${authToken}`,
-})
 </script>
 
 <template>
   <Suspense>
     <template #default>
       <LiveStoreProvider :options="storeOptions">
-        <FileSyncProvider :auth-headers="getAuthHeaders">
+        <FileSyncProvider :auth-token="authToken">
           <Gallery />
         </FileSyncProvider>
       </LiveStoreProvider>

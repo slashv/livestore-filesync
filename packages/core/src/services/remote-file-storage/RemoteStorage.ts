@@ -87,7 +87,7 @@ export interface RemoteStorageService extends RemoteStorageAdapter {
 export class RemoteStorage extends Context.Tag("RemoteStorage")<
   RemoteStorage,
   RemoteStorageService
->() {}
+>() { }
 
 /**
  * Create a generic HTTP-based remote storage adapter
@@ -99,6 +99,7 @@ export class RemoteStorage extends Context.Tag("RemoteStorage")<
  * - GET /health for health checks
  */
 export const makeHttpRemoteStorage = (config: RemoteStorageConfig): RemoteStorageService => {
+  console.log("makeHttpRemoteStorage", config)
   const makeHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {
       ...config.headers
@@ -223,7 +224,7 @@ export const makeRemoteStorageLive = (
 export class RemoteStorageConfigTag extends Context.Tag("RemoteStorageConfig")<
   RemoteStorageConfigTag,
   RemoteStorageConfig
->() {}
+>() { }
 
 /**
  * Layer that reads config from RemoteStorageConfig service
@@ -231,7 +232,7 @@ export class RemoteStorageConfigTag extends Context.Tag("RemoteStorageConfig")<
 export const RemoteStorageLive: Layer.Layer<RemoteStorage, never, RemoteStorageConfigTag> =
   Layer.effect(
     RemoteStorage,
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const config = yield* RemoteStorageConfigTag
       return makeHttpRemoteStorage(config)
     })

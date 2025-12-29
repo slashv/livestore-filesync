@@ -28,9 +28,9 @@ pnpm add @livestore-filesync/core @livestore-filesync/adapter-node @livestore/li
 ## How it works (short version)
 
 - Files are stored locally in OPFS and named by SHA-256 so duplicates collapse automatically.
-- Remote sync uses simple HTTP endpoints under `remoteUrl` with optional `authHeaders`.
+- Remote sync uses simple HTTP endpoints under `remoteUrl` with optional static headers/auth token (applied by the core layer; service worker not required for uploads).
 - Schema helper adds a `files` table plus local-only state; you merge it with your own tables/events.
-- Service worker helper can proxy `/livestore-filesync-files/*` to OPFS before hitting remote storage.
+- Service worker helper can proxy `/livestore-filesync-files/*` to OPFS before hitting remote storage for GETs; uploads work without the service worker.
 
 ## React quick start (see `examples/react-filesync`)
 
@@ -82,11 +82,11 @@ const adapter = makePersistedAdapter({
   sharedWorker: LiveStoreSharedWorker
 })
 const authToken = import.meta.env.VITE_AUTH_TOKEN
-const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
+const headers = { Authorization: `Bearer ${authToken}` }
 
 const FileSyncProvider = ({ children }) => {
   const { store } = useStore()
-  initFileSync(store, { remote: { baseUrl: '/api', authHeaders: getAuthHeaders } })
+  initFileSync(store, { remote: { baseUrl: '/api', headers } })
   useEffect(() => {
     startFileSync()
     return () => {
@@ -165,10 +165,10 @@ import { onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
 import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@livestore-filesync/core'
 
-const props = defineProps<{ authHeaders?: () => HeadersInit }>()
+const props = defineProps<{ headers?: Record<string, string>; authToken?: string }>()
 
 const { store } = useStore()
-initFileSync(store, { remote: { baseUrl: '/api', authHeaders: props.authHeaders } })
+initFileSync(store, { remote: { baseUrl: '/api', headers: props.headers, authToken: props.authToken } })
 onMounted(() => startFileSync())
 onUnmounted(() => {
   stopFileSync()

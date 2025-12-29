@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
-import { computed, ref, watch } from 'vue'
-import { deleteFile, readFile, updateFile } from '@livestore-filesync/core'
+import { computed, onMounted, ref } from 'vue'
+import { deleteFile, readFile, updateFile, resolveFileUrl } from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
 import { invertImageFile } from '../utils/image.utils'
@@ -33,16 +33,11 @@ const handleEdit = async () => {
   }
 }
 
-const fileUrl = computed(() => {
-  if (localFile.value && localFile.value.downloadStatus === 'done') {
-    return localFile.value.path
-  } else if (!props.file.remoteUrl) {
-    return "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
-  }
-  return props.file.remoteUrl
+const src = ref(props.file.path)
+onMounted(async () => {
+  const url = await resolveFileUrl(props.file.id)
+  if (url) src.value = url
 })
-
-const filename = computed(() => props.file.path.split('/').pop())
 </script>
 
 <template>
@@ -52,86 +47,125 @@ const filename = computed(() => props.file.path.split('/').pop())
   >
     <div class="image-container">
       <img
-        :src="fileUrl"
+        :src="src"
         :alt="file.path"
         class="image"
         data-testid="file-image"
       />
     </div>
     <div class="info">
-      <div
-        class="filename"
-        data-testid="file-name"
-      >{{ filename }}</div>
-      <div class="actions">
-        <span
-          class="status"
-          data-testid="file-status"
-        >
-          {{ localFile?.downloadStatus ?? 'Pending' }}
-        </span>
-        <button
-          type="button"
-          @click="handleEdit"
-          data-testid="edit-button"
-        >
-          Edit
-        </button>
-        <button
-          type="button"
-          @click="handleDelete"
-          data-testid="delete-button"
-        >
-          Delete
-        </button>
+      <div class="header">
+        <span data-testid="file-name"><strong>File ID:</strong> {{ file.id }}</span>
+        <div class="actions">
+          <button
+            type="button"
+            @click="handleEdit"
+            data-testid="edit-button"
+          >Edit</button>
+          <button
+            type="button"
+            @click="handleDelete"
+            data-testid="delete-button"
+          >Delete</button>
+        </div>
       </div>
+      <table class="debug-table">
+        <tbody>
+          <tr>
+            <td class="label">File: Path</td>
+            <td>{{ file.path }}</td>
+          </tr>
+          <tr>
+            <td class="label">File: Remote URL</td>
+            <td>{{ file.remoteUrl }}</td>
+          </tr>
+          <tr>
+            <td class="label">File: Hash</td>
+            <td>{{ file.contentHash }}</td>
+          </tr>
+          <tr>
+            <td class="label">Local File: Hash</td>
+            <td>{{ localFile?.localHash }}</td>
+          </tr>
+          <tr>
+            <td class="label">Local File: Download</td>
+            <td data-testid="file-status">{{ localFile?.downloadStatus }}</td>
+          </tr>
+          <tr>
+            <td class="label">Local File: Upload</td>
+            <td>{{ localFile?.uploadStatus }}</td>
+          </tr>
+          <tr v-if="localFile?.lastSyncError">
+            <td class="label">Error</td>
+            <td>{{ localFile?.lastSyncError }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </template>
 
 <style scoped>
 .card {
+  width: 100%;
   border: 1px solid #ccc;
+  display: grid;
+  grid-template-columns: 1fr 3fr;
 }
 
 .image-container {
-  height: 150px;
+  position: relative;
+  min-height: 200px;
   background: #eee;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-right: 1px solid #ccc;
 }
 
 .image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.placeholder {
-  color: #666;
-}
-
 .info {
-  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
 }
 
-.filename {
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.header {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ccc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
 }
 
 .actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.status {
+.debug-table {
+  width: 100%;
   font-size: 0.875rem;
-  color: #666;
+  border-collapse: collapse;
+}
+
+.debug-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ccc;
+}
+
+.debug-table tr:last-child td {
+  border-bottom: none;
+}
+
+.debug-table .label {
+  width: 150px;
+  white-space: nowrap;
+  border-right: 1px solid #ccc;
+  font-weight: 500;
 }
 </style>

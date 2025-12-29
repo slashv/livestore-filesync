@@ -75,7 +75,7 @@ const handleFileChange = async (e: Event) => {
     </div>
     <div
       v-else
-      class="grid"
+      class="layout"
     >
       <ImageCard
         v-for="file in files"
@@ -127,9 +127,10 @@ const handleFileChange = async (e: Event) => {
   color: #666;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+.layout {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 </style>

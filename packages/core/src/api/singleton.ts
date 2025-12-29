@@ -29,7 +29,8 @@ type SchemaFallback = Pick<SyncSchema, "tables" | "events"> & {
 export interface InitFileSyncConfig {
   remote?: {
     baseUrl?: string
-    authHeaders?: () => HeadersInit
+    headers?: Record<string, string>
+    authToken?: string
   }
   fileSystem?: Layer.Layer<FileSystem>
   options?: CreateFileSyncConfig["options"]
@@ -66,7 +67,7 @@ const validateDefaultSchema = (store: SyncStore) => {
       .join("; ")
     throw new Error(
       `FileSync schema missing from store (${details}). ` +
-        "Ensure createFileSyncSchema is merged into your LiveStore schema or pass schema to initFileSync."
+      "Ensure createFileSyncSchema is merged into your LiveStore schema or pass schema to initFileSync."
     )
   }
 }
@@ -98,10 +99,9 @@ export const initFileSync = (store: SyncStore, config: InitFileSyncConfig = {}) 
 
   const schema = resolveSchema(store, config.schema)
   const remote: CreateFileSyncConfig["remote"] = {
-    baseUrl: config.remote?.baseUrl ?? DEFAULT_REMOTE_BASE_URL
-  }
-  if (config.remote?.authHeaders) {
-    remote.authHeaders = config.remote.authHeaders
+    baseUrl: config.remote?.baseUrl ?? DEFAULT_REMOTE_BASE_URL,
+    ...(config.remote?.headers ? { headers: config.remote.headers } : {}),
+    ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {})
   }
 
   singleton = createFileSync({
@@ -130,11 +130,11 @@ export const disposeFileSync = async () => {
 }
 
 export const saveFile = (file: File) => requireFileSync().saveFile(file)
-export const updateFile = (fileId: string, file: File) =>
-  requireFileSync().updateFile(fileId, file)
+export const updateFile = (fileId: string, file: File) => requireFileSync().updateFile(fileId, file)
 export const deleteFile = (fileId: string) => requireFileSync().deleteFile(fileId)
 export const readFile = (path: string) => requireFileSync().readFile(path)
 export const getFileUrl = (path: string) => requireFileSync().getFileUrl(path)
+export const resolveFileUrl = (fileId: string) => requireFileSync().resolveFileUrl(fileId)
 export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
 

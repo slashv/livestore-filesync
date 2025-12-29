@@ -21,7 +21,8 @@ import {
   LocalFileStorage,
   LocalFileStorageLive,
   RemoteStorage,
-  makeHttpRemoteStorage
+  makeHttpRemoteStorage,
+  type RemoteStorageConfig
 } from "../services/index.js"
 import { sanitizeStoreId } from "../utils/index.js"
 import type { FileStorageService } from "../services/file-storage/index.js"
@@ -83,7 +84,8 @@ export interface CreateFileSyncConfig {
   /** Remote storage configuration */
   remote: {
     baseUrl: string
-    authHeaders?: () => HeadersInit
+    headers?: Record<string, string>
+    authToken?: string
   }
 
   /** Optional filesystem layer override */
@@ -198,11 +200,10 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.localPathRoot !== undefined ? { localPathRoot: options.localPathRoot } : {})
   }
 
-  const remoteStorageConfig: { baseUrl: string; headers?: Record<string, string> } = {
-    baseUrl: remote.baseUrl
-  }
-  if (remote.authHeaders) {
-    remoteStorageConfig.headers = remote.authHeaders() as Record<string, string>
+  const remoteStorageConfig: RemoteStorageConfig = {
+    baseUrl: remote.baseUrl,
+    ...(remote.headers ? { headers: remote.headers } : {}),
+    ...(remote.authToken ? { authToken: remote.authToken } : {})
   }
 
   const RemoteStorageLive = Layer.succeed(
@@ -252,7 +253,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileSyncService = async (): Promise<FileSyncService> => {
     if (fileSyncService) return fileSyncService
-    fileSyncService = await runEffect(Effect.gen(function*() {
+    fileSyncService = await runEffect(Effect.gen(function* () {
       return yield* FileSync
     }))
     return fileSyncService
@@ -260,7 +261,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileStorageService = async (): Promise<FileStorageService> => {
     if (fileStorageService) return fileStorageService
-    fileStorageService = await runEffect(Effect.gen(function*() {
+    fileStorageService = await runEffect(Effect.gen(function* () {
       return yield* FileStorage
     }))
     return fileStorageService
@@ -346,7 +347,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const readFile = async (path: string): Promise<File> =>
     runEffect(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const localStorage = yield* LocalFileStorage
         return yield* localStorage.readFile(path)
       })
@@ -354,7 +355,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileUrl = async (path: string): Promise<string | null> =>
     runEffect(
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         const localStorage = yield* LocalFileStorage
         const exists = yield* localStorage.fileExists(path)
         if (!exists) return null
