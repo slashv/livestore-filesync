@@ -28,9 +28,9 @@ pnpm add @livestore-filesync/core @livestore-filesync/adapter-node @livestore/li
 ## How it works (short version)
 
 - Files are stored locally in OPFS and named by SHA-256 so duplicates collapse automatically.
-- Remote sync uses simple HTTP endpoints under `remoteUrl` with optional static headers/auth token (applied by the core layer; service worker not required for uploads).
+- Remote sync is **key-based** and uses a **signer** to mint short-lived URLs against an S3-compatible object store (for upload/download) and to perform deletes.
 - Schema helper adds a `files` table plus local-only state; you merge it with your own tables/events.
-- Service worker helper can proxy `/livestore-filesync-files/*` to OPFS before hitting remote storage for GETs; uploads work without the service worker.
+- Service worker helper can proxy `/livestore-filesync-files/*` to OPFS before falling back to remote; alternatively the UI can call `resolveFileUrl(fileId)` to get a usable URL without relying on the service worker.
 
 ## React quick start (see `examples/react-filesync`)
 
@@ -86,7 +86,7 @@ const headers = { Authorization: `Bearer ${authToken}` }
 
 const FileSyncProvider = ({ children }) => {
   const { store } = useStore()
-  initFileSync(store, { remote: { baseUrl: '/api', headers } })
+  initFileSync(store, { remote: { signerBaseUrl: '/api', headers } })
   useEffect(() => {
     startFileSync()
     return () => {
@@ -123,7 +123,7 @@ const files = store.useQuery(queryDb(tables.files.where({ deletedAt: null })))
 
 const onFile = async (file: File) => {
   const result = await saveFile(file)
-  const url = await getFileUrl(result.path)
+  const url = await getFileUrl(result.fileId)
   console.log({ result, url })
 }
 ```
@@ -168,7 +168,7 @@ import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@liv
 const props = defineProps<{ headers?: Record<string, string>; authToken?: string }>()
 
 const { store } = useStore()
-initFileSync(store, { remote: { baseUrl: '/api', headers: props.headers, authToken: props.authToken } })
+initFileSync(store, { remote: { signerBaseUrl: '/api', headers: props.headers, authToken: props.authToken } })
 onMounted(() => startFileSync())
 onUnmounted(() => {
   stopFileSync()
@@ -215,7 +215,7 @@ import { saveFile, getFileUrl } from '@livestore-filesync/core'
 
 const save = async (file: File) => {
   const result = await saveFile(file)
-  const url = await getFileUrl(result.path)
+  const url = await getFileUrl(result.fileId)
   console.log({ result, url })
 }
 </script>
@@ -256,7 +256,7 @@ Singleton helpers (recommended for apps with a single store):
 ```typescript
 import { initFileSync, startFileSync, saveFile } from '@livestore-filesync/core'
 
-initFileSync(store, { remote: { baseUrl: 'https://api.example.com/api' } })
+initFileSync(store, { remote: { signerBaseUrl: 'https://api.example.com/api' } })
 startFileSync()
 const result = await saveFile(file)
 ```
@@ -270,7 +270,7 @@ import { queryDb } from '@livestore/livestore'
 const fileSync = createFileSync({
   store,
   schema: { tables, events, queryDb },
-  remote: { baseUrl: 'https://api.example.com/api', authHeaders: () => ({ Authorization: `Bearer ${token}` }) }
+  remote: { signerBaseUrl: 'https://api.example.com/api', authHeaders: () => ({ Authorization: `Bearer ${token}` }) }
 })
 
 fileSync.start()
@@ -278,14 +278,35 @@ const result = await fileSync.saveFile(file)
 await fileSync.stop()
 ```
 
-## Remote storage expectations
+## Sync backend configuration (S3-compatible)
 
-Default remote adapter issues HTTP calls against `remoteUrl` (control base):
-- `POST /upload` with form data returns `{ url, key, size, contentType }`
-- `GET /health` reports remote storage availability
-File downloads/deletes use the `url` returned by upload (typically `/livestore-filesync-files/{storeId}/{hash}`).
+`@livestore-filesync/core` expects a **signer service** to mint short-lived URLs (and delete objects) for any S3-compatible backend (AWS S3, Cloudflare R2, MinIO, Wasabi, Backblaze B2 S3 API, etc.).
 
-Swap in your own HTTP endpoint or adapter if those routes differ.
+### Client config (web app)
+
+Pass the signer base URL to `initFileSync` / `createFileSync`:
+
+```ts
+initFileSync(store, {
+  remote: {
+    signerBaseUrl: "/api",
+    authToken: import.meta.env.VITE_AUTH_TOKEN
+  }
+})
+```
+
+### Signer API contract
+
+Your signer must implement:
+- `GET /health`
+- `POST /v1/sign/upload` `{ key, contentType?, contentLength? } -> { method, url, headers?, expiresAt }`
+- `POST /v1/sign/download` `{ key } -> { url, headers?, expiresAt }`
+- `POST /v1/delete` `{ key } -> 204`
+
+### Default server-side helpers in this repo
+
+- `@livestore-filesync/s3-signer`: a lightweight Worker intended to be deployed as the **production signer** for any S3-compatible backend (mints real presigned URLs).
+- `@livestore-filesync/cf-worker-utils`: small Cloudflare Worker composition helpers. It includes `createFilesyncR2DevHandler(...)` which is convenient for **local dev** when you have an `R2Bucket` binding (it exposes the signer routes under `/api/*` and serves the file data plane under `/livestore-filesync-files/*`).
 
 ## Requirements
 
