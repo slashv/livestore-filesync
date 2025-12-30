@@ -76,8 +76,7 @@ Notes:
 - Ensure `FileSync` uses `remoteUrl` returned by upload; download uses that.
 
 ### 6) Cloudflare worker changes
-- Update routes in `packages/cloudflare/src/handler.ts` and
-  `packages/cloudflare/src/routes.ts`:
+- Update routes in the Cloudflare Worker implementation:
   - Accept file reads/deletes at `/livestore-filesync-files/{key}` (no `/api/files`).
   - Update upload to store under provided key (from filename or `key` field).
   - Health remains under `/api/health`.

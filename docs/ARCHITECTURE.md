@@ -11,10 +11,10 @@ The services are wired together as Effect layers inside `createFileSync` and the
 - `LocalFileStorage`: wraps `FileSystem` with file-centric helpers (read/write bytes, object URLs,
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
-- `RemoteStorage`: pluggable adapter for upload/download/delete/health checks. The default adapter
-  is HTTP (`POST /upload`, `GET/DELETE {url}`, `GET /health`), and other backends can be supplied
-  via a custom adapter (the Cloudflare worker package shows one approach). Static headers/auth tokens
-  are applied by core so uploads do not rely on the service worker.
+- `RemoteStorage`: remote storage abstraction for upload/download/delete/health checks.
+  The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
+  API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
+  short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
 - `SyncExecutor`: manages upload/download queues with concurrency limits and retry/backoff logic.
 - `FileSync`: orchestration service. Tracks online state, reconciles LiveStore file records with
   local state, schedules transfers through `SyncExecutor`, updates remote URLs, and runs GC/health

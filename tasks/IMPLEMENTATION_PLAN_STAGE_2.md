@@ -185,11 +185,11 @@ export const useFileSync = () => {
 
 ---
 
-## Phase 4: New `@livestore-filesync/cloudflare` Package
+## Phase 4: Worker packaging (historical)
 
 ### Structure
 ```
-packages/cloudflare/
+(removed package paths)
   package.json
   tsconfig.json
   src/
@@ -217,7 +217,7 @@ export function createFileSyncHandler(config?: {
 
 ### Usage
 ```typescript
-import { createFileSyncHandler } from '@livestore-filesync/cloudflare'
+// (removed)
 import { makeWorker } from '@livestore/sync-cf/cf-worker'
 
 const fileSyncHandler = createFileSyncHandler()

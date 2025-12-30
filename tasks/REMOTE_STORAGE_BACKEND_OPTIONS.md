@@ -1,7 +1,7 @@
 # Remote storage backend options (Gateway vs direct-to-S3)
 
 This document covers:
-- The correlation between `@livestore-filesync/core`’s `RemoteStorage` service and the current `@livestore-filesync/cloudflare` package.
+- The correlation between `@livestore-filesync/core`’s `RemoteStorage` service and the Worker-side dev/data-plane implementation.
 - Options for supporting “any S3-compatible backend” without a package per provider.
 - A deeper expansion of the “skip gateway entirely” approach: the concrete changes needed in core (schema/types/services) and how the runtime flows look.
 
@@ -13,7 +13,7 @@ Core’s default remote adapter (`makeHttpRemoteStorage`) assumes a **Remote Sto
 - `DELETE {url}` → deletes bytes
 - `GET {baseUrl}/health` → `2xx` when healthy
 
-`@livestore-filesync/cloudflare` is a **Cloudflare Worker helper that implements exactly that contract**, backed by the Worker’s `R2Bucket` binding:
+A Worker-side helper can implement exactly that contract, backed by the Worker’s `R2Bucket` binding:
 - `GET {basePath}/health` (default `/api/health`) → validates bucket access.
 - `POST {basePath}/upload` (default `/api/upload`) → writes to R2 and returns JSON including `url`.
 - `GET/DELETE {filesBasePath}/:key` (default `/livestore-filesync-files/:key`) → fetch/delete from R2.

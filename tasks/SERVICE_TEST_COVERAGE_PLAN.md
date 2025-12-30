@@ -79,4 +79,4 @@
 4. Keep `packages/core/test` for cross-service integration scenarios.
 
 ## Open questions
-- Confirm whether adapter packages (`packages/adapter-node`, `packages/cloudflare`) should get their own service-level tests. If yes, add a follow-up plan for Node FileSystem adapter and Cloudflare handler behavior.
+- Confirm whether adapter packages (`packages/adapter-node`) should get their own service-level tests. If yes, add a follow-up plan for Node FileSystem adapter behavior.

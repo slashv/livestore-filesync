@@ -13,7 +13,7 @@ What you use:
 - `@livestore-filesync/core` — framework-agnostic API, schema helper, service worker utilities
 - `@livestore-filesync/adapter-web` — OPFS filesystem layer for browsers
 - `@livestore-filesync/adapter-node` — filesystem layer for Node/CLI tooling
-- `@livestore-filesync/cloudflare` — Cloudflare Worker handler for file storage endpoints
+- `@livestore-filesync/cf-worker-utils` — Cloudflare Worker composition helpers (e.g. route handler composition, dev R2 signer/data-plane)
 
 ## Install
 

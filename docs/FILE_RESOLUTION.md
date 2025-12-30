@@ -5,12 +5,12 @@ The file sync service worker lets the browser fetch `file.path` directly. Any GE
 ## Registering the worker (main thread)
 - Import and call `registerFileSyncServiceWorker` during app startup.
 - Point `scriptUrl` to a service worker module that calls `initFileSyncServiceWorker`.
-- In the Vue example (`examples/vue-filesync/src/main.ts`), we build a module URL for `../file-sync-sw.ts`, add query params for `filesBaseUrl` and an optional bearer `token`, then register it with `{ type: "module" }`.
+- In the React example (`examples/react-filesync/src/main.tsx`), we build a module URL for `../file-sync-sw.ts`, add query params for `filesBaseUrl` and an optional bearer `token`, then register it with `{ type: "module" }`.
 
 ## Service worker module configuration
-`examples/vue-filesync/file-sync-sw.ts` reads `filesBaseUrl` and `token` from its own URL search params and calls:
+`examples/react-filesync/file-sync-sw.ts` reads `filesBaseUrl` and `token` from its own URL search params and calls:
 - `pathPrefix: "/livestore-filesync-files/"` so `file.path` can be used as-is in the UI.
-- `getRemoteUrl: (path) => baseUrl ? \`\${baseUrl}/\${path}\` : \`/\${path}\`` to build the remote fetch URL when OPFS does not contain the file. The `path` passed in already includes the storage prefix.
+- `getRemoteUrl: (path) => baseUrl ? \`\${baseUrl}/\${path}\` : \`/\${path}\`` to build the remote fetch URL when OPFS does not contain the file. The `path` passed in already includes the storage prefix. In the examples this `baseUrl` is set to `window.location.origin` so the worker fetches from the same dev Worker instance.
 - `getRemoteHeaders`: adds `Authorization: Bearer <token>` when provided.
 - `cacheRemoteResponses: true` so remote fetches are stored back into OPFS for future reads.
 
@@ -21,7 +21,7 @@ The file sync service worker lets the browser fetch `file.path` directly. Any GE
 - If no remote URL is provided or the fetch fails, the worker returns a 404 response.
 
 ## Using `file.path` in the UI
-Components such as `examples/vue-filesync/src/components/ImageCard.vue` pass `file.path` directly to `<img :src>` and other fetches. The service worker ensures that path resolves either to the locally synced copy (OPFS) or to the remote storage URL without extra client-side URL resolution code.
+Components such as `examples/react-filesync/src/components/ImageCard.tsx` can pass `file.path` directly to `<img src>`. The service worker ensures that path resolves either to the locally synced copy (OPFS) or to the remote storage URL without extra client-side URL resolution code.
 
 ## Optional messaging hooks
 The worker exposes `createMessageHandler` to respond to `CLEAR_CACHE` and `PREFETCH` messages from the main thread (e.g., via `sendMessageToServiceWorker`). The example worker currently only initializes fetch handling; add `createMessageHandler` in the worker module if you need those commands.
