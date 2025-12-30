@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - examples/*
+  - tests/e2e
 
 catalog:
   '@livestore/adapter-web': 0.4.0-dev.20

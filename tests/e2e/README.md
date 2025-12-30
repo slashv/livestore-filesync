@@ -1,4 +1,4 @@
-# @livestore-filesync/e2e-tests
+# e2e-tests
 
 Framework-agnostic E2E tests for livestore-filesync implementations.
 
@@ -43,7 +43,7 @@ cd examples/web-filesync
 pnpm dev
 
 # In another terminal, run tests
-cd packages/e2e-tests
+cd tests/e2e
 pnpm test
 ```
 
@@ -71,7 +71,7 @@ cd examples/vue-filesync
 pnpm dev
 
 # Run tests against it
-cd packages/e2e-tests
+cd tests/e2e
 BASE_URL=http://localhost:60005 pnpm test
 ```
 

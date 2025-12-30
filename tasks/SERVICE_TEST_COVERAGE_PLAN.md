@@ -3,7 +3,7 @@
 ## Scope
 - Core services in `packages/core/src/services` (FileSystem, LocalFileStorage, RemoteStorage, SyncExecutor, FileSync, FileStorage).
 - Integration tests stay in `packages/core/test`.
-- E2E tests stay in `packages/e2e-tests/tests`.
+- E2E tests stay in `tests/e2e/tests`.
 
 ## Current coverage snapshot
 - FileSystem (OPFS): no direct tests.
@@ -12,7 +12,7 @@
 - SyncExecutor: `packages/core/test/SyncExecutor.test.ts` covers enqueueing, dedup, pause/resume, retry limits, inflight/queued counts, awaitIdle.
 - FileSync: no unit tests; partial integration via `packages/core/test/FileStorageRemoteDelete.test.ts` (delete during upload).
 - FileStorage: no unit tests; partial integration via `packages/core/test/FileStorageRemoteDelete.test.ts`.
-- E2E: `packages/e2e-tests/tests/file-sync.spec.ts` covers end-to-end UI + remote sync flows.
+- E2E: `tests/e2e/tests/file-sync.spec.ts` covers end-to-end UI + remote sync flows.
 
 ## Target test layout
 - Add service-level tests in each service folder:
@@ -23,7 +23,7 @@
   - `packages/core/src/services/file-sync/FileSync.test.ts`
   - `packages/core/src/services/file-storage/FileStorage.test.ts`
 - Keep integration tests in `packages/core/test`.
-- Keep e2e tests in `packages/e2e-tests/tests`.
+- Keep e2e tests in `tests/e2e/tests`.
 - Update `packages/core/vitest.config.ts` to include `src/services/**/**/*.test.ts` in addition to `test/**/*.test.ts`.
 
 ## Testing strategy by service
