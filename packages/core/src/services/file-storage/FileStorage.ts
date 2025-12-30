@@ -269,7 +269,6 @@ export const makeFileStorage = (
             if (isNode()) {
               return resolveLocalFileUrl(deps.localPathRoot, file.path)
             }
-            console.log("returning local URL", file.path)
             return yield* localStorage.getFileUrl(file.path)
           }
         }

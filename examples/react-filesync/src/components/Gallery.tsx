@@ -66,7 +66,7 @@ export const Gallery: React.FC = () => {
           <p>No images yet. Upload one to get started!</p>
         </div>
       ) : (
-        <div className="grid">
+        <div className="layout">
           {files.map((file) => (
             <ImageCard key={file.id} file={file} />
           ))}

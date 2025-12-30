@@ -6,8 +6,11 @@
 
 import type { CfTypes } from '@livestore/sync-cf/cf-worker'
 import * as SyncBackend from '@livestore/sync-cf/cf-worker'
-import { createFileSyncHandler } from '@livestore-filesync/cloudflare'
-import { composeFetchHandlers, createMatchedHandler } from '@livestore-filesync/cf-worker-utils'
+import {
+  composeFetchHandlers,
+  createMatchedHandler,
+  createFilesyncR2DevHandler,
+} from '@livestore-filesync/cf-worker-utils'
 import { SyncPayload } from '../livestore/schema.ts'
 
 // Extend SyncBackend.Env with our additional bindings
@@ -26,15 +29,14 @@ export class SyncBackendDO extends SyncBackend.makeDurableObject({
   },
 }) {}
 
-// Create file sync handler
-const fileSyncHandler = createFileSyncHandler({
-  getAuthToken: (env) => (env as Env).WORKER_AUTH_TOKEN,
-})
-
 type SyncSearchParams = Exclude<ReturnType<typeof SyncBackend.matchSyncRequest>, undefined>
 
-const fileRoutes = (request: CfTypes.Request, env: Env, _ctx: CfTypes.ExecutionContext) =>
-  fileSyncHandler(request as unknown as Request, env)
+const fileRoutes = createFilesyncR2DevHandler<CfTypes.Request, Env, CfTypes.ExecutionContext>({
+  bucket: (env) => env.FILE_BUCKET,
+  getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+  basePath: '/api',
+  filesBasePath: '/livestore-filesync-files',
+})
 
 const liveStoreSyncRoutes = createMatchedHandler<
   CfTypes.Request,
@@ -42,8 +44,13 @@ const liveStoreSyncRoutes = createMatchedHandler<
   CfTypes.ExecutionContext,
   SyncSearchParams
 >({
-  match: (request) => SyncBackend.matchSyncRequest(request),
-  handle: (request, searchParams, env, ctx) =>
+  match: (request: CfTypes.Request) => SyncBackend.matchSyncRequest(request),
+  handle: (
+    request: CfTypes.Request,
+    searchParams: SyncSearchParams,
+    env: Env,
+    ctx: CfTypes.ExecutionContext,
+  ) =>
     SyncBackend.handleSyncRequest({
       request,
       searchParams,
