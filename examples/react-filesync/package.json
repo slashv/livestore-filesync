@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
+    "@livestore-filesync/cf-worker-utils": "workspace:*",
     "@livestore-filesync/cloudflare": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore/adapter-web": "catalog:",

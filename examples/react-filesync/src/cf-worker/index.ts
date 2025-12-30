@@ -7,6 +7,7 @@
 import type { CfTypes } from '@livestore/sync-cf/cf-worker'
 import * as SyncBackend from '@livestore/sync-cf/cf-worker'
 import { createFileSyncHandler } from '@livestore-filesync/cloudflare'
+import { composeFetchHandlers, createMatchedHandler } from '@livestore-filesync/cf-worker-utils'
 import { SyncPayload } from '../livestore/schema.ts'
 
 // Extend SyncBackend.Env with our additional bindings
@@ -30,30 +31,37 @@ const fileSyncHandler = createFileSyncHandler({
   getAuthToken: (env) => (env as Env).WORKER_AUTH_TOKEN,
 })
 
+type SyncSearchParams = Exclude<ReturnType<typeof SyncBackend.matchSyncRequest>, undefined>
+
+const fileRoutes = (request: CfTypes.Request, env: Env, _ctx: CfTypes.ExecutionContext) =>
+  fileSyncHandler(request as unknown as Request, env)
+
+const liveStoreSyncRoutes = createMatchedHandler<
+  CfTypes.Request,
+  Env,
+  CfTypes.ExecutionContext,
+  SyncSearchParams
+>({
+  match: (request) => SyncBackend.matchSyncRequest(request),
+  handle: (request, searchParams, env, ctx) =>
+    SyncBackend.handleSyncRequest({
+      request,
+      searchParams,
+      ctx,
+      syncBackendBinding: 'SYNC_BACKEND_DO',
+      syncPayloadSchema: SyncPayload,
+      validatePayload: (payload, context) => {
+        console.log(`Validating connection for store: ${context.storeId}`)
+        if (payload?.authToken !== env.WORKER_AUTH_TOKEN) {
+          throw new Error('Invalid auth token')
+        }
+      },
+    }),
+})
+
 export default {
-  async fetch(request: CfTypes.Request, env: Env, ctx: CfTypes.ExecutionContext) {
-    // Handle file operations first
-    const fileResponse = await fileSyncHandler(request as unknown as Request, env)
-    if (fileResponse) return fileResponse
-
-    // Handle LiveStore sync
-    const searchParams = SyncBackend.matchSyncRequest(request)
-    if (searchParams !== undefined) {
-      return SyncBackend.handleSyncRequest({
-        request,
-        searchParams,
-        ctx,
-        syncBackendBinding: 'SYNC_BACKEND_DO',
-        syncPayloadSchema: SyncPayload,
-        validatePayload: (payload, context) => {
-          console.log(`Validating connection for store: ${context.storeId}`)
-          if (payload?.authToken !== env.WORKER_AUTH_TOKEN) {
-            throw new Error('Invalid auth token')
-          }
-        },
-      })
-    }
-
-    return new Response('Not Found', { status: 404 })
-  },
+  fetch: composeFetchHandlers<CfTypes.Request, Env, CfTypes.ExecutionContext>(
+    fileRoutes,
+    liveStoreSyncRoutes,
+  ),
 }

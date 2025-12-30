@@ -1,0 +1,35 @@
+{
+  "name": "@livestore-filesync/cf-worker-utils",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "MIT",
+  "description": "Small utilities for composing Cloudflare Worker fetch handlers (dependency-free)",
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "router",
+    "fetch",
+    "livestore"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "check": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.build.json --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}
+
+

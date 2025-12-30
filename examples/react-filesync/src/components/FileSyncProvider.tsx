@@ -8,29 +8,33 @@ import {
 } from "@livestore-filesync/core";
 
 type FileSyncProviderProps = {
-  remoteUrl?: string;
+  signerBaseUrl?: string;
   headers?: Record<string, string>;
+  authHeaders?: () => Record<string, string>;
   authToken?: string;
   children?: ReactNode;
 };
 
 export const FileSyncProvider = ({
-  remoteUrl = "/api",
+  signerBaseUrl = "/api",
   headers,
+  authHeaders,
   authToken,
   children,
 }: FileSyncProviderProps) => {
   const { store } = useStore();
 
   const remote: {
-    baseUrl: string;
+    signerBaseUrl: string;
     headers?: Record<string, string>;
     authToken?: string;
   } = {
-    baseUrl: remoteUrl,
+    signerBaseUrl,
   };
-  if (headers) {
-    remote.headers = headers;
+
+  const resolvedHeaders = headers ?? authHeaders?.();
+  if (resolvedHeaders) {
+    remote.headers = resolvedHeaders;
   }
   if (authToken) {
     remote.authToken = authToken;
@@ -44,7 +48,7 @@ export const FileSyncProvider = ({
       stopFileSync();
       void disposeFileSync();
     };
-  }, [headers, authToken, remoteUrl, store]);
+  }, [headers, authHeaders, authToken, signerBaseUrl, store]);
 
   return <>{children}</>;
 };
