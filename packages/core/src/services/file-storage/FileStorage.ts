@@ -212,6 +212,13 @@ export const makeFileStorage = (
             )
           }
 
+          // Delete old remote file
+          if (existingFile.remoteKey) {
+            yield* remoteStorage.delete(existingFile.remoteKey).pipe(
+              Effect.catchAll(() => Effect.void) // Ignore errors
+            )
+          }
+
           // Mark as changed for sync
           yield* fileSync.markLocalFileChanged(fileId, path, contentHash)
         }

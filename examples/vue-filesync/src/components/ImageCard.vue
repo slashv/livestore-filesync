@@ -44,30 +44,6 @@ watch(() => props.file.updatedAt, async () => {
   const url = await resolveFileUrl(props.file.id)
   if (url) src.value = url
 })
-
-// const src = ref("")
-
-// const updateSrc = async () => {
-//   if (props.file.remoteKey) {
-//     const encoded = props.file.remoteKey
-//       .split('/')
-//       .filter((s) => s.length > 0)
-//       .map((s) => encodeURIComponent(s))
-//       .join('/')
-//     src.value = `/livestore-filesync-files/${encoded}`
-//     return
-//   }
-
-//   const url = await getFileUrl(props.file.path)
-//   if (url) src.value = url
-// }
-
-// onMounted(updateSrc)
-
-// watch(
-//   () => [props.file.updatedAt, props.file.remoteKey],
-//   updateSrc,
-// )
 </script>
 
 <template>

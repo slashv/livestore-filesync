@@ -57,18 +57,6 @@ function withCacheBust(url: string): string {
   return next.toString()
 }
 
-async function getRemoteFileUrl(page: Page): Promise<string> {
-  const src = await page.locator('[data-testid="file-image"]').getAttribute('src')
-  if (!src) {
-    throw new Error('Expected file image src to be set')
-  }
-  const url = new URL(src, page.url())
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Unexpected file URL: ${url.toString()}`)
-  }
-  return url.toString()
-}
-
 async function getRemoteKey(page: Page): Promise<string> {
   const locator = page.locator('[data-testid="file-remote-key"]')
   await expect(locator).toBeVisible({ timeout: 10000 })

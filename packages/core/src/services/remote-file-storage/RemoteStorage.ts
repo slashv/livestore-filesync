@@ -2,8 +2,13 @@
  * RemoteStorage Service
  *
  * Provides an Effect-based abstraction for remote file storage.
- * This uses a pluggable adapter pattern allowing different backends
- * (S3, Cloudflare R2, Supabase Storage, custom APIs, etc.)
+ *
+ * The built-in/default implementation is signer-backed and targets any
+ * S3-compatible object store by minting short-lived presigned URLs (key-based).
+ * The primary extension point is the signer API contract (/health, /v1/sign/*, /v1/delete).
+ *
+ * Custom backends are still possible by providing your own `RemoteStorageAdapter`
+ * implementation and wiring it into the `RemoteStorage` service.
  *
  * @module
  */
