@@ -18,11 +18,30 @@ type R2BucketLike = {
   readonly delete: (key: string) => Promise<unknown>
 }
 
-type FilesyncR2DevConfig<Env> = {
+/**
+ * Configuration for the R2 storage handler.
+ *
+ * This handler implements the filesync signer API contract and serves files directly
+ * from Cloudflare R2 via the Workers API. It uses HMAC-SHA256 signed URLs for authentication.
+ *
+ * Suitable for:
+ * - Local development with Wrangler (uses R2 emulation)
+ * - Small to medium production deployments
+ * - Apps where Worker-proxied file access is acceptable
+ *
+ * For high-traffic production deployments, consider using `@livestore-filesync/s3-signer`
+ * which generates AWS S3-compatible presigned URLs for direct-to-storage access.
+ */
+export type R2HandlerConfig<Env> = {
+  /** Function to get the R2 bucket binding from the Worker environment */
   readonly bucket: (env: Env) => R2BucketLike
+  /** Function to get the auth token from the Worker environment */
   readonly getAuthToken: (env: Env) => string | undefined
+  /** Base path for the signer API (default: '/api') */
   readonly basePath?: string
+  /** Base path for serving files (default: '/livestore-filesync-files') */
   readonly filesBasePath?: string
+  /** URL expiry time in seconds (default: 900 = 15 minutes) */
   readonly ttlSeconds?: number
 }
 
@@ -131,8 +150,36 @@ const getFileKeyFromPath = (pathname: string, filesBasePath: string): string | n
   return decodeKeyPath(raw)
 }
 
-export function createFilesyncR2DevHandler<RequestType = Request, Env = unknown, Ctx = unknown>(
-  config: FilesyncR2DevConfig<Env>,
+/**
+ * Creates a Cloudflare Worker handler that implements the filesync signer API
+ * and serves files directly from R2.
+ *
+ * This handler:
+ * - Exposes signer endpoints at `{basePath}/v1/sign/upload`, `{basePath}/v1/sign/download`, `{basePath}/v1/delete`
+ * - Serves files at `{filesBasePath}/{key}` with HMAC-SHA256 signed URLs
+ * - Proxies all file data through the Worker (unlike s3-signer which does direct-to-S3)
+ *
+ * @example
+ * ```typescript
+ * import { createR2Handler, composeFetchHandlers } from '@livestore-filesync/r2'
+ *
+ * interface Env {
+ *   FILE_BUCKET: R2Bucket
+ *   WORKER_AUTH_TOKEN: string
+ * }
+ *
+ * const fileRoutes = createR2Handler<Request, Env, ExecutionContext>({
+ *   bucket: (env) => env.FILE_BUCKET,
+ *   getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+ * })
+ *
+ * export default {
+ *   fetch: composeFetchHandlers(fileRoutes, otherRoutes),
+ * }
+ * ```
+ */
+export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unknown>(
+  config: R2HandlerConfig<Env>,
 ): FetchHandler<RequestType, Env, Ctx, Response> {
   const basePath = normalizeBasePath(config.basePath ?? '/api')
   const filesBasePath = normalizeBasePath(config.filesBasePath ?? '/livestore-filesync-files')

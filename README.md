@@ -12,8 +12,8 @@ What you use:
 
 - `@livestore-filesync/core` — framework-agnostic API, schema helper, service worker utilities
 - `@livestore-filesync/opfs` — OPFS filesystem layer for browsers (implements `@effect/platform` FileSystem)
-- `@livestore-filesync/cf-worker-utils` — Cloudflare Worker composition helpers (e.g. route handler composition, dev R2 signer/data-plane)
-- `@livestore-filesync/s3-signer` — lightweight S3-compatible signer Worker
+- `@livestore-filesync/r2` — Cloudflare R2 storage adapter with Worker utilities (simple setup, Worker-proxied files)
+- `@livestore-filesync/s3-signer` — S3-compatible presigned URL signer (production-scale, direct-to-storage)
 
 ## Install
 
@@ -320,10 +320,76 @@ Your signer must implement:
 - `POST /v1/sign/download` `{ key } -> { url, headers?, expiresAt }`
 - `POST /v1/delete` `{ key } -> 204`
 
-### Default server-side helpers in this repo
+### Server-side storage options
 
-- `@livestore-filesync/s3-signer`: a lightweight Worker intended to be deployed as the **production signer** for any S3-compatible backend (mints real presigned URLs).
-- `@livestore-filesync/cf-worker-utils`: small Cloudflare Worker composition helpers. It includes `createFilesyncR2DevHandler(...)` which is convenient for **local dev** when you have an `R2Bucket` binding (it exposes the signer routes under `/api/*` and serves the file data plane under `/livestore-filesync-files/*`).
+This repo provides two approaches for handling file storage on the server:
+
+#### Option 1: R2 Adapter (`@livestore-filesync/r2`)
+
+The simplest setup — uses Cloudflare's R2 bucket binding directly. Files are proxied through your Worker.
+
+```typescript
+import { createR2Handler, composeFetchHandlers } from '@livestore-filesync/r2'
+
+const fileRoutes = createR2Handler({
+  bucket: (env) => env.FILE_BUCKET,
+  getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+})
+
+export default { fetch: composeFetchHandlers(fileRoutes) }
+```
+
+**Best for:**
+- Local development with Wrangler (uses R2 emulation)
+- Small to medium production deployments
+- Quick setup without S3 API credentials
+
+**Trade-offs:**
+- All file data flows through your Worker (bandwidth costs, latency)
+- Worker memory limits apply (~128MB)
+
+#### Option 2: S3 Signer (`@livestore-filesync/s3-signer`)
+
+Production-grade — generates AWS S3-compatible presigned URLs. Clients upload/download directly to S3/R2.
+
+```typescript
+import { createS3SignerHandler } from '@livestore-filesync/s3-signer'
+
+const fileRoutes = createS3SignerHandler({
+  basePath: '/api',
+  getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+})
+
+export default { fetch: fileRoutes }
+```
+
+Required environment variables:
+```bash
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_BUCKET=your-bucket-name
+S3_ACCESS_KEY_ID=your-access-key
+S3_SECRET_ACCESS_KEY=your-secret-key
+```
+
+**Best for:**
+- High-traffic production deployments
+- Large file uploads
+- Multi-cloud S3-compatible backends (AWS S3, R2, MinIO, Backblaze B2, etc.)
+
+**Trade-offs:**
+- Requires S3 API credentials even for local dev
+- Slightly more complex setup
+
+#### Which should I use?
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Getting started / local dev | R2 Adapter |
+| Small app, simple deployment | R2 Adapter |
+| High traffic, large files | S3 Signer |
+| Need AWS S3 or multi-cloud | S3 Signer |
+| Want same code dev/prod with direct uploads | S3 Signer |
 
 ## Requirements
 

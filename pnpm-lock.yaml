@@ -126,15 +126,15 @@ importers:
 
   examples/react-filesync:
     dependencies:
-      '@livestore-filesync/cf-worker-utils':
-        specifier: workspace:*
-        version: link:../../packages/cf-worker-utils
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@livestore-filesync/opfs':
         specifier: workspace:*
         version: link:../../packages/opfs
+      '@livestore-filesync/r2':
+        specifier: workspace:*
+        version: link:../../packages/r2
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -193,15 +193,15 @@ importers:
 
   examples/vue-filesync:
     dependencies:
-      '@livestore-filesync/cf-worker-utils':
-        specifier: workspace:*
-        version: link:../../packages/cf-worker-utils
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@livestore-filesync/opfs':
         specifier: workspace:*
         version: link:../../packages/opfs
+      '@livestore-filesync/r2':
+        specifier: workspace:*
+        version: link:../../packages/r2
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -252,12 +252,6 @@ importers:
         specifier: ^4.56.0
         version: 4.56.0(@cloudflare/workers-types@4.20251118.0)
 
-  packages/cf-worker-utils:
-    devDependencies:
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
-
   packages/core:
     devDependencies:
       '@effect/platform':
@@ -299,6 +293,12 @@ importers:
       vitest:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
+
+  packages/r2:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
 
   packages/s3-signer:
     dependencies:

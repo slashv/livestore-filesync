@@ -1,14 +1,14 @@
 {
-  "name": "@livestore-filesync/cf-worker-utils",
+  "name": "@livestore-filesync/r2",
   "version": "0.0.1",
   "type": "module",
   "license": "MIT",
-  "description": "Small utilities for composing Cloudflare Worker fetch handlers (dependency-free)",
+  "description": "Cloudflare R2 storage adapter for livestore-filesync with Worker utilities",
   "keywords": [
     "cloudflare",
     "workers",
-    "router",
-    "fetch",
+    "r2",
+    "storage",
     "livestore"
   ],
   "publishConfig": {

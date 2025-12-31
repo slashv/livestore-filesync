@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@livestore-filesync/cf-worker-utils": "workspace:*",
+    "@livestore-filesync/r2": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/opfs": "workspace:*",
     "@livestore/adapter-web": "catalog:",
