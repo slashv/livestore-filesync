@@ -99,3 +99,78 @@ This mirrors the Effect layer wiring in `createFileSync`:
                                             |
                                             v
 [MainLayer] = mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
+
+## API Usage: Singleton vs Instance
+
+The core package provides two ways to use the file sync API.
+
+### Singleton helpers (recommended for most apps)
+
+For apps with a single LiveStore store, use the singleton helpers. Initialize once, then import
+the file operations anywhere in your app:
+
+```typescript
+import {
+  initFileSync,
+  startFileSync,
+  stopFileSync,
+  disposeFileSync,
+  saveFile,
+  getFileUrl,
+  deleteFile
+} from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+// Initialize once (typically in your app's root component or setup)
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' }
+})
+
+startFileSync()
+
+// Use anywhere after initialization
+const result = await saveFile(file)
+const url = await getFileUrl(result.fileId)
+
+// Cleanup on app unmount
+stopFileSync()
+await disposeFileSync()
+```
+
+### Instance API (for advanced use cases)
+
+When you need multiple file sync instances (e.g., multiple stores) or want explicit dependency
+injection, use `createFileSync` to get a dedicated instance:
+
+```typescript
+import { createFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+import { queryDb } from '@livestore/livestore'
+import { tables, events } from './schema'
+
+const fileSync = createFileSync({
+  store,
+  schema: { tables, events, queryDb },
+  fileSystem: opfsLayer(),
+  remote: {
+    signerBaseUrl: '/api',
+    headers: { Authorization: `Bearer ${token}` }
+  }
+})
+
+fileSync.start()
+
+const result = await fileSync.saveFile(file)
+const url = await fileSync.getFileUrl(result.fileId)
+
+await fileSync.stop()
+await fileSync.dispose()
+```
+
+The instance API returns the same methods as the singleton helpers, scoped to that specific
+instance. This is useful for:
+
+- Apps with multiple LiveStore stores that each need their own file sync
+- Testing scenarios where you want isolated instances
+- Server-side rendering or other environments where global state is problematic
