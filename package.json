@@ -21,13 +21,9 @@
     "test:e2e": "pnpm --filter e2e-tests test",
     "dev": "pnpm -r --parallel dev",
     "dev:vue": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-vue-example dev",
-    "dev:react": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-react-example dev",
-    "changeset-version": "changeset version",
-    "changeset-publish": "pnpm build && changeset publish"
+    "dev:react": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-react-example dev"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.5.0",
-    "@changesets/cli": "^2.27.8",
     "@effect/eslint-plugin": "^0.3.2",
     "@eslint/compat": "1.1.1",
     "@eslint/eslintrc": "3.1.0",

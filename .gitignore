@@ -8,6 +8,7 @@ test-results/
 tmp/
 dist/
 build/
+tasks/
 reference/
 scratchpad/*
 !scratchpad/tsconfig.json
