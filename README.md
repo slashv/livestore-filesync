@@ -1,6 +1,6 @@
 # Livestore-Filesync
 
-Local-first file sync for LiveStore apps. Files are stored locally first, content-addressed by SHA-256, and synced to remote storage in the background.
+Local-first file sync for LiveStore apps. Files are stored locally first, then synced between clients via remote storage in the background.
 
 ## How It Works
 
@@ -10,7 +10,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, conten
 
 3. **Background sync**: The sync engine handles bidirectional synchronization — uploading local files to remote storage and downloading files that exist remotely but not locally.
 
-4. **LiveStore integration**: File metadata is tracked in LiveStore tables, giving you reactive queries over your files with the same local-first sync guarantees as your other app data.
+4. **Built for LiveStore**: File metadata lives in LiveStore tables, so you get reactive queries over your files with the same local-first sync model as the rest of your app.
 
 ## Packages
 
@@ -73,7 +73,7 @@ const url = await getFileUrl(result.fileId)
 
 See `examples/` for complete implementations:
 - `examples/react-filesync` — React with LiveStore
-- `examples/vue-filesync` — Vue with LiveStore  
+- `examples/vue-filesync` — Vue with LiveStore
 - `examples/node-filesync` — Node.js usage
 
 ## Filesystem Adapters
