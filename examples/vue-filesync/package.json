@@ -6,6 +6,7 @@
   "dependencies": {
     "@livestore-filesync/cf-worker-utils": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
+    "@livestore-filesync/opfs": "workspace:*",
     "@livestore/adapter-web": "catalog:",
     "@livestore/devtools-vite": "0.4.0-dev.20",
     "@livestore/livestore": "catalog:",

@@ -5,24 +5,24 @@ Local-first file sync for LiveStore apps. Files write to OPFS first, are content
 What you use:
 - Core singleton helpers (`initFileSync`, `saveFile`, `readFile`, etc.)
 - Schema helper to add file tables/events/materializers to your LiveStore schema
-- File system adapters for web (OPFS) and Node
+- File system adapters: `@livestore-filesync/opfs` for browsers, `@effect/platform-node` for Node
 - Service worker helper to serve `/livestore-filesync-files/*` from OPFS before falling back to remote
 
 ## Packages
 
 - `@livestore-filesync/core` — framework-agnostic API, schema helper, service worker utilities
-- `@livestore-filesync/adapter-web` — OPFS filesystem layer for browsers
-- `@livestore-filesync/adapter-node` — filesystem layer for Node/CLI tooling
+- `@livestore-filesync/opfs` — OPFS filesystem layer for browsers (implements `@effect/platform` FileSystem)
 - `@livestore-filesync/cf-worker-utils` — Cloudflare Worker composition helpers (e.g. route handler composition, dev R2 signer/data-plane)
+- `@livestore-filesync/s3-signer` — lightweight S3-compatible signer Worker
 
 ## Install
 
 ```bash
 # Web app (React/Vue/etc)
-pnpm add @livestore-filesync/core @livestore/livestore effect
+pnpm add @livestore-filesync/core @livestore-filesync/opfs @livestore/livestore @effect/platform effect
 
 # Node
-pnpm add @livestore-filesync/core @livestore-filesync/adapter-node @livestore/livestore effect
+pnpm add @livestore-filesync/core @effect/platform @effect/platform-node @livestore/livestore effect
 ```
 
 ## How it works (short version)
@@ -68,12 +68,12 @@ export const SyncPayload = Schema.Struct({ authToken: Schema.String })
 
 ```tsx
 import { useEffect } from 'react'
-import { LiveStoreProvider } from '@livestore/react'
+import { LiveStoreProvider, useStore } from '@livestore/react'
 import { makePersistedAdapter } from '@livestore/adapter-web'
 import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker'
 import LiveStoreWorker from './livestore.worker.ts?worker'
-import { useStore } from '@livestore/react'
 import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
 import { schema, SyncPayload } from './livestore/schema'
 
 const adapter = makePersistedAdapter({
@@ -86,7 +86,12 @@ const headers = { Authorization: `Bearer ${authToken}` }
 
 const FileSyncProvider = ({ children }) => {
   const { store } = useStore()
-  initFileSync(store, { remote: { signerBaseUrl: '/api', headers } })
+
+  initFileSync(store, {
+    fileSystem: opfsLayer(),
+    remote: { signerBaseUrl: '/api', headers }
+  })
+
   useEffect(() => {
     startFileSync()
     return () => {
@@ -94,6 +99,7 @@ const FileSyncProvider = ({ children }) => {
       void disposeFileSync()
     }
   }, [store])
+
   return children
 }
 
@@ -164,11 +170,17 @@ export const schema = makeSchema({ events, state })
 import { onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
 import { initFileSync, startFileSync, stopFileSync, disposeFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
 const props = defineProps<{ headers?: Record<string, string>; authToken?: string }>()
 
 const { store } = useStore()
-initFileSync(store, { remote: { signerBaseUrl: '/api', headers: props.headers, authToken: props.authToken } })
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api', headers: props.headers, authToken: props.authToken }
+})
+
 onMounted(() => startFileSync())
 onUnmounted(() => {
   stopFileSync()
@@ -181,33 +193,7 @@ onUnmounted(() => {
 </template>
 ```
 
-3) Use it under LiveStoreProvider:
-
-```vue
-<script setup lang="ts">
-import { LiveStoreProvider } from 'vue-livestore'
-import { makePersistedAdapter } from '@livestore/adapter-web'
-import LiveStoreSharedWorker from '@livestore/adapter-web/shared-worker?sharedworker'
-import LiveStoreWorker from './livestore.worker.ts?worker'
-import { schema } from './livestore/schema'
-import FileSyncProvider from './components/FileSyncProvider.vue'
-
-const adapter = makePersistedAdapter({ storage: { type: 'opfs' }, worker: LiveStoreWorker, sharedWorker: LiveStoreSharedWorker })
-const authToken = import.meta.env.VITE_AUTH_TOKEN
-const storeOptions = { schema, adapter, storeId: 'vue_filesync_store', syncPayload: { authToken } }
-const getAuthHeaders = () => ({ Authorization: `Bearer ${authToken}` })
-</script>
-
-<template>
-  <LiveStoreProvider :options="storeOptions">
-    <FileSyncProvider :auth-headers="getAuthHeaders">
-      <Gallery />
-    </FileSyncProvider>
-  </LiveStoreProvider>
-</template>
-```
-
-4) Use the sync API:
+3) Use the sync API:
 
 ```vue
 <script setup lang="ts">
@@ -219,6 +205,28 @@ const save = async (file: File) => {
   console.log({ result, url })
 }
 </script>
+```
+
+## Node.js usage (see `examples/node-filesync`)
+
+For Node.js, use `@effect/platform-node` directly as the filesystem adapter:
+
+```typescript
+import { NodeFileSystem } from '@effect/platform-node'
+import { createFileSync } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
+import { tables, events } from './schema'
+
+const fileSync = createFileSync({
+  store,
+  schema: { tables, events, queryDb },
+  fileSystem: NodeFileSystem.layer,
+  remote: { signerBaseUrl: 'https://api.example.com' }
+})
+
+fileSync.start()
+const result = await fileSync.saveFile(file)
+await fileSync.stop()
 ```
 
 ## Extending the schema (framework agnostic)
@@ -255,8 +263,12 @@ Singleton helpers (recommended for apps with a single store):
 
 ```typescript
 import { initFileSync, startFileSync, saveFile } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
-initFileSync(store, { remote: { signerBaseUrl: 'https://api.example.com/api' } })
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: 'https://api.example.com/api' }
+})
 startFileSync()
 const result = await saveFile(file)
 ```
@@ -265,12 +277,14 @@ Create a dedicated instance when you need multiple stores or custom wiring:
 
 ```typescript
 import { createFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
 import { queryDb } from '@livestore/livestore'
 
 const fileSync = createFileSync({
   store,
   schema: { tables, events, queryDb },
-  remote: { signerBaseUrl: 'https://api.example.com/api', authHeaders: () => ({ Authorization: `Bearer ${token}` }) }
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: 'https://api.example.com/api', headers: { Authorization: `Bearer ${token}` } }
 })
 
 fileSync.start()
@@ -287,7 +301,10 @@ await fileSync.stop()
 Pass the signer base URL to `initFileSync` / `createFileSync`:
 
 ```ts
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
 initFileSync(store, {
+  fileSystem: opfsLayer(),
   remote: {
     signerBaseUrl: "/api",
     authToken: import.meta.env.VITE_AUTH_TOKEN
@@ -310,8 +327,9 @@ Your signer must implement:
 
 ## Requirements
 
-- Browser with OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+) for the web adapters
+- Browser with OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+) for `@livestore-filesync/opfs`
 - Effect 3.x
+- @effect/platform 0.92+
 
 ## License
 

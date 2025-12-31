@@ -3,13 +3,13 @@ import { env } from "node:process"
 import { makeAdapter as makeLiveStoreAdapter } from "@livestore/adapter-node"
 import { createStorePromise, queryDb } from "@livestore/livestore"
 import { makeWsSync } from "@livestore/sync-cf/client"
+import { NodeFileSystem } from "@effect/platform-node"
 
-import { makeAdapter as makeFileSystemAdapter } from "@livestore-filesync/adapter-node"
 import { createFileSync, type SyncStore } from "@livestore-filesync/core"
 
 import { SyncPayload, events, schema, tables } from "./livestore/schema.js"
 
-const storeId = env.STORE_ID ?? "vue_filesync_store"
+const storeId = env.STORE_ID ?? "node_filesync_store"
 const authToken = env.AUTH_TOKEN ?? "insecure-token-change-me"
 const syncUrl = env.LIVESTORE_SYNC_URL ?? "http://localhost:60004/sync"
 const fileSyncBaseUrl = env.FILESYNC_BASE_URL ?? "http://localhost:60004/api"
@@ -21,8 +21,6 @@ const adapter = makeLiveStoreAdapter({
     onSyncError: "shutdown"
   }
 })
-
-const fileSystem = makeFileSystemAdapter({ baseDirectory: "tmp/filesync" })
 
 const store = (await createStorePromise({
   adapter,
@@ -40,10 +38,10 @@ const fileSync = createFileSync({
     queryDb: queryDb
   },
   remote: {
-    baseUrl: fileSyncBaseUrl,
-    authHeaders: () => ({ Authorization: `Bearer ${authToken}` })
+    signerBaseUrl: fileSyncBaseUrl,
+    headers: { Authorization: `Bearer ${authToken}` }
   },
-  fileSystem,
+  fileSystem: NodeFileSystem.layer,
   options: {
     localPathRoot: "tmp/filesync"
   }

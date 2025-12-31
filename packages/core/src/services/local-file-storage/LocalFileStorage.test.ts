@@ -1,8 +1,9 @@
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { FileNotFoundError } from "../../errors/index.js"
-import { FileSystem, type FileSystemService } from "../file-system/index.js"
-import { FileSystemError } from "../../errors/index.js"
+import { FileSystem, Size } from "@effect/platform/FileSystem"
+import type * as FS from "@effect/platform/FileSystem"
+import { SystemError } from "@effect/platform/Error"
 import { LocalFileStorage, LocalFileStorageLive, LocalFileStorageMemory } from "./index.js"
 import { joinPath, makeStoreRoot } from "../../utils/index.js"
 
@@ -16,6 +17,23 @@ describe("LocalFileStorage", () => {
     effect: Effect.Effect<A, E, LocalFileStorage>
   ): Promise<Exit.Exit<A, E>> =>
     Effect.runPromiseExit(Effect.provide(effect, LocalFileStorageMemory))
+
+  const makeFileInfo = (type: FS.File.Type, size = 0): FS.File.Info => ({
+    type,
+    mtime: Option.none(),
+    atime: Option.none(),
+    birthtime: Option.none(),
+    dev: 0,
+    ino: Option.none(),
+    mode: 0,
+    nlink: Option.none(),
+    uid: Option.none(),
+    gid: Option.none(),
+    rdev: Option.none(),
+    size: Size(size),
+    blksize: Option.none(),
+    blocks: Option.none()
+  })
 
   const createMemoryFileSystem = () => {
     const files = new Map<string, Uint8Array>()
@@ -62,15 +80,17 @@ describe("LocalFileStorage", () => {
       return Array.from(entries)
     }
 
-    const toError = (operation: string, path: string, cause: unknown) =>
-      new FileSystemError({
-        message: `Mock FileSystem ${operation} failed: ${path}`,
-        operation,
-        path,
+    const toError = (method: string, path: string, cause: unknown) =>
+      new SystemError({
+        reason: "Unknown",
+        module: "FileSystem",
+        method,
+        pathOrDescriptor: path,
         cause
       })
 
-    const service: FileSystemService = {
+    // Create a partial FileSystem that has the methods used by LocalFileStorage
+    const service: Pick<FS.FileSystem, "readFile" | "writeFile" | "readDirectory" | "makeDirectory" | "remove" | "exists" | "stat"> = {
       readFile: (path) =>
         Effect.try({
           try: () => {
@@ -87,9 +107,8 @@ describe("LocalFileStorage", () => {
         Effect.try({
           try: () => {
             const normalized = normalize(path)
-            const { directory } = normalized.includes("/")
-              ? { directory: normalized.slice(0, normalized.lastIndexOf("/")) }
-              : { directory: "" }
+            const lastSlash = normalized.lastIndexOf("/")
+            const directory = lastSlash === -1 ? "" : normalized.slice(0, lastSlash)
             ensureDirectory(directory, true)
             files.set(normalized, data)
           },
@@ -148,10 +167,10 @@ describe("LocalFileStorage", () => {
           try: () => {
             const normalized = normalize(path)
             if (files.has(normalized)) {
-              return { type: "file" as const }
+              return makeFileInfo("File", files.get(normalized)?.length ?? 0)
             }
             if (directories.has(normalized)) {
-              return { type: "directory" as const }
+              return makeFileInfo("Directory")
             }
             throw new Error(`Missing path: ${normalized}`)
           },
@@ -159,12 +178,12 @@ describe("LocalFileStorage", () => {
         })
     }
 
-    return { service, files }
+    return { service: service as FS.FileSystem, files }
   }
 
   const runWithLiveStorage = <A, E>(
     effect: Effect.Effect<A, E, LocalFileStorage>,
-    service: FileSystemService
+    service: FS.FileSystem
   ): Promise<A> =>
     Effect.runPromise(
       Effect.provide(

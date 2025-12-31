@@ -1,14 +1,15 @@
 {
-  "name": "@livestore-filesync/adapter-node",
+  "name": "@livestore-filesync/opfs",
   "version": "0.0.1",
   "type": "module",
   "license": "MIT",
-  "description": "Node filesystem adapter for livestore-filesync",
+  "description": "OPFS filesystem adapter for livestore-filesync",
   "keywords": [
     "livestore",
     "file-sync",
-    "adapter",
-    "node"
+    "opfs",
+    "effect",
+    "filesystem"
   ],
   "publishConfig": {
     "access": "public"
@@ -24,21 +25,17 @@
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "check": "tsc -b tsconfig.json",
-    "dev": "tsc -b tsconfig.build.json --watch"
-  },
-  "dependencies": {
-    "@livestore-filesync/core": "workspace:*"
+    "dev": "tsc -b tsconfig.build.json --watch",
+    "test": "vitest"
   },
   "peerDependencies": {
     "@effect/platform": "catalog:",
-    "@effect/platform-node": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform": "catalog:",
-    "@effect/platform-node": "catalog:",
-    "@types/node": "^22.5.2",
     "effect": "catalog:",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.0"
   }
 }

@@ -5,4 +5,3 @@
  */
 
 export * from "./FileSystem.js"
-export * from "./OpfsFileSystem.js"

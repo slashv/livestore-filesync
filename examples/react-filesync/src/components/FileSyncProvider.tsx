@@ -6,6 +6,7 @@ import {
   startFileSync,
   stopFileSync,
 } from "@livestore-filesync/core";
+import { layer as opfsLayer } from "@livestore-filesync/opfs";
 
 type FileSyncProviderProps = {
   signerBaseUrl?: string;
@@ -39,7 +40,11 @@ export const FileSyncProvider = ({
   if (authToken) {
     remote.authToken = authToken;
   }
-  initFileSync(store, { remote });
+
+  initFileSync(store, {
+    fileSystem: opfsLayer(),
+    remote,
+  });
 
   useEffect(() => {
     startFileSync();

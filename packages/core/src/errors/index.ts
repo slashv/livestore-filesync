@@ -2,11 +2,15 @@
  * Error types for LiveStore FileSync
  *
  * Uses Effect's Data.TaggedError for typed error handling.
+ * FileSystem errors use PlatformError from @effect/platform.
  *
  * @module
  */
 
 import { Data } from "effect"
+
+// Re-export PlatformError for filesystem operations
+export { PlatformError, SystemError, BadArgument } from "@effect/platform/Error"
 
 /**
  * Base error for all file storage operations
@@ -74,36 +78,13 @@ export class HashError extends Data.TaggedError("HashError")<{
 }> {}
 
 /**
- * Error when file system operations fail
- */
-export class FileSystemError extends Data.TaggedError("FileSystemError")<{
-  readonly message: string
-  readonly operation: string
-  readonly path?: string
-  readonly cause?: unknown
-}> {}
-
-/**
- * Error when OPFS is not available in the current environment
- */
-export class OPFSNotAvailableError extends Data.TaggedError("OPFSNotAvailableError")<{
-  readonly message: string
-}> {
-  static readonly default = new OPFSNotAvailableError({
-    message: "Origin Private File System is not available in this environment"
-  })
-}
-
-/**
  * Union type of all storage-related errors
  */
 export type FileStorageError =
   | StorageError
   | FileNotFoundError
   | DirectoryNotFoundError
-  | FileSystemError
   | UploadError
   | DownloadError
   | DeleteError
   | HashError
-  | OPFSNotAvailableError

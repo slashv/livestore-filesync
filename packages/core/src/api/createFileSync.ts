@@ -11,13 +11,12 @@
  */
 
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
+import { FileSystem } from "@effect/platform/FileSystem"
 import {
   FileStorage,
   FileStorageLive,
   FileSync,
   FileSyncLive,
-  FileSystem,
-  FileSystemOpfsLive,
   LocalFileStorage,
   LocalFileStorageLive,
   RemoteStorage,
@@ -88,8 +87,8 @@ export interface CreateFileSyncConfig {
     authToken?: string
   }
 
-  /** Optional filesystem layer override */
-  fileSystem?: Layer.Layer<FileSystem>
+  /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
+  fileSystem: Layer.Layer<FileSystem>
 
   /** Optional configuration */
   options?: {
@@ -150,24 +149,27 @@ export interface FileSyncInstance {
  *
  * @example
  * ```typescript
+ * // Browser (using OPFS)
  * import { createFileSync } from '@livestore-filesync/core'
- * import { useStore } from 'vue-livestore'
+ * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  * import { queryDb } from '@livestore/livestore'
  * import { tables, events } from './schema'
  *
- * const { store } = useStore()
+ * const fileSync = createFileSync({
+ *   store,
+ *   schema: { tables, events, queryDb },
+ *   fileSystem: opfsLayer(),
+ *   remote: { signerBaseUrl: '/api' }
+ * })
+ *
+ * // Node.js (using platform-node)
+ * import { NodeFileSystem } from '@effect/platform-node'
  *
  * const fileSync = createFileSync({
  *   store,
- *   schema: {
- *     tables,
- *     events,
- *     queryDb
- *   },
- *   remote: {
- *     signerBaseUrl: '/api',
- *     authHeaders: () => ({ Authorization: `Bearer ${token}` })
- *   }
+ *   schema: { tables, events, queryDb },
+ *   fileSystem: NodeFileSystem.layer,
+ *   remote: { signerBaseUrl: 'https://api.example.com' }
  * })
  *
  * // Start syncing
@@ -223,7 +225,13 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.gcDelayMs !== undefined ? { gcDelayMs: options.gcDelayMs } : {})
   }
 
-  const FileSystemLive = fileSystem ?? FileSystemOpfsLive()
+  if (!fileSystem) {
+    throw new Error(
+      "FileSync requires a fileSystem layer. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node."
+    )
+  }
+
+  const FileSystemLive = fileSystem
   const LocalFileStorageLayer = Layer.provide(FileSystemLive)(LocalFileStorageLive)
 
   const BaseLayer = Layer.mergeAll(

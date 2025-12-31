@@ -9,13 +9,14 @@
  */
 
 import { Context, Effect, Layer } from "effect"
+import { FileSystem } from "@effect/platform/FileSystem"
+import type * as FS from "@effect/platform/FileSystem"
 import {
   DirectoryNotFoundError,
   FileNotFoundError,
   StorageError
 } from "../../errors/index.js"
 import { joinPath, parsePath } from "../../utils/path.js"
-import { FileSystem, type FileSystemService } from "../file-system/FileSystem.js"
 
 interface FileMetadata {
   readonly type?: string
@@ -93,7 +94,7 @@ const decodeMetadata = (data: Uint8Array): FileMetadata => {
   }
 }
 
-const ensureParentDirectory = (fs: FileSystemService, path: string) =>
+const ensureParentDirectory = (fs: FS.FileSystem, path: string) =>
   Effect.gen(function*() {
     const { directory } = parsePath(path)
     if (!directory) return
@@ -109,7 +110,7 @@ const ensureParentDirectory = (fs: FileSystemService, path: string) =>
   })
 
 const readMetadataFile = (
-  fs: FileSystemService,
+  fs: FS.FileSystem,
   path: string
 ): Effect.Effect<FileMetadata | null, StorageError> =>
   Effect.gen(function*() {
@@ -137,7 +138,7 @@ const readMetadataFile = (
   })
 
 const writeMetadataFile = (
-  fs: FileSystemService,
+  fs: FS.FileSystem,
   path: string,
   metadata: FileMetadata
 ) =>
@@ -154,7 +155,7 @@ const writeMetadataFile = (
     )
   })
 
-const removeMetadataFile = (fs: FileSystemService, path: string): Effect.Effect<void, StorageError> =>
+const removeMetadataFile = (fs: FS.FileSystem, path: string): Effect.Effect<void, StorageError> =>
   Effect.gen(function*() {
     const metaPath = metadataPath(path)
     const exists = yield* fs.exists(metaPath).pipe(
@@ -294,7 +295,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
               })
           )
         )
-        return stat.type === "file"
+        return stat.type === "File"
       })
 
     const deleteFile = (path: string): Effect.Effect<void, StorageError> =>
@@ -368,7 +369,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
                 })
             )
           )
-          if (stat.type === "file") {
+          if (stat.type === "File") {
             files.push(entryPath)
           } else {
             const subFiles = yield* listFilesRecursive(entryPath)

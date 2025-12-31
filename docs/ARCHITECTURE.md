@@ -5,9 +5,10 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 ## Services
 
-- `FileSystem`: low-level read/write/list interface. Core ships an OPFS-backed implementation
-  (`FileSystemOpfsLive`), while adapter packages can supply alternatives (for example the Node
-  filesystem from `@livestore-filesync/adapter-node`).
+- `FileSystem`: re-exported from `@effect/platform/FileSystem`. This is a low-level read/write/list
+  interface. Users must provide a compatible implementation:
+  - For browsers: use `@livestore-filesync/opfs` which provides an OPFS-backed implementation
+  - For Node.js: use `@effect/platform-node` (`NodeFileSystem.layer`)
 - `LocalFileStorage`: wraps `FileSystem` with file-centric helpers (read/write bytes, object URLs,
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
@@ -21,6 +22,37 @@ The services are wired together as Effect layers inside `createFileSync` and the
   checks.
 - `FileStorage`: high-level API used by `saveFile`, `updateFile`, `deleteFile`, and `getFileUrl`.
   It hashes content, writes to local storage, updates LiveStore records, and triggers `FileSync`.
+
+## FileSystem requirement
+
+The `fileSystem` parameter is **required** when calling `initFileSync` or `createFileSync`.
+The core package does not bundle any filesystem implementation to keep it framework-agnostic.
+
+### Browser usage
+
+```typescript
+import { initFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' }
+})
+```
+
+### Node.js usage
+
+```typescript
+import { createFileSync } from '@livestore-filesync/core'
+import { NodeFileSystem } from '@effect/platform-node'
+
+createFileSync({
+  store,
+  schema,
+  fileSystem: NodeFileSystem.layer,
+  remote: { signerBaseUrl: 'https://api.example.com' }
+})
+```
 
 ## How the services fit together
 
@@ -36,7 +68,7 @@ Text diagram (arrows show the main direction of calls):
    |  [FileSync] ----> [SyncExecutor] ----> [RemoteStorage] ---> Remote backend
    |      |
    |      v
-   +--> [LocalFileStorage] ----> [FileSystem (OPFS)]
+   +--> [LocalFileStorage] ----> [FileSystem (OPFS/Node/custom)]
 
 Notes:
 - `FileStorage` is the primary entry point for CRUD; it always writes locally first.
@@ -48,22 +80,22 @@ Notes:
 
 This mirrors the Effect layer wiring in `createFileSync`:
 
-[FileSystemLive] ----------------------+
-                                       |
-                                       v
+[FileSystemLive (user-provided)] -----------+
+                                            |
+                                            v
 [LocalFileStorageLive] <--------- Layer.provide(FileSystemLive)
-                                       |
-                                       v
-[RemoteStorageLive] -------------------+
-                                       |
-                                       v
+                                            |
+                                            v
+[RemoteStorageLive] -----------------------+
+                                            |
+                                            v
 [BaseLayer] = mergeAll(Layer.scope, FileSystemLive, LocalFileStorageLayer, RemoteStorageLive)
-                                       |
-                                       v
+                                            |
+                                            v
 [FileSyncLive(deps, config)] <--- Layer.provide(BaseLayer)
-                                       |
-                                       v
+                                            |
+                                            v
 [FileStorageLive(deps)] <--------- Layer.provide(mergeAll(BaseLayer, FileSyncLayer))
-                                       |
-                                       v
+                                            |
+                                            v
 [MainLayer] = mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)

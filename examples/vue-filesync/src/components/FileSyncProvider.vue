@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
 import { disposeFileSync, initFileSync, startFileSync, stopFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
 const props = defineProps<{
   signerBaseUrl?: string
@@ -12,6 +13,7 @@ const props = defineProps<{
 const { store } = useStore()
 
 initFileSync(store, {
+  fileSystem: opfsLayer(),
   remote: {
     signerBaseUrl: props.signerBaseUrl ?? '/api',
     headers: props.headers,

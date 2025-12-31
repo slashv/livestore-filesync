@@ -7,11 +7,11 @@
  */
 
 import type { Layer } from "effect"
+import { FileSystem } from "@effect/platform/FileSystem"
 import { queryDb } from "@livestore/livestore"
 import { createFileSyncSchema } from "../schema/index.js"
 import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
 import type { SyncSchema, SyncStore } from "../livestore/types.js"
-import type { FileSystem } from "../services/index.js"
 
 const DEFAULT_SIGNER_BASE_URL = "/api"
 const REQUIRED_TABLES = ["files", "localFileState"] as const
@@ -27,12 +27,13 @@ type SchemaFallback = Pick<SyncSchema, "tables" | "events"> & {
 }
 
 export interface InitFileSyncConfig {
+  /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
+  fileSystem: Layer.Layer<FileSystem>
   remote?: {
     signerBaseUrl?: string
     headers?: Record<string, string>
     authToken?: string
   }
-  fileSystem?: Layer.Layer<FileSystem>
   options?: CreateFileSyncConfig["options"]
   schema?: SchemaFallback
 }
@@ -41,7 +42,7 @@ let singleton: FileSyncInstance | null = null
 
 const requireFileSync = (): FileSyncInstance => {
   if (!singleton) {
-    throw new Error("FileSync not initialized. Call initFileSync(store) first.")
+    throw new Error("FileSync not initialized. Call initFileSync(store, config) first.")
   }
   return singleton
 }
@@ -90,11 +91,13 @@ const resolveSchema = (store: SyncStore, schema?: SchemaFallback): SyncSchema =>
   }
 }
 
-export const initFileSync = (store: SyncStore, config: InitFileSyncConfig = {}) => {
+export const initFileSync = (store: SyncStore, config: InitFileSyncConfig) => {
   if (singleton) return singleton
 
-  if (!config.fileSystem && typeof window === "undefined" && typeof navigator === "undefined") {
-    throw new Error("FileSync requires a fileSystem adapter outside the browser.")
+  if (!config.fileSystem) {
+    throw new Error(
+      "FileSync requires a fileSystem layer. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node."
+    )
   }
 
   const schema = resolveSchema(store, config.schema)
@@ -108,7 +111,7 @@ export const initFileSync = (store: SyncStore, config: InitFileSyncConfig = {}) 
     store,
     schema,
     remote,
-    ...(config.fileSystem ? { fileSystem: config.fileSystem } : {}),
+    fileSystem: config.fileSystem,
     ...(config.options ? { options: config.options } : {})
   })
 
@@ -137,4 +140,3 @@ export const getFileUrl = (path: string) => requireFileSync().getFileUrl(path)
 export const resolveFileUrl = (fileId: string) => requireFileSync().resolveFileUrl(fileId)
 export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
-

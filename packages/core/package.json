@@ -36,6 +36,7 @@
     "test": "vitest"
   },
   "devDependencies": {
+    "@effect/platform": "catalog:",
     "@effect/vitest": "^0.25.1",
     "@livestore/adapter-node": "catalog:",
     "@livestore/livestore": "catalog:",
@@ -45,6 +46,7 @@
     "vitest": "^3.2.0"
   },
   "peerDependencies": {
+    "@effect/platform": "catalog:",
     "@livestore/livestore": "catalog:",
     "effect": "catalog:"
   },

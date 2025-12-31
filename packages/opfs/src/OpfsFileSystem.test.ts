@@ -1,6 +1,6 @@
 import { Effect } from "effect"
+import { SystemError } from "@effect/platform/Error"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { FileSystemError } from "../../errors/index.js"
 import { makeOpfsFileSystem } from "./OpfsFileSystem.js"
 
 type Entry = FileEntry | DirectoryEntry
@@ -39,15 +39,26 @@ class MockFileHandle {
     return new File([buffer], this.name, { type: entry.mimeType })
   }
 
-  async createWritable(): Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> {
+  async createWritable(options?: { keepExistingData?: boolean }): Promise<{
+    write: (data: Blob) => Promise<void>
+    truncate: (length: number) => Promise<void>
+    close: () => Promise<void>
+  }> {
+    const fileHandle = this
     return {
       write: async (data: Blob) => {
         const buffer = await data.arrayBuffer()
-        this.directory.entries.set(this.name, {
+        fileHandle.directory.entries.set(fileHandle.name, {
           type: "file",
           data: new Uint8Array(buffer),
           mimeType: data.type || "application/octet-stream"
         })
+      },
+      truncate: async (length: number) => {
+        const entry = fileHandle.directory.entries.get(fileHandle.name)
+        if (entry && entry.type === "file") {
+          entry.data = entry.data.slice(0, length)
+        }
       },
       close: async () => {}
     }
@@ -56,6 +67,7 @@ class MockFileHandle {
 
 class MockDirectoryHandle {
   private entry: DirectoryEntry
+  readonly kind = "directory"
 
   constructor(entry: DirectoryEntry) {
     this.entry = entry
@@ -107,18 +119,18 @@ class MockDirectoryHandle {
     this.entry.entries.delete(name)
   }
 
-  entries(): AsyncIterable<[string, unknown]> {
+  entries(): AsyncIterable<[string, MockFileHandle | MockDirectoryHandle]> {
     const parent = this.entry
     const iterator = parent.entries.entries()
     return {
-      [Symbol.asyncIterator]: async function*() {
+      [Symbol.asyncIterator]: async function* () {
         for (const [name, entry] of iterator) {
           yield [
             name,
             entry.type === "directory"
               ? new MockDirectoryHandle(entry)
               : new MockFileHandle(parent, name)
-          ]
+          ] as [string, MockFileHandle | MockDirectoryHandle]
         }
       }
     }
@@ -184,11 +196,11 @@ describe("OpfsFileSystem", () => {
     const dirStat = await Effect.runPromise(fs.stat("docs"))
     const fileStat = await Effect.runPromise(fs.stat("docs/readme.txt"))
 
-    expect(dirStat.type).toBe("directory")
-    expect(fileStat.type).toBe("file")
+    expect(dirStat.type).toBe("Directory")
+    expect(fileStat.type).toBe("File")
   })
 
-  it("fails with FileSystemError when reading missing files", async () => {
+  it("fails with SystemError when reading missing files", async () => {
     const fs = makeOpfsFileSystem()
 
     const result = await Effect.runPromiseExit(fs.readFile("missing.txt"))
@@ -197,8 +209,52 @@ describe("OpfsFileSystem", () => {
       const error = result.cause
       expect(error._tag).toBe("Fail")
       if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(FileSystemError)
+        expect(error.error).toBeInstanceOf(SystemError)
+        expect((error.error as SystemError).reason).toBe("NotFound")
       }
     }
+  })
+
+  it("checks file existence correctly", async () => {
+    const fs = makeOpfsFileSystem()
+    await Effect.runPromise(fs.writeFile("exists.txt", new Uint8Array([1])))
+
+    expect(await Effect.runPromise(fs.exists("exists.txt"))).toBe(true)
+    expect(await Effect.runPromise(fs.exists("missing.txt"))).toBe(false)
+  })
+
+  it("creates and removes temp directories", async () => {
+    const fs = makeOpfsFileSystem()
+    const tempDir = await Effect.runPromise(fs.makeTempDirectory({ prefix: "test" }))
+
+    expect(tempDir).toContain("test")
+    expect(await Effect.runPromise(fs.exists(tempDir))).toBe(true)
+
+    await Effect.runPromise(fs.remove(tempDir, { recursive: true }))
+    expect(await Effect.runPromise(fs.exists(tempDir))).toBe(false)
+  })
+
+  it("copies files correctly", async () => {
+    const fs = makeOpfsFileSystem()
+    const data = new Uint8Array([1, 2, 3, 4, 5])
+    await Effect.runPromise(fs.writeFile("source.bin", data))
+
+    await Effect.runPromise(fs.copyFile("source.bin", "dest.bin"))
+
+    const copied = await Effect.runPromise(fs.readFile("dest.bin"))
+    expect(Array.from(copied)).toEqual([1, 2, 3, 4, 5])
+  })
+
+  it("renames files correctly", async () => {
+    const fs = makeOpfsFileSystem()
+    const data = new Uint8Array([1, 2, 3])
+    await Effect.runPromise(fs.writeFile("old.txt", data))
+
+    await Effect.runPromise(fs.rename("old.txt", "new.txt"))
+
+    expect(await Effect.runPromise(fs.exists("old.txt"))).toBe(false)
+    expect(await Effect.runPromise(fs.exists("new.txt"))).toBe(true)
+    const renamed = await Effect.runPromise(fs.readFile("new.txt"))
+    expect(Array.from(renamed)).toEqual([1, 2, 3])
   })
 })

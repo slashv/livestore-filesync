@@ -92,9 +92,12 @@ importers:
 
   examples/node-filesync:
     dependencies:
-      '@livestore-filesync/adapter-node':
-        specifier: workspace:*
-        version: link:../../packages/adapter-node
+      '@effect/platform':
+        specifier: 'catalog:'
+        version: 0.92.1(effect@3.18.4)
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 0.98.4(@effect/cluster@0.50.6(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4)
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -129,6 +132,9 @@ importers:
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@livestore-filesync/opfs':
+        specifier: workspace:*
+        version: link:../../packages/opfs
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -193,6 +199,9 @@ importers:
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@livestore-filesync/opfs':
+        specifier: workspace:*
+        version: link:../../packages/opfs
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.20(4ccddda43982ce2adf170779555e4d29)
@@ -243,41 +252,6 @@ importers:
         specifier: ^4.56.0
         version: 4.56.0(@cloudflare/workers-types@4.20251118.0)
 
-  packages/adapter-node:
-    dependencies:
-      '@livestore-filesync/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@effect/platform':
-        specifier: 'catalog:'
-        version: 0.92.1(effect@3.18.4)
-      '@effect/platform-node':
-        specifier: 'catalog:'
-        version: 0.98.4(@effect/cluster@0.50.6(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/workflow@0.11.5(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(@effect/rpc@0.71.1(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/sql@0.46.0(@effect/experimental@0.56.0(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(@effect/platform@0.92.1(effect@3.18.4))(effect@3.18.4))(effect@3.18.4)
-      '@types/node':
-        specifier: ^22.5.2
-        version: 22.18.10
-      effect:
-        specifier: 'catalog:'
-        version: 3.18.4
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
-
-  packages/adapter-web:
-    dependencies:
-      '@livestore-filesync/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      effect:
-        specifier: 'catalog:'
-        version: 3.18.4
-      typescript:
-        specifier: ^5.6.2
-        version: 5.9.3
-
   packages/cf-worker-utils:
     devDependencies:
       typescript:
@@ -286,6 +260,9 @@ importers:
 
   packages/core:
     devDependencies:
+      '@effect/platform':
+        specifier: 'catalog:'
+        version: 0.92.1(effect@3.18.4)
       '@effect/vitest':
         specifier: ^0.25.1
         version: 0.25.1(effect@3.18.4)(vitest@3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2))
@@ -298,6 +275,21 @@ importers:
       '@types/node':
         specifier: ^22.5.2
         version: 22.18.10
+      effect:
+        specifier: 'catalog:'
+        version: 3.18.4
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
+
+  packages/opfs:
+    devDependencies:
+      '@effect/platform':
+        specifier: 'catalog:'
+        version: 0.92.1(effect@3.18.4)
       effect:
         specifier: 'catalog:'
         version: 3.18.4
