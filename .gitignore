@@ -9,6 +9,7 @@ tmp/
 dist/
 build/
 tasks/
+TODO.md
 reference/
 scratchpad/*
 !scratchpad/tsconfig.json
