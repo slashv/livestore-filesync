@@ -379,7 +379,29 @@ S3_SECRET_ACCESS_KEY=your-secret-key
 
 **Trade-offs:**
 - Requires S3 API credentials even for local dev
+- Requires CORS configuration on the bucket (for browser uploads)
 - Slightly more complex setup
+
+**CORS Configuration (required for browser uploads):**
+
+When using the S3 signer, browsers upload directly to S3/R2. You must configure CORS on your bucket:
+
+```json
+[
+  {
+    "AllowedOrigins": ["*"],
+    "AllowedMethods": ["GET", "PUT", "HEAD", "DELETE"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+    "MaxAgeSeconds": 86400
+  }
+]
+```
+
+For Cloudflare R2, apply via CLI or dashboard:
+```bash
+wrangler r2 bucket cors set <bucket-name> --file cors.json
+```
 
 #### Which should I use?
 
