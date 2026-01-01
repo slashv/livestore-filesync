@@ -14,10 +14,12 @@ export {
 // Registration helpers (for use in main thread)
 export {
   clearServiceWorkerCache,
+  initServiceWorker,
   isServiceWorkerSupported,
   prefetchFiles,
   registerFileSyncServiceWorker,
   sendMessageToServiceWorker,
   unregisterFileSyncServiceWorker,
-  type RegisterOptions
+  type RegisterOptions,
+  type ServiceWorkerOptions
 } from "./registration.js"

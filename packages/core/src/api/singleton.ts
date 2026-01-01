@@ -36,6 +36,12 @@ export interface InitFileSyncConfig {
   }
   options?: CreateFileSyncConfig["options"]
   schema?: SchemaFallback
+
+  /**
+   * Whether to start syncing immediately after initialization.
+   * @default true
+   */
+  autoStart?: boolean
 }
 
 let singleton: FileSyncInstance | null = null
@@ -91,8 +97,38 @@ const resolveSchema = (store: SyncStore, schema?: SchemaFallback): SyncSchema =>
   }
 }
 
-export const initFileSync = (store: SyncStore, config: InitFileSyncConfig) => {
-  if (singleton) return singleton
+/**
+ * Initialize and start file sync.
+ * 
+ * Creates a FileSync instance, and by default starts syncing immediately.
+ * Returns a dispose function to clean up resources.
+ * 
+ * @example
+ * ```typescript
+ * import { initFileSync } from '@livestore-filesync/core'
+ * import { layer as opfsLayer } from '@livestore-filesync/opfs'
+ * 
+ * const dispose = initFileSync(store, {
+ *   fileSystem: opfsLayer(),
+ *   remote: { signerBaseUrl: '/api' }
+ * })
+ * 
+ * // Later, to clean up:
+ * await dispose()
+ * ```
+ * 
+ * @returns Dispose function that stops sync and cleans up resources
+ */
+export const initFileSync = (
+  store: SyncStore, 
+  config: InitFileSyncConfig
+): (() => Promise<void>) => {
+  if (singleton) {
+    return async () => {
+      await singleton?.dispose()
+      singleton = null
+    }
+  }
 
   if (!config.fileSystem) {
     throw new Error(
@@ -115,21 +151,31 @@ export const initFileSync = (store: SyncStore, config: InitFileSyncConfig) => {
     ...(config.options ? { options: config.options } : {})
   })
 
-  return singleton
+  // Auto-start by default
+  if (config.autoStart !== false) {
+    singleton.start()
+  }
+
+  return async () => {
+    await singleton?.dispose()
+    singleton = null
+  }
 }
 
-export const startFileSync = () => {
+/**
+ * Start the file sync process.
+ * Only needed if initFileSync was called with autoStart: false.
+ */
+export const startFileSync = (): void => {
   requireFileSync().start()
 }
 
-export const stopFileSync = () => {
+/**
+ * Stop the file sync process.
+ * Can be restarted later with startFileSync().
+ */
+export const stopFileSync = (): void => {
   requireFileSync().stop()
-}
-
-export const disposeFileSync = async () => {
-  const instance = requireFileSync()
-  await instance.dispose()
-  singleton = null
 }
 
 export const saveFile = (file: File) => requireFileSync().saveFile(file)

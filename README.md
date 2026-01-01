@@ -51,15 +51,16 @@ const materializers = State.SQLite.materializers(events, {
 ### 2. Initialize FileSync
 
 ```typescript
-import { initFileSync, startFileSync } from '@livestore-filesync/core'
+import { initFileSync } from '@livestore-filesync/core'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
-initFileSync(store, {
+const dispose = initFileSync(store, {
   fileSystem: opfsLayer(),
   remote: { signerBaseUrl: '/api' }
 })
 
-startFileSync()
+// Later, to clean up:
+// await dispose()
 ```
 
 ### 3. Use the API
@@ -72,8 +73,8 @@ const url = await getFileUrl(result.fileId)
 ```
 
 See `examples/` for complete implementations:
-- `examples/react-filesync` — React with LiveStore
-- `examples/vue-filesync` — Vue with LiveStore
+- `examples/react-filesync` — React with service worker for file URL resolution
+- `examples/vue-filesync` — Vue using `resolveFileUrl()` (no service worker)
 - `examples/node-filesync` — Node.js usage
 
 ## Filesystem Adapters
@@ -148,29 +149,51 @@ Requires S3 credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SEC
 | **Best for** | Local dev, small deployments | High traffic, large files |
 | **Trade-offs** | Bandwidth through Worker (~128MB limit) | More complex initial setup |
 
-## Service Worker (Optional)
+## File URL Resolution
 
-For browsers, an optional service worker can intercept requests to `/livestore-filesync-files/*` and serve files from OPFS before falling back to remote.
+There are two ways to resolve file URLs in the browser:
 
-### Setup
+### Option 1: Service Worker (recommended for simpler component code)
 
-1. Copy the bundled service worker to your public folder:
-```bash
-cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
+The service worker intercepts requests to `/livestore-filesync-files/*` and serves files from OPFS, falling back to remote storage. This lets you use `file.path` directly as an image src.
+
+**Setup:**
+
+1. Copy the bundled service worker to your public folder (add to `package.json`):
+```json
+{
+  "scripts": {
+    "postinstall": "cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js"
+  }
+}
 ```
 
-2. Register during app startup:
+2. Initialize the service worker before rendering (must complete before file URLs work):
 ```typescript
-import { registerFileSyncServiceWorker } from '@livestore-filesync/core/worker'
+import { initServiceWorker } from '@livestore-filesync/core/worker'
 
-const swUrl = new URL('/file-sync-sw.js', window.location.origin)
-swUrl.searchParams.set('filesBaseUrl', window.location.origin)
-// Optional: swUrl.searchParams.set('token', authToken)
+await initServiceWorker({ authToken })
+```
 
-registerFileSyncServiceWorker({ scriptUrl: swUrl.toString() })
+3. Use the file path directly:
+```tsx
+<img src={`/${file.path}`} />
 ```
 
 The bundled service worker works in all browsers including Firefox. See `examples/react-filesync` for a complete implementation.
+
+### Option 2: resolveFileUrl() (no service worker needed)
+
+If you prefer not to use a service worker, use `resolveFileUrl()` to get a URL for each file. This returns a signed remote URL.
+
+```typescript
+import { resolveFileUrl } from '@livestore-filesync/core'
+
+const url = await resolveFileUrl(file.id)
+// Use url in your component
+```
+
+See `examples/vue-filesync` for this approach.
 
 ## Requirements
 

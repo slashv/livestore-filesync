@@ -2,43 +2,84 @@
 
 The file sync service worker lets the browser fetch `file.path` directly. Any GET request whose pathname starts with the configured prefix (default `/livestore-filesync-files/`) is intercepted and resolved from local OPFS storage when available, falling back to remote storage when not.
 
-## Using the bundled service worker
+## Quick Setup
 
-The core package provides a pre-bundled service worker that works in all browsers (including Firefox, which doesn't support ES module service workers). To use it:
+The core package provides a pre-bundled service worker that works in all browsers (including Firefox, which doesn't support ES module service workers).
 
 ### 1. Copy the bundled service worker to your public folder
 
-```bash
-cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
-```
+Add a postinstall script to your `package.json`:
 
-Or add a script to your `package.json`:
 ```json
 {
   "scripts": {
-    "copy:sw": "cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js",
-    "dev": "pnpm run copy:sw && vite",
-    "build": "pnpm run copy:sw && vite build"
+    "postinstall": "cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js"
   }
 }
 ```
 
-### 2. Register the service worker
+Or run manually:
+```bash
+cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
+```
+
+### 2. Initialize the service worker
+
+The service worker must be initialized before any file URLs can be resolved. Call `initServiceWorker` and await it before rendering:
+
+```typescript
+import { initServiceWorker } from '@livestore-filesync/core/worker'
+
+// This must complete before file URLs will work
+await initServiceWorker({ authToken: 'your-auth-token' })
+```
+
+### 3. Initialize FileSync (separate from service worker)
+
+```typescript
+import { initFileSync } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+const dispose = initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' }
+})
+```
+
+### 4. Use file.path directly in your UI
+
+```tsx
+<img src={`/${file.path}`} alt={file.name} />
+```
+
+## React Example
+
+```tsx
+// FileSyncProvider.tsx
+<FileSyncProvider 
+  signerBaseUrl="/api"
+  authToken={authToken}
+  serviceWorker  // Enable service worker
+>
+  {children}
+</FileSyncProvider>
+```
+
+The `FileSyncProvider` component handles everything: initializing the service worker, initializing FileSync, and waiting for the service worker to be ready before rendering children.
+
+## Advanced: Low-level Registration
+
+If you need more control, you can use the low-level registration API:
 
 ```typescript
 import { registerFileSyncServiceWorker } from '@livestore-filesync/core/worker'
 
-const authToken = import.meta.env.VITE_AUTH_TOKEN
 const swUrl = new URL('/file-sync-sw.js', window.location.origin)
 swUrl.searchParams.set('filesBaseUrl', window.location.origin)
-if (authToken) {
-  swUrl.searchParams.set('token', authToken)
-}
+swUrl.searchParams.set('token', authToken)
 
-registerFileSyncServiceWorker({
-  scriptUrl: swUrl.toString(),
-  // No type: "module" needed - bundled SW works in all browsers
-})
+await registerFileSyncServiceWorker({ scriptUrl: swUrl.toString() })
+await navigator.serviceWorker.ready
 ```
 
 ## Configuration via URL parameters

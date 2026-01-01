@@ -26,7 +26,6 @@ export {
   initFileSync,
   startFileSync,
   stopFileSync,
-  disposeFileSync,
   saveFile,
   updateFile,
   deleteFile,

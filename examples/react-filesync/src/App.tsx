@@ -37,7 +37,7 @@ export const App = () => (
     renderLoading={() => <div className="loading">Loading...</div>}
     batchUpdates={batchUpdates}
   >
-    <FileSyncProvider authHeaders={getAuthHeaders}>
+    <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken} serviceWorker>
       <Gallery />
     </FileSyncProvider>
   </LiveStoreProvider>

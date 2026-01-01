@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
-import { disposeFileSync, initFileSync, startFileSync, stopFileSync } from '@livestore-filesync/core'
+import { initFileSync } from '@livestore-filesync/core'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
 const props = defineProps<{
@@ -12,7 +12,7 @@ const props = defineProps<{
 
 const { store } = useStore()
 
-initFileSync(store, {
+const dispose = initFileSync(store, {
   fileSystem: opfsLayer(),
   remote: {
     signerBaseUrl: props.signerBaseUrl ?? '/api',
@@ -21,13 +21,8 @@ initFileSync(store, {
   }
 })
 
-onMounted(() => {
-  startFileSync()
-})
-
 onUnmounted(() => {
-  stopFileSync()
-  void disposeFileSync()
+  void dispose()
 })
 </script>
 

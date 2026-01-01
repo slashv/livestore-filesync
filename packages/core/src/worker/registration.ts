@@ -7,7 +7,33 @@
  */
 
 /**
- * Options for registering the file sync service worker
+ * Options for initializing the file sync service worker.
+ * 
+ * The service worker intercepts GET requests to /livestore-filesync-files/*
+ * and serves files from OPFS when available, falling back to remote storage.
+ */
+export interface ServiceWorkerOptions {
+  /**
+   * Path to the service worker script.
+   * @default '/file-sync-sw.js'
+   */
+  scriptUrl?: string
+
+  /**
+   * Base URL for remote file fetches (used when file not in OPFS).
+   * @default window.location.origin
+   */
+  filesBaseUrl?: string
+
+  /**
+   * Optional bearer token for authenticated remote fetches.
+   * If provided, adds Authorization: Bearer <token> header.
+   */
+  authToken?: string
+}
+
+/**
+ * Low-level options for registering the file sync service worker
  */
 export interface RegisterOptions {
   /**
@@ -173,4 +199,52 @@ export async function clearServiceWorkerCache(): Promise<void> {
  */
 export async function prefetchFiles(paths: string[]): Promise<void> {
   await sendMessageToServiceWorker({ type: "PREFETCH", payload: { paths } })
+}
+
+// ============================================================================
+// High-level initialization API
+// ============================================================================
+
+/**
+ * Initialize and register the file sync service worker.
+ * 
+ * This function handles:
+ * - Building the SW URL with configuration parameters
+ * - Registering the service worker
+ * - Waiting for the SW to be ready
+ * 
+ * Call this before rendering any components that use file URLs.
+ * The service worker must be ready before it can intercept requests.
+ * 
+ * **Setup required:** Copy the bundled SW to your public folder:
+ * ```bash
+ * cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * import { initServiceWorker } from '@livestore-filesync/core/worker'
+ * 
+ * // Before rendering (this must complete before file URLs will work)
+ * await initServiceWorker({ authToken: 'my-token' })
+ * ```
+ */
+export async function initServiceWorker(options: ServiceWorkerOptions = {}): Promise<void> {
+  if (!isServiceWorkerSupported()) {
+    return
+  }
+
+  const filesBaseUrl = options.filesBaseUrl ?? (typeof window !== "undefined" ? window.location.origin : "")
+  
+  const swUrl = new URL(options.scriptUrl ?? "/file-sync-sw.js", filesBaseUrl)
+  swUrl.searchParams.set("filesBaseUrl", filesBaseUrl)
+  if (options.authToken) {
+    swUrl.searchParams.set("token", options.authToken)
+  }
+
+  await registerFileSyncServiceWorker({
+    scriptUrl: swUrl.toString()
+  })
+  
+  await navigator.serviceWorker.ready
 }
