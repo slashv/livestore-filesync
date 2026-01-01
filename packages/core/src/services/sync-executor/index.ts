@@ -14,6 +14,7 @@ export {
   type TransferHandler,
   type TransferKind,
   type TransferResult,
-  type TransferStatus,
   type TransferTask
 } from "./SyncExecutor.js"
+
+// Note: TransferStatus is exported from schema/index.ts (single source of truth)

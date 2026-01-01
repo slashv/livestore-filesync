@@ -1,39 +1,81 @@
 /**
  * Core types for LiveStore FileSync
  *
+ * Types related to LiveStore schema are derived from Effect Schema definitions
+ * in schema/index.ts to ensure a single source of truth.
+ *
+ * This module imports the schemas and exports both readonly and mutable
+ * type variants as needed.
+ *
  * @module
  */
 
-import type { TransferStatus } from "../services/sync-executor/index.js"
+import { Schema } from "@livestore/livestore"
+import {
+  TransferStatusSchema,
+  LocalFileStateSchema,
+  LocalFilesStateSchema,
+  FileCreatedPayloadSchema,
+  FileUpdatedPayloadSchema,
+  FileDeletedPayloadSchema,
+  type FileSyncTables
+} from "../schema/index.js"
+
+// ============================================
+// Types derived from Effect Schema
+// ============================================
+
+/**
+ * Transfer status - tracks the state of file uploads/downloads
+ */
+export type TransferStatus = typeof TransferStatusSchema.Type
+
+/**
+ * Local file state - tracks sync status for a single file (readonly)
+ */
+export type LocalFileState = typeof LocalFileStateSchema.Type
+
+/**
+ * Local file state - mutable variant for internal sync operations
+ */
+const LocalFileStateMutableSchema = Schema.mutable(LocalFileStateSchema)
+export type LocalFileStateMutable = typeof LocalFileStateMutableSchema.Type
+
+/**
+ * Map of file IDs to local file states (readonly)
+ */
+export type LocalFilesState = typeof LocalFilesStateSchema.Type
+
+/**
+ * Map of file IDs to local file states - mutable variant for internal sync operations
+ */
+const LocalFilesStateMutableSchema = Schema.mutable(LocalFilesStateSchema)
+export type LocalFilesStateMutable = typeof LocalFilesStateMutableSchema.Type
 
 /**
  * File record stored in the files table (synced across clients)
+ * Derived from the files table schema
  */
-export interface FileRecord {
-  readonly id: string
-  readonly path: string
-  readonly remoteKey: string
-  readonly contentHash: string
-  readonly createdAt: Date
-  readonly updatedAt: Date
-  readonly deletedAt: Date | null
-}
+export type FileRecord = FileSyncTables["files"]["rowSchema"]["Type"]
 
 /**
- * Local file state for sync tracking (client-only, not synced to server)
+ * File created event payload
  */
-export interface LocalFileState {
-  readonly path: string
-  readonly localHash: string
-  readonly downloadStatus: TransferStatus
-  readonly uploadStatus: TransferStatus
-  readonly lastSyncError: string
-}
+export type FileCreatedPayload = typeof FileCreatedPayloadSchema.Type
 
 /**
- * Map of file IDs to local file states
+ * File updated event payload
  */
-export type LocalFilesState = Record<string, LocalFileState>
+export type FileUpdatedPayload = typeof FileUpdatedPayloadSchema.Type
+
+/**
+ * File deleted event payload
+ */
+export type FileDeletedPayload = typeof FileDeletedPayloadSchema.Type
+
+// ============================================
+// Application-level types (not part of LiveStore schema)
+// ============================================
 
 /**
  * Progress information for file transfers
@@ -67,8 +109,6 @@ export type FileSyncEvent =
  * Callback for file sync events
  */
 export type FileSyncEventCallback = (event: FileSyncEvent) => void
-
-export type { TransferStatus } from "../services/sync-executor/index.js"
 
 /**
  * Options for creating a new file

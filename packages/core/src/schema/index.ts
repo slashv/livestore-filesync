@@ -4,26 +4,31 @@
  * This module exports the schema components needed for file syncing.
  * Applications should merge these with their own schema.
  *
+ * Types are derived from these schemas in types/index.ts to ensure
+ * a single source of truth.
+ *
  * @example
  * ```typescript
- * import { fileSyncTables, fileSyncEvents, createFileSyncMaterializers } from 'livestore-filesync/schema'
- * import { Events, makeSchema, State } from '@livestore/livestore'
+ * import { createFileSyncSchema } from 'livestore-filesync/schema'
+ * import { makeSchema, State } from '@livestore/livestore'
  *
- * // Your app's tables
+ * const { tables, events, createMaterializers } = createFileSyncSchema()
+ *
+ * // Your app's tables (extend with file sync tables)
  * const appTables = {
- *   ...fileSyncTables,
+ *   ...tables,
  *   images: State.SQLite.table({ ... }),
  * }
  *
- * // Your app's events
+ * // Your app's events (extend with file sync events)
  * const appEvents = {
- *   ...fileSyncEvents,
+ *   ...events,
  *   imageCreated: Events.synced({ ... }),
  * }
  *
  * // Create materializers
  * const materializers = State.SQLite.materializers(appEvents, {
- *   ...createFileSyncMaterializers(appTables),
+ *   ...createMaterializers(appTables),
  *   'v1.ImageCreated': ({ ... }) => appTables.images.insert({ ... }),
  * })
  *
@@ -36,41 +41,79 @@
 
 import { Events, Schema, SessionIdSymbol, State } from "@livestore/livestore"
 
-// Re-export types that consumers will need
-export type { TransferStatus } from "../services/sync-executor/index.js"
+// ============================================
+// Schema Definitions (Source of Truth)
+// ============================================
 
 /**
- * File created event payload
+ * Transfer status schema - tracks the state of file uploads/downloads
  */
-export interface FileCreatedPayload {
-  id: string
-  path: string
-  contentHash: string
-  createdAt: Date
-  updatedAt: Date
-}
+export const TransferStatusSchema = Schema.Literal("pending", "queued", "inProgress", "done", "error")
 
 /**
- * File updated event payload
+ * Local file state schema - tracks sync status for a single file
  */
-export interface FileUpdatedPayload {
-  id: string
-  path: string
-  remoteKey: string
-  contentHash: string
-  updatedAt: Date
-}
+export const LocalFileStateSchema = Schema.Struct({
+  path: Schema.String,
+  localHash: Schema.String,
+  downloadStatus: TransferStatusSchema,
+  uploadStatus: TransferStatusSchema,
+  lastSyncError: Schema.String
+})
 
 /**
- * File deleted event payload
+ * Map of file IDs to local file states schema
  */
-export interface FileDeletedPayload {
-  id: string
-  deletedAt: Date
-}
+export const LocalFilesStateSchema = Schema.Record({
+  key: Schema.String,
+  value: LocalFileStateSchema
+})
+
+// ============================================
+// Event Payload Schemas
+// ============================================
 
 /**
- * Helper to create file sync schema components
+ * File created event payload schema
+ */
+export const FileCreatedPayloadSchema = Schema.Struct({
+  id: Schema.String,
+  path: Schema.String,
+  contentHash: Schema.String,
+  createdAt: Schema.Date,
+  updatedAt: Schema.Date
+})
+
+/**
+ * File updated event payload schema
+ */
+export const FileUpdatedPayloadSchema = Schema.Struct({
+  id: Schema.String,
+  path: Schema.String,
+  remoteKey: Schema.String,
+  contentHash: Schema.String,
+  updatedAt: Schema.Date
+})
+
+/**
+ * File deleted event payload schema
+ */
+export const FileDeletedPayloadSchema = Schema.Struct({
+  id: Schema.String,
+  deletedAt: Schema.Date
+})
+
+// ============================================
+// Schema Factory
+// ============================================
+
+// Event payload types for internal use in materializers
+type FileCreatedPayload = typeof FileCreatedPayloadSchema.Type
+type FileUpdatedPayload = typeof FileUpdatedPayloadSchema.Type
+type FileDeletedPayload = typeof FileDeletedPayloadSchema.Type
+
+/**
+ * Creates file sync schema components (tables, events, materializers)
  *
  * @example
  * ```typescript
@@ -80,22 +123,6 @@ export interface FileDeletedPayload {
  * ```
  */
 export function createFileSyncSchema() {
-  // Schemas
-  const transferStatus = Schema.Literal("pending", "queued", "inProgress", "done", "error")
-
-  const localFileState = Schema.Struct({
-    path: Schema.String,
-    localHash: Schema.String,
-    downloadStatus: transferStatus,
-    uploadStatus: transferStatus,
-    lastSyncError: Schema.String
-  })
-
-  const localFilesState = Schema.Record({
-    key: Schema.String,
-    value: localFileState
-  })
-
   // Tables
   const tables = {
     files: State.SQLite.table({
@@ -113,7 +140,7 @@ export function createFileSyncSchema() {
     localFileState: State.SQLite.clientDocument({
       name: "localFileState",
       schema: Schema.Struct({
-        localFiles: localFilesState
+        localFiles: LocalFilesStateSchema
       }),
       default: {
         id: SessionIdSymbol,
@@ -128,30 +155,15 @@ export function createFileSyncSchema() {
   const events = {
     fileCreated: Events.synced({
       name: "v1.FileCreated",
-      schema: Schema.Struct({
-        id: Schema.String,
-        path: Schema.String,
-        contentHash: Schema.String,
-        createdAt: Schema.Date,
-        updatedAt: Schema.Date
-      })
+      schema: FileCreatedPayloadSchema
     }),
     fileUpdated: Events.synced({
       name: "v1.FileUpdated",
-      schema: Schema.Struct({
-        id: Schema.String,
-        path: Schema.String,
-        remoteKey: Schema.String,
-        contentHash: Schema.String,
-        updatedAt: Schema.Date
-      })
+      schema: FileUpdatedPayloadSchema
     }),
     fileDeleted: Events.synced({
       name: "v1.FileDeleted",
-      schema: Schema.Struct({
-        id: Schema.String,
-        deletedAt: Schema.Date
-      })
+      schema: FileDeletedPayloadSchema
     }),
     localFileStateSet: tables.localFileState.set
   }
@@ -183,9 +195,31 @@ export function createFileSyncSchema() {
     events,
     createMaterializers,
     schemas: {
-      transferStatus,
-      localFileState,
-      localFilesState
+      TransferStatusSchema,
+      LocalFileStateSchema,
+      LocalFilesStateSchema,
+      FileCreatedPayloadSchema,
+      FileUpdatedPayloadSchema,
+      FileDeletedPayloadSchema
     }
   }
 }
+
+// ============================================
+// Type Helpers for Consumers
+// ============================================
+
+/**
+ * Return type of createFileSyncSchema for type inference
+ */
+export type FileSyncSchema = ReturnType<typeof createFileSyncSchema>
+
+/**
+ * File sync tables type
+ */
+export type FileSyncTables = FileSyncSchema["tables"]
+
+/**
+ * File sync events type
+ */
+export type FileSyncEvents = FileSyncSchema["events"]

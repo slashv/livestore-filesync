@@ -174,3 +174,47 @@ instance. This is useful for:
 - Apps with multiple LiveStore stores that each need their own file sync
 - Testing scenarios where you want isolated instances
 - Server-side rendering or other environments where global state is problematic
+
+## Type System Design
+
+Types are derived from Effect Schema definitions to ensure a single source of truth and prevent
+drift between TypeScript types and the actual LiveStore schema.
+
+### Schema as Source of Truth
+
+The `schema/index.ts` module exports Effect Schema objects that define the shape of all stored data:
+
+```typescript
+// Schema definitions (source of truth)
+export const TransferStatusSchema = Schema.Literal("pending", "queued", "inProgress", "done", "error")
+export const LocalFileStateSchema = Schema.Struct({ ... })
+export const LocalFilesStateSchema = Schema.Record({ key: Schema.String, value: LocalFileStateSchema })
+```
+
+### Types Derived from Schema
+
+The `types/index.ts` module imports these schemas and derives TypeScript types:
+
+```typescript
+// Derived types (no manual duplication)
+export type TransferStatus = typeof TransferStatusSchema.Type
+export type LocalFileState = typeof LocalFileStateSchema.Type
+export type FileRecord = FileSyncTables["files"]["rowSchema"]["Type"]
+```
+
+### Mutable Variants
+
+Effect Schema produces readonly types by default. For internal operations that require mutation
+(like sync reconciliation), mutable variants are created:
+
+```typescript
+const LocalFilesStateMutableSchema = Schema.mutable(LocalFilesStateSchema)
+export type LocalFilesStateMutable = typeof LocalFilesStateMutableSchema.Type
+```
+
+### Benefits
+
+- **Single source of truth**: Schema definitions are canonical; types are derived
+- **No drift**: TypeScript types cannot diverge from the actual LiveStore schema
+- **Type safety**: Effect Schema provides runtime validation if needed
+- **Flexibility**: Both readonly and mutable variants available as needed

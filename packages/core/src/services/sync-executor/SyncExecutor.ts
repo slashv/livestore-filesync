@@ -15,10 +15,8 @@ import { Duration } from "effect"
  */
 export type TransferKind = "upload" | "download"
 
-/**
- * Transfer status
- */
-export type TransferStatus = "pending" | "queued" | "inProgress" | "done" | "error"
+// Re-export TransferStatus from types (derived from schema - single source of truth)
+export type { TransferStatus } from "../../types/index.js"
 
 /**
  * Transfer task

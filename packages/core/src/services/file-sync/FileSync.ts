@@ -14,9 +14,9 @@ import {
   defaultConfig as defaultExecutorConfig,
   makeSyncExecutor,
   type SyncExecutorConfig,
-  type TransferKind,
-  type TransferStatus
+  type TransferKind
 } from "../sync-executor/index.js"
+import type { TransferStatus } from "../../types/index.js"
 import { makeStoreRoot, stripFilesRoot } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
@@ -24,7 +24,8 @@ import type {
   FileRecord,
   FileSyncEvent,
   FileSyncEventCallback,
-  LocalFilesState
+  LocalFilesState,
+  LocalFilesStateMutable
 } from "../../types/index.js"
 
 /**
@@ -461,7 +462,7 @@ export const makeFileSync = (
         const files = yield* getActiveFiles()
         const localFiles = yield* readLocalFilesState()
 
-        const nextLocalFilesState: LocalFilesState = { ...localFiles }
+        const nextLocalFilesState: LocalFilesStateMutable = { ...localFiles }
 
         // Pass 1: reconcile using existing state and remote metadata only (no disk I/O)
         for (const file of files) {
@@ -477,7 +478,7 @@ export const makeFileSync = (
         }
 
         // Pass 2: detect local files or mark downloads when no local state exists (disk I/O)
-        const additions: LocalFilesState = {}
+        const additions: LocalFilesStateMutable = {}
 
         for (const file of files) {
           if (file.id in nextLocalFilesState) continue
