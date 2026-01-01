@@ -195,6 +195,31 @@ const url = await resolveFileUrl(file.id)
 
 See `examples/vue-filesync` for this approach.
 
+## Handling Upload State
+
+When files sync across clients, the file metadata may arrive before the file content is uploaded. Use `getFileDisplayState()` to determine if a file can be displayed:
+
+```typescript
+import { getFileDisplayState } from '@livestore-filesync/core'
+
+// In your component
+const [localFileState] = store.useClientDocument(tables.localFileState)
+const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.localFiles ?? {})
+
+// canDisplay is true when:
+// - The file exists locally (originating client can display immediately)
+// - OR the file has been uploaded (remoteKey is set, other clients can download)
+
+return canDisplay
+  ? <img src={`/${file.path}`} />
+  : <div>{isUploading ? 'Uploading...' : 'Waiting for file...'}</div>
+```
+
+This ensures a good user experience:
+- The originating client displays files immediately from local storage
+- Other clients show a placeholder until the upload completes
+- After edits, the correct version is displayed (based on content hash matching)
+
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)

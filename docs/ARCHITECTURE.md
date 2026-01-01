@@ -218,3 +218,52 @@ export type LocalFilesStateMutable = typeof LocalFilesStateMutableSchema.Type
 - **No drift**: TypeScript types cannot diverge from the actual LiveStore schema
 - **Type safety**: Effect Schema provides runtime validation if needed
 - **Flexibility**: Both readonly and mutable variants available as needed
+
+## Display State Utilities
+
+When displaying files in the UI, apps need to know whether a file can be displayed and its current
+sync status. The `getFileDisplayState` utility combines the synced file record with client-local
+state to provide this information.
+
+### The Problem
+
+Files sync via LiveStore, but the file content may not be immediately available:
+
+1. **Originating client**: Has the file in local OPFS storage, can display immediately
+2. **Other clients**: Receive the file record via sync, but must wait for upload to complete before
+   they can download and display it
+
+The `files` table contains synced metadata (including `remoteKey`), while `localFileState` is a
+client document tracking what each client has locally.
+
+### getFileDisplayState
+
+```typescript
+import { getFileDisplayState } from '@livestore-filesync/core'
+
+const displayState = getFileDisplayState(file, localFilesState)
+
+// displayState contains:
+// - canDisplay: boolean  - true if file is available (local copy OR remote)
+// - hasLocalCopy: boolean - true if local hash matches file's content hash
+// - isUploaded: boolean   - true if remoteKey is set
+// - isUploading: boolean  - true if upload is in progress/queued
+// - isDownloading: boolean - true if download is in progress/queued
+```
+
+### UI Pattern
+
+```tsx
+// React example
+const [localFileState] = store.useClientDocument(tables.localFileState)
+const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.localFiles ?? {})
+
+return canDisplay
+  ? <img src={`/${file.path}`} />
+  : <Placeholder>{isUploading ? 'Uploading...' : 'Waiting...'}</Placeholder>
+```
+
+This ensures:
+- Originating client displays immediately (has local copy)
+- Other clients show placeholder until upload completes
+- Correct version is displayed after edits (hash comparison)

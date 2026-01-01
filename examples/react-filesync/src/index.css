@@ -71,6 +71,16 @@
   object-fit: cover;
 }
 
+.image-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 0.875rem;
+}
+
 .info {
   display: flex;
   flex-direction: column;

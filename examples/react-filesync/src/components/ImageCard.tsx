@@ -1,6 +1,11 @@
 import React from "react";
 import { useStore } from "@livestore/react";
-import { deleteFile, readFile, updateFile } from "@livestore-filesync/core";
+import {
+  deleteFile,
+  getFileDisplayState,
+  readFile,
+  updateFile,
+} from "@livestore-filesync/core";
 import { tables } from "../livestore/schema.ts";
 import type { FileType } from "../types";
 
@@ -8,7 +13,11 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const { store } = useStore();
 
   const [localFileState] = store.useClientDocument(tables.localFileState);
-  const localFile = localFileState?.localFiles?.[file.id];
+  const displayState = getFileDisplayState(
+    file,
+    localFileState?.localFiles ?? {}
+  );
+  const { localState: localFile, canDisplay, isUploading } = displayState;
 
   const src = `/${file.path.replace(/^\/+/, "")}`;
 
@@ -33,12 +42,18 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   return (
     <div className="card" data-testid="file-card">
       <div className="image-container">
-        <img
-          src={src}
-          alt={file.path}
-          className="image"
-          data-testid="file-image"
-        />
+        {canDisplay ? (
+          <img
+            src={src}
+            alt={file.path}
+            className="image"
+            data-testid="file-image"
+          />
+        ) : (
+          <div className="image-placeholder" data-testid="file-placeholder">
+            {isUploading ? "Uploading..." : "Waiting for file..."}
+          </div>
+        )}
       </div>
       <div className="info">
         <div className="header">
@@ -94,7 +109,11 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
             </tr>
             <tr>
               <td className="label">Local File: Upload</td>
-              <td>{localFile?.uploadStatus}</td>
+              <td data-testid="file-upload-status">{localFile?.uploadStatus}</td>
+            </tr>
+            <tr>
+              <td className="label">Can Display</td>
+              <td data-testid="file-can-display">{String(canDisplay)}</td>
             </tr>
             {localFile?.lastSyncError ? (
               <tr>

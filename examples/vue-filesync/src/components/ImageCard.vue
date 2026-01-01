@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { tables } from '../livestore/schema'
 import { computed, onMounted, ref, watch } from 'vue'
-import { deleteFile, readFile, updateFile, resolveFileUrl } from '@livestore-filesync/core'
+import {
+  deleteFile,
+  getFileDisplayState,
+  readFile,
+  resolveFileUrl,
+  updateFile,
+} from '@livestore-filesync/core'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
 import { invertImageFile } from '../utils/image.utils'
@@ -14,6 +20,12 @@ const { store } = useStore()
 
 const { localFiles } = store.useClientDocument(tables.localFileState)
 const localFile = computed(() => localFiles.value[props.file.id])
+
+const displayState = computed(() =>
+  getFileDisplayState(props.file, localFiles.value)
+)
+const canDisplay = computed(() => displayState.value.canDisplay)
+const isUploading = computed(() => displayState.value.isUploading)
 
 const handleDelete = async () => {
   try {
@@ -33,7 +45,6 @@ const handleEdit = async () => {
   }
 }
 
-
 const src = ref("")
 onMounted(async () => {
   const url = await resolveFileUrl(props.file.id)
@@ -51,16 +62,21 @@ watch(() => props.file.updatedAt, async () => {
     class="card"
     data-testid="file-card"
   >
-    <div
-      class="image-container"
-      v-if="src"
-    >
+    <div class="image-container">
       <img
+        v-if="canDisplay && src"
         :src="src"
         :alt="file.path"
         class="image"
         data-testid="file-image"
       />
+      <div
+        v-else
+        class="image-placeholder"
+        data-testid="file-placeholder"
+      >
+        {{ isUploading ? 'Uploading...' : 'Waiting for file...' }}
+      </div>
     </div>
     <div class="info">
       <div class="header">
@@ -110,7 +126,11 @@ watch(() => props.file.updatedAt, async () => {
           </tr>
           <tr>
             <td class="label">Local File: Upload</td>
-            <td>{{ localFile?.uploadStatus }}</td>
+            <td data-testid="file-upload-status">{{ localFile?.uploadStatus }}</td>
+          </tr>
+          <tr>
+            <td class="label">Can Display</td>
+            <td data-testid="file-can-display">{{ String(canDisplay) }}</td>
           </tr>
           <tr v-if="localFile?.lastSyncError">
             <td class="label">Error</td>
@@ -143,6 +163,16 @@ watch(() => props.file.updatedAt, async () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.image-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 0.875rem;
 }
 
 .info {

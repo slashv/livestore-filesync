@@ -133,3 +133,84 @@ export interface FileOperationResult {
   readonly path: string
   readonly contentHash: string
 }
+
+// ============================================
+// Display State Utilities
+// ============================================
+
+/**
+ * Display state for a file, combining synced file record with local state
+ *
+ * This provides the information needed to correctly render a file in the UI,
+ * accounting for whether the file is available locally, remotely, or still uploading.
+ */
+export interface FileDisplayState {
+  /** The file record from the synced files table */
+  readonly file: FileRecord
+  /** Local file state for this client (may be undefined if no local state exists) */
+  readonly localState: LocalFileState | undefined
+  /** True if file can be displayed (available locally or remotely) */
+  readonly canDisplay: boolean
+  /** True if file exists in local storage (OPFS) */
+  readonly hasLocalCopy: boolean
+  /** True if file has been uploaded to remote storage */
+  readonly isUploaded: boolean
+  /** True if upload is currently in progress or queued */
+  readonly isUploading: boolean
+  /** True if download is currently in progress or queued */
+  readonly isDownloading: boolean
+}
+
+/**
+ * Get the display state for a file
+ *
+ * This utility combines a file record with its local state to determine
+ * whether the file can be displayed and its current sync status.
+ *
+ * Use this to implement correct UI patterns:
+ * - Show the file immediately if `canDisplay` is true
+ * - Show a placeholder/spinner if `canDisplay` is false
+ * - Show upload progress if `isUploading` is true
+ * - Show download progress if `isDownloading` is true
+ *
+ * @example
+ * ```typescript
+ * // In a React component
+ * const [localFileState] = store.useClientDocument(tables.localFileState)
+ * const displayState = getFileDisplayState(file, localFileState?.localFiles ?? {})
+ *
+ * return displayState.canDisplay
+ *   ? <img src={`/${file.path}`} />
+ *   : <Placeholder />
+ * ```
+ *
+ * @param file - The file record from the files table
+ * @param localFilesState - The local files state map from the client document
+ * @returns The display state for the file
+ */
+export function getFileDisplayState(
+  file: FileRecord,
+  localFilesState: LocalFilesState
+): FileDisplayState {
+  const localState = localFilesState[file.id]
+  // hasLocalCopy is true only if local hash matches the file's content hash
+  // This ensures we have the correct version of the file locally
+  const hasLocalCopy = !!localState?.localHash && localState.localHash === file.contentHash
+  const isUploaded = file.remoteKey !== ""
+  const isUploading =
+    localState?.uploadStatus === "inProgress" ||
+    localState?.uploadStatus === "queued"
+  const isDownloading =
+    localState?.downloadStatus === "inProgress" ||
+    localState?.downloadStatus === "queued"
+
+  return {
+    file,
+    localState,
+    canDisplay: hasLocalCopy || isUploaded,
+    hasLocalCopy,
+    isUploaded,
+    isUploading,
+    isDownloading
+  }
+}
