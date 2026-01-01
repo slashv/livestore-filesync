@@ -2,15 +2,54 @@
 
 The file sync service worker lets the browser fetch `file.path` directly. Any GET request whose pathname starts with the configured prefix (default `/livestore-filesync-files/`) is intercepted and resolved from local OPFS storage when available, falling back to remote storage when not.
 
-## Registering the worker (main thread)
-- Import and call `registerFileSyncServiceWorker` during app startup.
-- Point `scriptUrl` to a service worker module that calls `initFileSyncServiceWorker`.
-- In the React example (`examples/react-filesync/src/main.tsx`), we build a module URL for `../file-sync-sw.ts`, add query params for `filesBaseUrl` and an optional bearer `token`, then register it with `{ type: "module" }`.
+## Using the bundled service worker
 
-## Service worker module configuration
-`examples/react-filesync/file-sync-sw.ts` reads `filesBaseUrl` and `token` from its own URL search params and calls:
+The core package provides a pre-bundled service worker that works in all browsers (including Firefox, which doesn't support ES module service workers). To use it:
+
+### 1. Copy the bundled service worker to your public folder
+
+```bash
+cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
+```
+
+Or add a script to your `package.json`:
+```json
+{
+  "scripts": {
+    "copy:sw": "cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js",
+    "dev": "pnpm run copy:sw && vite",
+    "build": "pnpm run copy:sw && vite build"
+  }
+}
+```
+
+### 2. Register the service worker
+
+```typescript
+import { registerFileSyncServiceWorker } from '@livestore-filesync/core/worker'
+
+const authToken = import.meta.env.VITE_AUTH_TOKEN
+const swUrl = new URL('/file-sync-sw.js', window.location.origin)
+swUrl.searchParams.set('filesBaseUrl', window.location.origin)
+if (authToken) {
+  swUrl.searchParams.set('token', authToken)
+}
+
+registerFileSyncServiceWorker({
+  scriptUrl: swUrl.toString(),
+  // No type: "module" needed - bundled SW works in all browsers
+})
+```
+
+## Configuration via URL parameters
+
+The bundled service worker reads configuration from URL search params:
+- `filesBaseUrl`: Base URL for remote file fetches (e.g., `window.location.origin`)
+- `token`: Optional bearer token for authentication
+
+The worker is configured with:
 - `pathPrefix: "/livestore-filesync-files/"` so `file.path` can be used as-is in the UI.
-- `getRemoteUrl: (path) => baseUrl ? \`\${baseUrl}/\${path}\` : \`/\${path}\`` to build the remote fetch URL when OPFS does not contain the file. The `path` passed in already includes the storage prefix. In the examples this `baseUrl` is set to `window.location.origin` so the worker fetches from the same dev Worker instance.
+- `getRemoteUrl: (path) => baseUrl ? \`\${baseUrl}/\${path}\` : \`/\${path}\`` to build the remote fetch URL when OPFS does not contain the file.
 - `getRemoteHeaders`: adds `Authorization: Bearer <token>` when provided.
 - `cacheRemoteResponses: true` so remote fetches are stored back into OPFS for future reads.
 

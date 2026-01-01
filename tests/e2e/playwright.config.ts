@@ -1,5 +1,24 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// Select framework via E2E_FRAMEWORK env var (default: vue)
+const framework = process.env.E2E_FRAMEWORK || 'vue'
+
+const frameworkConfig: Record<string, { cwd: string; port: number }> = {
+  vue: {
+    cwd: '../../examples/vue-filesync',
+    port: 60004,
+  },
+  react: {
+    cwd: '../../examples/react-filesync',
+    port: 60004,
+  },
+}
+
+const config = frameworkConfig[framework]
+if (!config) {
+  throw new Error(`Unknown framework: ${framework}. Use 'vue' or 'react'.`)
+}
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -9,7 +28,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: 'http://localhost:60004',
+    baseURL: `http://localhost:${config.port}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -27,9 +46,9 @@ export default defineConfig({
 
   webServer: {
     command: 'pnpm run dev',
-    url: 'http://localhost:60004',
+    url: `http://localhost:${config.port}`,
     reuseExistingServer: !process.env.CI,
-    cwd: '../../examples/vue-filesync',
+    cwd: config.cwd,
     timeout: 120000,
   },
 })

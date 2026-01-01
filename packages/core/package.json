@@ -23,6 +23,7 @@
       "types": "./dist/worker/index.d.ts",
       "import": "./dist/worker/index.js"
     },
+    "./worker/sw.js": "./dist/file-sync-sw.iife.js",
     "./schema": {
       "types": "./dist/schema/index.d.ts",
       "import": "./dist/schema/index.js"
@@ -31,11 +32,13 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "tsc -b tsconfig.build.json && pnpm run build:sw",
+    "build:sw": "esbuild src/worker/file-sync-sw-standalone.ts --bundle --format=iife --outfile=dist/file-sync-sw.iife.js --platform=browser",
     "check": "tsc -b tsconfig.json",
     "test": "vitest"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "@effect/platform": "catalog:",
     "@effect/vitest": "^0.25.1",
     "@livestore/adapter-node": "catalog:",

@@ -150,7 +150,27 @@ Requires S3 credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SEC
 
 ## Service Worker (Optional)
 
-For browsers, an optional service worker can intercept requests to `/livestore-filesync-files/*` and serve files from OPFS before falling back to remote. See `examples/react-filesync/file-sync-sw.ts` for implementation.
+For browsers, an optional service worker can intercept requests to `/livestore-filesync-files/*` and serve files from OPFS before falling back to remote.
+
+### Setup
+
+1. Copy the bundled service worker to your public folder:
+```bash
+cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
+```
+
+2. Register during app startup:
+```typescript
+import { registerFileSyncServiceWorker } from '@livestore-filesync/core/worker'
+
+const swUrl = new URL('/file-sync-sw.js', window.location.origin)
+swUrl.searchParams.set('filesBaseUrl', window.location.origin)
+// Optional: swUrl.searchParams.set('token', authToken)
+
+registerFileSyncServiceWorker({ scriptUrl: swUrl.toString() })
+```
+
+The bundled service worker works in all browsers including Firefox. See `examples/react-filesync` for a complete implementation.
 
 ## Requirements
 

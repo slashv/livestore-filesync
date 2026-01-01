@@ -38,5 +38,10 @@
     "eslint-plugin-sort-destructure-keys": "^2.0.0",
     "tsx": "^4.17.0",
     "typescript": "^5.6.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

@@ -22,3 +22,6 @@ scratchpad/*
 .env.production.local
 .dev.vars
 .wrangler/
+
+# Generated service worker (copied from core package)
+examples/react-filesync/public/file-sync-sw.js
