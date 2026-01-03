@@ -135,6 +135,62 @@ export interface FileOperationResult {
 }
 
 // ============================================
+// Sync Status Types
+// ============================================
+
+/**
+ * A file sync error with the file ID and error message
+ */
+export interface SyncError {
+  readonly fileId: string
+  readonly error: string
+}
+
+/**
+ * Aggregate sync status derived from LocalFilesState
+ *
+ * This provides a summary of all file sync operations in progress,
+ * queued, pending, or errored. Use with `getSyncStatus()` to compute
+ * from the localFileState client document.
+ */
+export interface SyncStatus {
+  /** Count of files currently uploading (status: "inProgress") */
+  readonly uploadingCount: number
+  /** Count of files currently downloading (status: "inProgress") */
+  readonly downloadingCount: number
+  /** Count of files queued for upload */
+  readonly queuedUploadCount: number
+  /** Count of files queued for download */
+  readonly queuedDownloadCount: number
+  /** Count of files pending upload (waiting to be queued) */
+  readonly pendingUploadCount: number
+  /** Count of files pending download (waiting to be queued) */
+  readonly pendingDownloadCount: number
+  /** Count of files with sync errors */
+  readonly errorCount: number
+
+  /** Whether any sync operation is active (uploading or downloading) */
+  readonly isSyncing: boolean
+  /** Whether any files are pending or queued (not yet completed) */
+  readonly hasPending: boolean
+
+  /** File IDs currently uploading */
+  readonly uploadingFileIds: readonly string[]
+  /** File IDs currently downloading */
+  readonly downloadingFileIds: readonly string[]
+  /** File IDs queued for upload */
+  readonly queuedUploadFileIds: readonly string[]
+  /** File IDs queued for download */
+  readonly queuedDownloadFileIds: readonly string[]
+  /** File IDs pending upload (waiting to be queued) */
+  readonly pendingUploadFileIds: readonly string[]
+  /** File IDs pending download (waiting to be queued) */
+  readonly pendingDownloadFileIds: readonly string[]
+  /** Files with sync errors and their error messages */
+  readonly errors: readonly SyncError[]
+}
+
+// ============================================
 // Display State Utilities
 // ============================================
 

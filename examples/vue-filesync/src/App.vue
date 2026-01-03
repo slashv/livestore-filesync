@@ -7,6 +7,7 @@ import { schema } from './livestore/schema.ts'
 import LiveStoreWorker from './livestore.worker.ts?worker'
 import Gallery from './components/Gallery.vue'
 import FileSyncProvider from './components/FileSyncProvider.vue'
+import SyncStatus from './components/SyncStatus.vue'
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
@@ -34,7 +35,12 @@ const storeOptions = {
     <template #default>
       <LiveStoreProvider :options="storeOptions">
         <FileSyncProvider :auth-token="authToken">
-          <Gallery />
+          <div class="layout">
+            <div class="main">
+              <Gallery />
+            </div>
+            <SyncStatus />
+          </div>
         </FileSyncProvider>
       </LiveStoreProvider>
     </template>
@@ -47,5 +53,15 @@ const storeOptions = {
 <style scoped>
 .loading {
   padding: 2rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  height: 100vh;
+}
+
+.main {
+  overflow-y: auto;
 }
 </style>

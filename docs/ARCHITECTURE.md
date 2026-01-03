@@ -267,3 +267,107 @@ This ensures:
 - Originating client displays immediately (has local copy)
 - Other clients show placeholder until upload completes
 - Correct version is displayed after edits (hash comparison)
+
+## Sync Status
+
+The `getSyncStatus()` utility derives aggregate sync status from the `localFileState` client document.
+Since `localFileState` is reactive via LiveStore, applications can subscribe to it and compute
+sync status on each update.
+
+### getSyncStatus
+
+```typescript
+import { getSyncStatus } from '@livestore-filesync/core'
+
+// The function takes the localFiles map and returns aggregate status
+const status = getSyncStatus(localFilesState)
+
+// status contains:
+// - uploadingCount: number     - files currently uploading
+// - downloadingCount: number   - files currently downloading
+// - queuedUploadCount: number  - files queued for upload
+// - queuedDownloadCount: number - files queued for download
+// - pendingUploadCount: number  - files pending upload (waiting to be queued)
+// - pendingDownloadCount: number - files pending download (waiting to be queued)
+// - errorCount: number         - files with sync errors
+// - isSyncing: boolean         - true if any upload/download in progress
+// - hasPending: boolean        - true if any files pending or queued
+// - uploadingFileIds: string[] - IDs of files currently uploading
+// - downloadingFileIds: string[] - IDs of files currently downloading
+// - queuedUploadFileIds: string[] - IDs of files queued for upload
+// - queuedDownloadFileIds: string[] - IDs of files queued for download
+// - pendingUploadFileIds: string[] - IDs of files pending upload
+// - pendingDownloadFileIds: string[] - IDs of files pending download
+// - errors: SyncError[]        - files with errors and their messages
+```
+
+### Usage Examples
+
+**React:**
+
+```tsx
+import { getSyncStatus } from '@livestore-filesync/core'
+
+function SyncIndicator() {
+  const [localFileState] = store.useClientDocument(tables.localFileState)
+  const status = getSyncStatus(localFileState?.localFiles ?? {})
+
+  if (status.isSyncing) {
+    return (
+      <div>
+        Syncing: {status.uploadingCount} uploading, {status.downloadingCount} downloading
+      </div>
+    )
+  }
+
+  if (status.errorCount > 0) {
+    return <div>Sync errors: {status.errors.map(e => e.error).join(', ')}</div>
+  }
+
+  return <div>All files synced</div>
+}
+```
+
+**Vue:**
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useClientDocument } from 'vue-livestore'
+import { getSyncStatus } from '@livestore-filesync/core'
+import { tables } from './schema'
+
+const localFileState = useClientDocument(tables.localFileState)
+const syncStatus = computed(() => getSyncStatus(localFileState.value?.localFiles ?? {}))
+</script>
+
+<template>
+  <div v-if="syncStatus.isSyncing">
+    Syncing: {{ syncStatus.uploadingCount }} uploading, {{ syncStatus.downloadingCount }} downloading
+  </div>
+  <div v-else-if="syncStatus.errorCount > 0">
+    Sync errors: {{ syncStatus.errors.map(e => e.error).join(', ') }}
+  </div>
+  <div v-else>All files synced</div>
+</template>
+```
+
+**Vanilla JS with store.subscribe:**
+
+```typescript
+import { queryDb } from '@livestore/livestore'
+import { getSyncStatus } from '@livestore-filesync/core'
+import { tables } from './schema'
+
+const unsubscribe = store.subscribe(
+  queryDb(tables.localFileState.get()),
+  (state) => {
+    const status = getSyncStatus(state.localFiles)
+    document.getElementById('sync-status').textContent = 
+      status.isSyncing ? `Syncing ${status.uploadingCount + status.downloadingCount} files...` : 'Synced'
+  }
+)
+
+// Later, to unsubscribe:
+unsubscribe()
+```

@@ -36,3 +36,6 @@ export {
   triggerSync,
   type InitFileSyncConfig
 } from "./singleton.js"
+
+// Sync status utilities
+export { getSyncStatus } from "./sync-status.js"

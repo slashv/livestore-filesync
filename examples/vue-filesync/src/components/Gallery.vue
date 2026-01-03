@@ -16,14 +16,15 @@ const handleUploadClick = () => {
 
 const handleFileChange = async (e: Event) => {
   const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (!file) return
+  const selectedFiles = target.files
+  if (!selectedFiles || selectedFiles.length === 0) return
 
   try {
-    const result = await saveFile(file)
-    console.log('File saved:', result)
+    const savePromises = Array.from(selectedFiles).map((file) => saveFile(file))
+    const results = await Promise.all(savePromises)
+    console.log('Files saved:', results)
   } catch (error) {
-    console.error('Failed to save file:', error)
+    console.error('Failed to save files:', error)
   }
 
   // Reset input
@@ -50,6 +51,7 @@ const handleFileChange = async (e: Event) => {
         ref="inputRef"
         type="file"
         accept="image/*"
+        multiple
         @change="handleFileChange"
         class="hidden"
         data-testid="file-input"
