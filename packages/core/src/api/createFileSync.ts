@@ -19,6 +19,7 @@ import {
   FileSyncLive,
   LocalFileStorage,
   LocalFileStorageLive,
+  LocalFileStateManagerLive,
   RemoteStorage,
   makeS3SignerRemoteStorage,
   type RemoteStorageConfig
@@ -233,11 +234,13 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const FileSystemLive = fileSystem
   const LocalFileStorageLayer = Layer.provide(FileSystemLive)(LocalFileStorageLive)
+  const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
 
   const BaseLayer = Layer.mergeAll(
     Layer.scope,
     FileSystemLive,
     LocalFileStorageLayer,
+    LocalFileStateManagerLayer,
     RemoteStorageLive
   )
 

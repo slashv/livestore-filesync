@@ -2,6 +2,16 @@
   padding: 2rem;
 }
 
+.app-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  height: 100vh;
+}
+
+.main {
+  overflow-y: auto;
+}
+
 .container {
   padding: 1rem;
 }
@@ -53,7 +63,7 @@
   width: 100%;
   border: 1px solid #ccc;
   display: grid;
-  grid-template-columns: 1fr 3fr;
+  grid-template-columns: 200px 1fr;
 }
 
 .image-container {
@@ -61,6 +71,7 @@
   min-height: 200px;
   background: #eee;
   border-right: 1px solid #ccc;
+  align-self: stretch;
 }
 
 .image {
@@ -120,4 +131,53 @@
   white-space: nowrap;
   border-right: 1px solid #ccc;
   font-weight: 500;
+}
+
+/* Sync Status Panel */
+.sync-status {
+  font-size: 12px;
+  padding: 12px;
+  border-left: 1px solid #000;
+  min-width: 200px;
+  max-width: 280px;
+  overflow-y: auto;
+}
+
+.sync-status h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+}
+
+.sync-status h4 {
+  margin: 12px 0 6px 0;
+  font-size: 12px;
+}
+
+.sync-status table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sync-status td {
+  padding: 4px 6px;
+  border: 1px solid #000;
+}
+
+.sync-status td:first-child {
+  font-weight: 500;
+}
+
+.sync-status td:last-child {
+  text-align: right;
+}
+
+.sync-status ul {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+}
+
+.sync-status li {
+  padding: 2px 0;
+  word-break: break-all;
 }

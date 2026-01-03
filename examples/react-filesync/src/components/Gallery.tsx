@@ -20,14 +20,15 @@ export const Gallery: React.FC = () => {
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const selectedFiles = event.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
 
     try {
-      const result = await saveFile(file);
-      console.log("File saved:", result);
+      const savePromises = Array.from(selectedFiles).map((file) => saveFile(file));
+      const results = await Promise.all(savePromises);
+      console.log("Files saved:", results);
     } catch (error) {
-      console.error("Failed to save file:", error);
+      console.error("Failed to save files:", error);
     }
 
     if (inputRef.current) {
@@ -49,6 +50,7 @@ export const Gallery: React.FC = () => {
           ref={inputRef}
           type="file"
           accept="image/*"
+          multiple
           onChange={handleFileChange}
           className="hidden"
           data-testid="file-input"

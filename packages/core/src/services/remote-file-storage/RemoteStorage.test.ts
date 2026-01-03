@@ -1,8 +1,6 @@
 import { Effect, Exit, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
-
-type FormDataLike = { get: (name: string) => unknown }
 import {
   makeS3SignerRemoteStorage,
   makeMemoryRemoteStorage,

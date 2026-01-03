@@ -6,10 +6,12 @@ import { stripFilesRoot } from "../../utils/path.js"
 import { FileStorage, FileStorageLive } from "./index.js"
 import { FileSyncLive } from "../file-sync/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
+import { LocalFileStateManagerLive } from "../local-file-state/index.js"
 import { RemoteStorageMemory } from "../remote-file-storage/index.js"
 
 const createRuntime = (deps: Parameters<typeof FileSyncLive>[0]) => {
-  const baseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, RemoteStorageMemory)
+  const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
+  const baseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, localFileStateManagerLayer, RemoteStorageMemory)
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
       executorConfig: {

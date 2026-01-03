@@ -7,6 +7,7 @@ import { schema, SyncPayload } from "./livestore/schema.ts";
 import LiveStoreWorker from "./livestore.worker.ts?worker";
 import { Gallery } from "./components/Gallery.tsx";
 import { FileSyncProvider } from "./components/FileSyncProvider.tsx";
+import { SyncStatus } from "./components/SyncStatus.tsx";
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search);
@@ -38,7 +39,12 @@ export const App = () => (
     batchUpdates={batchUpdates}
   >
     <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken} serviceWorker>
-      <Gallery />
+      <div className="app-layout">
+        <div className="main">
+          <Gallery />
+        </div>
+        <SyncStatus />
+      </div>
     </FileSyncProvider>
   </LiveStoreProvider>
 );

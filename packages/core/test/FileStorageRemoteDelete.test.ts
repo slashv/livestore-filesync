@@ -9,6 +9,7 @@ import {
   FileSync,
   FileSyncLive,
   LocalFileStorageMemory,
+  LocalFileStateManagerLive,
   makeRemoteStorageMemoryWithRefs,
   RemoteStorage
 } from "../src/services/index.js"
@@ -38,7 +39,7 @@ describe("FileStorage remote delete", () => {
 
     const remoteWithDelay = {
       ...remoteService,
-      upload: (file: File, options?: { key?: string }) =>
+      upload: (file: File, options: { key: string }) =>
         Effect.gen(function*() {
           yield* Deferred.succeed(uploadStarted, undefined)
           yield* Deferred.await(allowUpload)
@@ -47,7 +48,8 @@ describe("FileStorage remote delete", () => {
     }
 
     const RemoteStorageLayer = Layer.succeed(RemoteStorage, remoteWithDelay)
-    const BaseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, RemoteStorageLayer)
+    const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
+    const BaseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, LocalFileStateManagerLayer, RemoteStorageLayer)
     const FileSyncLayer = Layer.provide(BaseLayer)(
       FileSyncLive(deps, {
         executorConfig: {

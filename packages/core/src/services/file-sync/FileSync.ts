@@ -9,6 +9,7 @@
 
 import { Context, Effect, Fiber, Layer, Ref, Scope } from "effect"
 import { LocalFileStorage } from "../local-file-storage/index.js"
+import { LocalFileStateManager } from "../local-file-state/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
 import {
   defaultConfig as defaultExecutorConfig,
@@ -16,7 +17,6 @@ import {
   type SyncExecutorConfig,
   type TransferKind
 } from "../sync-executor/index.js"
-import type { TransferStatus } from "../../types/index.js"
 import { makeStoreRoot, stripFilesRoot } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
@@ -120,9 +120,10 @@ export const defaultFileSyncConfig: FileSyncConfig = {
 export const makeFileSync = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Effect.Effect<FileSyncService, never, LocalFileStorage | RemoteStorage | Scope.Scope> =>
+): Effect.Effect<FileSyncService, never, LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
   Effect.gen(function* () {
     const localStorage = yield* LocalFileStorage
+    const stateManager = yield* LocalFileStateManager
     const remoteStorage = yield* RemoteStorage
     const { store, schema, storeId } = deps
     const { tables, events, queryDb } = schema
@@ -170,25 +171,6 @@ export const makeFileSync = (
         return files[0]
       })
 
-    const readLocalFilesState = (): Effect.Effect<LocalFilesState> =>
-      Effect.sync(() => {
-        const state = store.query<{ localFiles: LocalFilesState }>(
-          queryDb(tables.localFileState.get())
-        )
-        return state.localFiles ?? {}
-      })
-
-    const updateLocalFilesState = (
-      updater: (state: LocalFilesState) => LocalFilesState
-    ): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const state = store.query<{ localFiles: LocalFilesState }>(
-          queryDb(tables.localFileState.get())
-        )
-        const next = updater(state.localFiles ?? {})
-        store.commit(events.localFileStateSet({ localFiles: next }))
-      })
-
     const updateFileRemoteKey = (fileId: string, remoteKey: string): Effect.Effect<void> =>
       Effect.sync(() => {
         const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: fileId })))
@@ -203,35 +185,6 @@ export const makeFileSync = (
             updatedAt: new Date()
           })
         )
-      })
-
-    const mergeLocalFiles = (patch: Record<string, LocalFilesState[string]>): Effect.Effect<void> =>
-      updateLocalFilesState((state) => ({
-        ...state,
-        ...patch
-      }))
-
-    const removeLocalFileState = (fileId: string): Effect.Effect<void> =>
-      updateLocalFilesState((state) => {
-        if (!(fileId in state)) return state
-        const next = { ...state }
-        delete next[fileId]
-        return next
-      })
-
-    const setLocalFileTransferStatus = (
-      fileId: string,
-      action: "upload" | "download",
-      status: TransferStatus
-    ): Effect.Effect<void> =>
-      updateLocalFilesState((state) => {
-        const localFile = state[fileId]
-        if (!localFile) return state
-        const field = action === "upload" ? "uploadStatus" : "downloadStatus"
-        return {
-          ...state,
-          [fileId]: { ...localFile, [field]: status }
-        }
       })
 
     // Cleanup deleted local files when idle
@@ -326,7 +279,7 @@ export const makeFileSync = (
     // Download a file from remote to local
     const downloadFile = (fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
-        yield* setLocalFileTransferStatus(fileId, "download", "inProgress")
+        yield* stateManager.setTransferStatus(fileId, "download", "inProgress")
         yield* emit({ type: "download:start", fileId })
 
         const file = yield* getFile(fileId)
@@ -340,31 +293,24 @@ export const makeFileSync = (
         yield* localStorage.writeFile(file.path, downloadedFile)
         const localHash = yield* hashFile(downloadedFile)
 
-        yield* mergeLocalFiles({
-          [fileId]: {
-            path: file.path,
-            localHash,
-            downloadStatus: "done",
-            uploadStatus: "done",
-            lastSyncError: ""
-          }
+        yield* stateManager.setFileState(fileId, {
+          path: file.path,
+          localHash,
+          downloadStatus: "done",
+          uploadStatus: "done",
+          lastSyncError: ""
         })
 
         yield* emit({ type: "download:complete", fileId })
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {
-            yield* updateLocalFilesState((state) => ({
-              ...state,
-              [fileId]: {
-                ...state[fileId],
-                path: state[fileId]?.path ?? "",
-                localHash: state[fileId]?.localHash ?? "",
-                downloadStatus: "pending",
-                uploadStatus: state[fileId]?.uploadStatus ?? "done",
-                lastSyncError: String(error)
-              }
-            }))
+            yield* stateManager.setTransferError(
+              fileId,
+              "download",
+              "pending",
+              String(error)
+            )
             yield* emit({ type: "download:error", fileId, error })
             return yield* Effect.fail(error)
           })
@@ -374,7 +320,7 @@ export const makeFileSync = (
     // Upload a file from local to remote
     const uploadFile = (fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function* () {
-        yield* setLocalFileTransferStatus(fileId, "upload", "inProgress")
+        yield* stateManager.setTransferStatus(fileId, "upload", "inProgress")
         yield* emit({ type: "upload:start", fileId })
 
         const file = yield* getFile(fileId)
@@ -385,7 +331,7 @@ export const makeFileSync = (
         }
 
         if (file.deletedAt) {
-          yield* removeLocalFileState(fileId)
+          yield* stateManager.removeFile(fileId)
           yield* emit({ type: "upload:complete", fileId })
           return
         }
@@ -397,40 +343,37 @@ export const makeFileSync = (
         const latestFile = yield* getFile(fileId)
         if (!latestFile || latestFile.deletedAt) {
           yield* remoteStorage.delete(uploadResult.key).pipe(Effect.catchAll(() => Effect.void))
-          yield* removeLocalFileState(fileId)
+          yield* stateManager.removeFile(fileId)
           yield* emit({ type: "upload:complete", fileId })
           return
         }
 
         yield* updateFileRemoteKey(fileId, uploadResult.key)
 
-        yield* updateLocalFilesState((state) => ({
-          ...state,
-          [fileId]: {
-            ...state[fileId],
-            path: state[fileId]?.path ?? file.path,
-            localHash: state[fileId]?.localHash ?? "",
-            downloadStatus: state[fileId]?.downloadStatus ?? "done",
-            uploadStatus: "done",
-            lastSyncError: ""
+        // Update state with upload completed
+        yield* stateManager.atomicUpdate((state) => {
+          const existing = state[fileId]
+          if (!existing) return state
+          return {
+            ...state,
+            [fileId]: {
+              ...existing,
+              uploadStatus: "done",
+              lastSyncError: ""
+            }
           }
-        }))
+        })
 
         yield* emit({ type: "upload:complete", fileId })
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function* () {
-            yield* updateLocalFilesState((state) => ({
-              ...state,
-              [fileId]: {
-                ...state[fileId],
-                path: state[fileId]?.path ?? "",
-                localHash: state[fileId]?.localHash ?? "",
-                downloadStatus: state[fileId]?.downloadStatus ?? "done",
-                uploadStatus: "pending",
-                lastSyncError: String(error)
-              }
-            }))
+            yield* stateManager.setTransferError(
+              fileId,
+              "upload",
+              "pending",
+              String(error)
+            )
             yield* emit({ type: "upload:error", fileId, error })
             return yield* Effect.fail(error)
           })
@@ -457,10 +400,10 @@ export const makeFileSync = (
     const executor = yield* makeSyncExecutor(transferHandler, executorConfig)
 
     // Two-pass reconciliation of local file state
-    const updateLocalFileState = (): Effect.Effect<void> =>
+    const reconcileLocalFileState = (): Effect.Effect<void> =>
       Effect.gen(function* () {
         const files = yield* getActiveFiles()
-        const localFiles = yield* readLocalFilesState()
+        const localFiles = yield* stateManager.getState()
 
         const nextLocalFilesState: LocalFilesStateMutable = { ...localFiles }
 
@@ -469,10 +412,24 @@ export const makeFileSync = (
           if (file.id in nextLocalFilesState) {
             const localFile = nextLocalFilesState[file.id]!
             const remoteMismatch = localFile.localHash !== file.contentHash
+            
+            // Preserve active transfer statuses (queued, inProgress) - don't overwrite them
+            const activeUploadStatuses = ["queued", "inProgress"] as const
+            const activeDownloadStatuses = ["queued", "inProgress"] as const
+            
+            const preserveUploadStatus = activeUploadStatuses.includes(
+              localFile.uploadStatus as typeof activeUploadStatuses[number]
+            )
+            const preserveDownloadStatus = activeDownloadStatuses.includes(
+              localFile.downloadStatus as typeof activeDownloadStatuses[number]
+            )
+            
             nextLocalFilesState[file.id] = {
               ...localFile,
-              downloadStatus: remoteMismatch ? "pending" : "done",
-              uploadStatus: "done"
+              downloadStatus: preserveDownloadStatus 
+                ? localFile.downloadStatus 
+                : (remoteMismatch ? "pending" : "done"),
+              uploadStatus: preserveUploadStatus ? localFile.uploadStatus : "done"
             }
           }
         }
@@ -512,21 +469,21 @@ export const makeFileSync = (
         }
 
         const merged: LocalFilesState = { ...nextLocalFilesState, ...additions }
-        yield* updateLocalFilesState(() => merged)
+        yield* stateManager.replaceState(merged)
       }).pipe(Effect.catchAll(() => Effect.void))
 
     const syncFiles = (): Effect.Effect<void> =>
       Effect.gen(function* () {
         yield* emit({ type: "sync:start" })
 
-        const localFiles = yield* readLocalFilesState()
+        const localFiles = yield* stateManager.getState()
         for (const [fileId, localFile] of Object.entries(localFiles)) {
           if (localFile.downloadStatus === "pending" || localFile.downloadStatus === "queued") {
-            yield* setLocalFileTransferStatus(fileId, "download", "queued")
+            yield* stateManager.setTransferStatus(fileId, "download", "queued")
             yield* executor.enqueueDownload(fileId)
           }
           if (localFile.uploadStatus === "pending" || localFile.uploadStatus === "queued") {
-            yield* setLocalFileTransferStatus(fileId, "upload", "queued")
+            yield* stateManager.setTransferStatus(fileId, "upload", "queued")
             yield* executor.enqueueUpload(fileId)
           }
         }
@@ -536,7 +493,7 @@ export const makeFileSync = (
 
     const checkAndSync = (): Effect.Effect<void> =>
       Effect.gen(function* () {
-        yield* updateLocalFileState()
+        yield* reconcileLocalFileState()
         yield* syncFiles()
         yield* scheduleCleanupIfIdle()
       })
@@ -601,16 +558,13 @@ export const makeFileSync = (
       hash: string
     ): Effect.Effect<void> =>
       Effect.gen(function* () {
-        yield* updateLocalFilesState((state) => ({
-          ...state,
-          [fileId]: {
-            path,
-            localHash: hash,
-            downloadStatus: "done",
-            uploadStatus: "queued",
-            lastSyncError: ""
-          }
-        }))
+        yield* stateManager.setFileState(fileId, {
+          path,
+          localHash: hash,
+          downloadStatus: "done",
+          uploadStatus: "queued",
+          lastSyncError: ""
+        })
 
         yield* executor.enqueueUpload(fileId)
       })
@@ -645,7 +599,7 @@ export const makeFileSync = (
       }
     }
 
-    const getLocalFilesState = (): Effect.Effect<LocalFilesState> => readLocalFilesState()
+    const getLocalFilesState = (): Effect.Effect<LocalFilesState> => stateManager.getState()
 
     return {
       start,
@@ -665,5 +619,5 @@ export const makeFileSync = (
 export const FileSyncLive = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Layer.Layer<FileSync, never, LocalFileStorage | RemoteStorage | Scope.Scope> =>
+): Layer.Layer<FileSync, never, LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
   Layer.scoped(FileSync, makeFileSync(deps, config))

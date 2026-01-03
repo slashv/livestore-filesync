@@ -42,6 +42,16 @@ export interface MemoryRemoteStorageOptions {
    * Base URL to use for generated URLs
    */
   baseUrl?: string
+
+  /**
+   * Delay each upload by this many milliseconds (for testing timing)
+   */
+  uploadDelayMs?: number
+
+  /**
+   * Delay each download by this many milliseconds (for testing timing)
+   */
+  downloadDelayMs?: number
 }
 
 /**
@@ -66,6 +76,11 @@ export const makeMemoryRemoteStorage = (
             message: "Upload failed: network unavailable"
           })
         )
+      }
+
+      // Apply upload delay if configured (for testing timing)
+      if (options.uploadDelayMs && options.uploadDelayMs > 0) {
+        yield* Effect.sleep(`${options.uploadDelayMs} millis`)
       }
 
       const buffer = yield* Effect.tryPromise({
@@ -103,6 +118,11 @@ export const makeMemoryRemoteStorage = (
             url: key
           })
         )
+      }
+
+      // Apply download delay if configured (for testing timing)
+      if (options.downloadDelayMs && options.downloadDelayMs > 0) {
+        yield* Effect.sleep(`${options.downloadDelayMs} millis`)
       }
 
       const store = yield* Ref.get(storeRef)

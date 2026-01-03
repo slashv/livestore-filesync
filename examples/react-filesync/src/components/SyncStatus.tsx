@@ -1,0 +1,142 @@
+import React from "react";
+import { useStore } from "@livestore/react";
+import { getSyncStatus } from "@livestore-filesync/core";
+import { tables } from "../livestore/schema.ts";
+
+export const SyncStatus: React.FC = () => {
+  const { store } = useStore();
+  const [localFileState] = store.useClientDocument(tables.localFileState);
+  const syncStatus = getSyncStatus(localFileState?.localFiles ?? {});
+
+  return (
+    <div className="sync-status">
+      <h3>Sync Status</h3>
+
+      <table>
+        <tbody>
+          <tr>
+            <td>Syncing</td>
+            <td>{syncStatus.isSyncing ? "Yes" : "No"}</td>
+          </tr>
+          <tr>
+            <td>Has Pending</td>
+            <td>{syncStatus.hasPending ? "Yes" : "No"}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>Counts</h4>
+      <table>
+        <tbody>
+          <tr>
+            <td>Uploading</td>
+            <td>{syncStatus.uploadingCount}</td>
+          </tr>
+          <tr>
+            <td>Downloading</td>
+            <td>{syncStatus.downloadingCount}</td>
+          </tr>
+          <tr>
+            <td>Queued Upload</td>
+            <td>{syncStatus.queuedUploadCount}</td>
+          </tr>
+          <tr>
+            <td>Queued Download</td>
+            <td>{syncStatus.queuedDownloadCount}</td>
+          </tr>
+          <tr>
+            <td>Pending Upload</td>
+            <td>{syncStatus.pendingUploadCount}</td>
+          </tr>
+          <tr>
+            <td>Pending Download</td>
+            <td>{syncStatus.pendingDownloadCount}</td>
+          </tr>
+          <tr>
+            <td>Errors</td>
+            <td>{syncStatus.errorCount}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {syncStatus.uploadingFileIds.length > 0 && (
+        <>
+          <h4>Uploading Files</h4>
+          <ul>
+            {syncStatus.uploadingFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.downloadingFileIds.length > 0 && (
+        <>
+          <h4>Downloading Files</h4>
+          <ul>
+            {syncStatus.downloadingFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.queuedUploadFileIds.length > 0 && (
+        <>
+          <h4>Queued Uploads</h4>
+          <ul>
+            {syncStatus.queuedUploadFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.queuedDownloadFileIds.length > 0 && (
+        <>
+          <h4>Queued Downloads</h4>
+          <ul>
+            {syncStatus.queuedDownloadFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.pendingUploadFileIds.length > 0 && (
+        <>
+          <h4>Pending Uploads</h4>
+          <ul>
+            {syncStatus.pendingUploadFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.pendingDownloadFileIds.length > 0 && (
+        <>
+          <h4>Pending Downloads</h4>
+          <ul>
+            {syncStatus.pendingDownloadFileIds.map((id) => (
+              <li key={id}>{id}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {syncStatus.errors.length > 0 && (
+        <>
+          <h4>Errors</h4>
+          <ul>
+            {syncStatus.errors.map((err) => (
+              <li key={err.fileId}>
+                <strong>{err.fileId}:</strong> {err.error}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+};

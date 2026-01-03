@@ -1,96 +1,18 @@
-import { test, expect, type Page, type Locator } from '@playwright/test'
-import * as fs from 'node:fs'
-import * as os from 'node:os'
-import * as path from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const authToken =
-  process.env.FILESYNC_AUTH_TOKEN ??
-  process.env.VITE_AUTH_TOKEN ??
-  process.env.WORKER_AUTH_TOKEN ??
-  'dev-token-change-in-production'
-const authHeaders = authToken ? { Authorization: `Bearer ${authToken}` } : {}
-
-const currentDir = path.dirname(fileURLToPath(import.meta.url))
-
-function createTestImage(
-  color: 'blue' | 'red',
-  opts: { suffix?: string } = {}
-): string {
-  const fixturesDir = path.resolve(currentDir, '../fixtures/images')
-  const fixturePath = path.join(fixturesDir, `${color}.png`)
-
-  const imagePath = path.join(
-    os.tmpdir(),
-    `test-${color}-${opts.suffix ?? Date.now()}-${Math.random().toString(36).slice(2)}.png`
-  )
-
-  fs.copyFileSync(fixturePath, imagePath)
-  return imagePath
-}
-
-async function waitForLiveStore(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => !document.body.innerText.includes('Loading LiveStore'),
-    { timeout: 60000 }
-  )
-  await page.waitForSelector('[data-testid="gallery"]', { timeout: 30000 })
-}
-
-async function waitForImageLoaded(
-  locator: Locator,
-  timeoutMs = 10000
-): Promise<void> {
-  await expect(locator).toBeVisible({ timeout: timeoutMs })
-  await expect.poll(
-    async () =>
-      locator.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
-    { timeout: timeoutMs }
-  ).toBe(true)
-}
-
-function withCacheBust(url: string): string {
-  const next = new URL(url)
-  next.searchParams.set('cache', Date.now().toString())
-  return next.toString()
-}
-
-async function getRemoteKey(page: Page): Promise<string> {
-  const locator = page.locator('[data-testid="file-remote-key"]')
-  await expect(locator).toBeVisible({ timeout: 10000 })
-  await expect.poll(async () => (await locator.textContent())?.trim() || '', { timeout: 15000 }).not.toBe('')
-  return (await locator.textContent())?.trim() || ''
-}
-
-function toRemoteUrl(baseUrl: string, remoteKey: string): string {
-  const encoded = remoteKey
-    .split('/')
-    .filter((s) => s.length > 0)
-    .map((s) => encodeURIComponent(s))
-    .join('/')
-  return new URL(`/livestore-filesync-files/${encoded}`, baseUrl).toString()
-}
-
-async function waitForRemoteStatus(
-  page: Page,
-  fileUrl: string,
-  expectedStatus: number
-): Promise<void> {
-  await expect.poll(
-    async () => {
-      const response = await page.request.get(withCacheBust(fileUrl), {
-        headers: authHeaders as Record<string, string> | undefined,
-      })
-      return response.status()
-    },
-    { timeout: 2000 }
-  ).toBe(expectedStatus)
-}
+import { test, expect } from '@playwright/test'
+import {
+  createTestImage,
+  waitForLiveStore,
+  waitForImageLoaded,
+  getRemoteKey,
+  toRemoteUrl,
+  waitForRemoteStatus,
+  generateStoreId,
+} from './helpers'
 
 test.describe('File Sync', () => {
   test('should add a file', async ({ page }) => {
     // Use a unique storeId for test isolation
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     await page.goto(`/?storeId=${storeId}`)
     await waitForLiveStore(page)
 
@@ -109,7 +31,7 @@ test.describe('File Sync', () => {
   })
 
   test('should delete files from remote storage', async ({ page }) => {
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     await page.goto(`/?storeId=${storeId}`)
     await waitForLiveStore(page)
 
@@ -138,7 +60,7 @@ test.describe('File Sync', () => {
 
   test('should sync files across browsers', async ({ browser }) => {
     // Use a unique storeId shared between both browsers
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
     // Create two separate browser contexts (simulates two different users/browsers)
@@ -181,7 +103,7 @@ test.describe('File Sync', () => {
   })
 
   test('should sync edited images across browsers', async ({ browser }) => {
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
     const context1 = await browser.newContext()
@@ -228,7 +150,7 @@ test.describe('File Sync', () => {
   })
 
   test('originating client should display file immediately while upload is pending', async ({ browser }) => {
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
     const context = await browser.newContext()
@@ -285,7 +207,7 @@ test.describe('File Sync', () => {
   })
 
   test('other clients should show placeholder while file is uploading', async ({ browser }) => {
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
     const context1 = await browser.newContext()
@@ -357,7 +279,7 @@ test.describe('File Sync', () => {
   })
 
   test('edited file should display immediately on originating client while uploading', async ({ browser }) => {
-    const storeId = `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
     const context1 = await browser.newContext()

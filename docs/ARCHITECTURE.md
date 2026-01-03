@@ -12,6 +12,9 @@ The services are wired together as Effect layers inside `createFileSync` and the
 - `LocalFileStorage`: wraps `FileSystem` with file-centric helpers (read/write bytes, object URLs,
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
+- `LocalFileStateManager`: centralized manager for all `localFilesState` mutations. Uses an internal
+  lock to ensure atomic read-modify-write operations, preventing race conditions when multiple
+  concurrent operations try to update the state. All state changes go through this service.
 - `RemoteStorage`: remote storage abstraction for upload/download/delete/health checks.
   The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
   API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
@@ -19,7 +22,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
 - `SyncExecutor`: manages upload/download queues with concurrency limits and retry/backoff logic.
 - `FileSync`: orchestration service. Tracks online state, reconciles LiveStore file records with
   local state, schedules transfers through `SyncExecutor`, updates remote URLs, and runs GC/health
-  checks.
+  checks. Uses `LocalFileStateManager` for all state mutations.
 - `FileStorage`: high-level API used by `saveFile`, `updateFile`, `deleteFile`, and `getFileUrl`.
   It hashes content, writes to local storage, updates LiveStore records, and triggers `FileSync`.
 
@@ -86,10 +89,14 @@ This mirrors the Effect layer wiring in `createFileSync`:
 [LocalFileStorageLive] <--------- Layer.provide(FileSystemLive)
                                             |
                                             v
+[LocalFileStateManagerLive(deps)] ---------+
+                                            |
+                                            v
 [RemoteStorageLive] -----------------------+
                                             |
                                             v
-[BaseLayer] = mergeAll(Layer.scope, FileSystemLive, LocalFileStorageLayer, RemoteStorageLive)
+[BaseLayer] = mergeAll(Layer.scope, FileSystemLive, LocalFileStorageLayer, 
+                       LocalFileStateManagerLayer, RemoteStorageLive)
                                             |
                                             v
 [FileSyncLive(deps, config)] <--- Layer.provide(BaseLayer)

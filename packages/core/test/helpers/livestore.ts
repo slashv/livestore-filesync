@@ -39,3 +39,51 @@ export const createTestStore = async (options: TestStoreOptions = {}) => {
     }
   }
 }
+
+/**
+ * Generate a test file with configurable content
+ */
+export interface GenerateTestFileOptions {
+  /** File name (default: test-{timestamp}.txt) */
+  name?: string
+  /** Size in bytes (default: 100) */
+  sizeBytes?: number
+  /** Explicit content (overrides sizeBytes) */
+  content?: string
+  /** MIME type (default: text/plain) */
+  type?: string
+}
+
+export function generateTestFile(options: GenerateTestFileOptions = {}): File {
+  const name = options.name ?? `test-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
+  const type = options.type ?? "text/plain"
+  
+  let content: string
+  if (options.content !== undefined) {
+    content = options.content
+  } else {
+    const size = options.sizeBytes ?? 100
+    content = "x".repeat(size)
+  }
+  
+  return new File([content], name, { type })
+}
+
+/**
+ * Helper to create multiple unique test files
+ */
+export function generateTestFiles(count: number, options: Omit<GenerateTestFileOptions, "name" | "content"> = {}): File[] {
+  return Array.from({ length: count }, (_, i) => 
+    generateTestFile({
+      ...options,
+      name: `test-file-${i}-${Date.now()}.txt`,
+      content: `content-for-file-${i}-${Math.random().toString(36).slice(2)}`
+    })
+  )
+}
+
+/**
+ * Simple delay helper for tests
+ */
+export const delay = (ms: number): Promise<void> => 
+  new Promise(resolve => setTimeout(resolve, ms))

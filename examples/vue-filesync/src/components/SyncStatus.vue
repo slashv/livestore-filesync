@@ -13,18 +13,18 @@ const syncStatus = computed(() => {
 </script>
 
 <template>
-  <div class="sync-status">
+  <div class="sync-status" data-testid="sync-status-panel">
     <h3>Sync Status</h3>
     
     <table>
       <tbody>
         <tr>
           <td>Syncing</td>
-          <td>{{ syncStatus.isSyncing ? 'Yes' : 'No' }}</td>
+          <td data-testid="sync-is-syncing">{{ syncStatus.isSyncing ? 'Yes' : 'No' }}</td>
         </tr>
         <tr>
           <td>Has Pending</td>
-          <td>{{ syncStatus.hasPending ? 'Yes' : 'No' }}</td>
+          <td data-testid="sync-has-pending">{{ syncStatus.hasPending ? 'Yes' : 'No' }}</td>
         </tr>
       </tbody>
     </table>
@@ -34,31 +34,31 @@ const syncStatus = computed(() => {
       <tbody>
         <tr>
           <td>Uploading</td>
-          <td>{{ syncStatus.uploadingCount }}</td>
+          <td data-testid="sync-uploading-count">{{ syncStatus.uploadingCount }}</td>
         </tr>
         <tr>
           <td>Downloading</td>
-          <td>{{ syncStatus.downloadingCount }}</td>
+          <td data-testid="sync-downloading-count">{{ syncStatus.downloadingCount }}</td>
         </tr>
         <tr>
           <td>Queued Upload</td>
-          <td>{{ syncStatus.queuedUploadCount }}</td>
+          <td data-testid="sync-queued-upload-count">{{ syncStatus.queuedUploadCount }}</td>
         </tr>
         <tr>
           <td>Queued Download</td>
-          <td>{{ syncStatus.queuedDownloadCount }}</td>
+          <td data-testid="sync-queued-download-count">{{ syncStatus.queuedDownloadCount }}</td>
         </tr>
         <tr>
           <td>Pending Upload</td>
-          <td>{{ syncStatus.pendingUploadCount }}</td>
+          <td data-testid="sync-pending-upload-count">{{ syncStatus.pendingUploadCount }}</td>
         </tr>
         <tr>
           <td>Pending Download</td>
-          <td>{{ syncStatus.pendingDownloadCount }}</td>
+          <td data-testid="sync-pending-download-count">{{ syncStatus.pendingDownloadCount }}</td>
         </tr>
         <tr>
           <td>Errors</td>
-          <td>{{ syncStatus.errorCount }}</td>
+          <td data-testid="sync-error-count">{{ syncStatus.errorCount }}</td>
         </tr>
       </tbody>
     </table>
