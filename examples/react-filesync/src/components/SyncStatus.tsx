@@ -2,9 +2,10 @@ import React from "react";
 import { useStore } from "@livestore/react";
 import { getSyncStatus } from "@livestore-filesync/core";
 import { tables } from "../livestore/schema.ts";
+import { reactStoreOptions } from "../App.tsx";
 
 export const SyncStatus: React.FC = () => {
-  const { store } = useStore();
+  const store = useStore(reactStoreOptions);
   const [localFileState] = store.useClientDocument(tables.localFileState);
   const syncStatus = getSyncStatus(localFileState?.localFiles ?? {});
 

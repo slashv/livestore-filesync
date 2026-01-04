@@ -20,12 +20,13 @@ export type SyncSchema = Pick<FileSyncSchema, "tables" | "events"> & {
 }
 
 /**
- * LiveStore store instance type.
+ * Internal store type used by file sync services.
+ * Uses `any` schema since we only need the base Store methods.
  */
-export type SyncStore = Store<any> & { storeId: string }
+export type SyncStore = Store<any>
 
 /**
- * LiveStore store + schema dependencies.
+ * LiveStore store + schema dependencies used internally by services.
  */
 export interface LiveStoreDeps {
   store: SyncStore

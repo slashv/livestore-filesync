@@ -1,6 +1,7 @@
 import { makePersistedAdapter } from "@livestore/adapter-web";
 import LiveStoreSharedWorker from "@livestore/adapter-web/shared-worker?sharedworker";
-import { LiveStoreProvider } from "@livestore/react";
+import { StoreRegistry, storeOptions } from "@livestore/livestore";
+import { StoreRegistryProvider } from "@livestore/react";
 import { unstable_batchedUpdates as batchUpdates } from "react-dom";
 
 import { schema, SyncPayload } from "./livestore/schema.ts";
@@ -28,16 +29,18 @@ const getAuthHeaders = () => ({
   Authorization: `Bearer ${authToken}`,
 });
 
+const storeRegistry = new StoreRegistry({ defaultOptions: { batchUpdates } });
+
+export const reactStoreOptions = storeOptions({
+  schema,
+  adapter,
+  storeId,
+  syncPayloadSchema: SyncPayload,
+  syncPayload,
+});
+
 export const App = () => (
-  <LiveStoreProvider
-    schema={schema}
-    adapter={adapter}
-    storeId={storeId}
-    syncPayloadSchema={SyncPayload}
-    syncPayload={syncPayload}
-    renderLoading={() => <div className="loading">Loading...</div>}
-    batchUpdates={batchUpdates}
-  >
+  <StoreRegistryProvider storeRegistry={storeRegistry}>
     <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken} serviceWorker>
       <div className="app-layout">
         <div className="main">
@@ -46,5 +49,5 @@ export const App = () => (
         <SyncStatus />
       </div>
     </FileSyncProvider>
-  </LiveStoreProvider>
+  </StoreRegistryProvider>
 );

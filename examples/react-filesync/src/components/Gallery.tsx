@@ -4,9 +4,9 @@ import { useStore } from "@livestore/react";
 import { isOnline, saveFile } from "@livestore-filesync/core";
 import { tables } from "../livestore/schema.ts";
 import { ImageCard } from "./ImageCard.tsx";
-
+import { reactStoreOptions } from "../App.tsx";
 export const Gallery: React.FC = () => {
-  const { store } = useStore();
+  const store = useStore(reactStoreOptions);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const files = store.useQuery(

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, Suspense } from "react";
 import { useStore } from "@livestore/react";
 import { initFileSync } from "@livestore-filesync/core";
 import {
@@ -6,6 +6,7 @@ import {
   type ServiceWorkerOptions,
 } from "@livestore-filesync/core/worker";
 import { layer as opfsLayer } from "@livestore-filesync/opfs";
+import { reactStoreOptions } from "../App.tsx";
 
 type FileSyncProviderProps = {
   signerBaseUrl?: string;
@@ -16,7 +17,7 @@ type FileSyncProviderProps = {
   children?: ReactNode;
 };
 
-export const FileSyncProvider = ({
+const FileSyncProviderInner = ({
   signerBaseUrl = "/api",
   headers,
   authHeaders,
@@ -24,7 +25,7 @@ export const FileSyncProvider = ({
   serviceWorker,
   children,
 }: FileSyncProviderProps) => {
-  const { store } = useStore();
+  const store = useStore(reactStoreOptions);
   const [ready, setReady] = useState(!serviceWorker);
 
   useEffect(() => {
@@ -48,3 +49,9 @@ export const FileSyncProvider = ({
 
   return ready ? <>{children}</> : null;
 };
+
+export const FileSyncProvider = (props: FileSyncProviderProps) => (
+  <Suspense fallback={<div className="loading">Loading...</div>}>
+    <FileSyncProviderInner {...props} />
+  </Suspense>
+);

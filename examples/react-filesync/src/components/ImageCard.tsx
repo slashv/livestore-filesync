@@ -8,9 +8,10 @@ import {
 } from "@livestore-filesync/core";
 import { tables } from "../livestore/schema.ts";
 import type { FileType } from "../types";
+import { reactStoreOptions } from "../App.tsx";
 
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
-  const { store } = useStore();
+  const store = useStore(reactStoreOptions);
 
   const [localFileState] = store.useClientDocument(tables.localFileState);
   const displayState = getFileDisplayState(

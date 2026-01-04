@@ -9,9 +9,10 @@
 import type { Layer } from "effect"
 import { FileSystem } from "@effect/platform/FileSystem"
 import { queryDb } from "@livestore/livestore"
+import type { Store } from "@livestore/livestore"
 import { createFileSyncSchema } from "../schema/index.js"
 import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
-import type { SyncSchema, SyncStore } from "../livestore/types.js"
+import type { SyncSchema } from "../livestore/types.js"
 
 const DEFAULT_SIGNER_BASE_URL = "/api"
 const REQUIRED_TABLES = ["files", "localFileState"] as const
@@ -53,7 +54,7 @@ const requireFileSync = (): FileSyncInstance => {
   return singleton
 }
 
-const validateDefaultSchema = (store: SyncStore) => {
+const validateDefaultSchema = (store: Store<any>) => {
   const schema: any = store.schema
   const tables = schema?.state?.sqlite?.tables
   const events = schema?.eventsDefsMap
@@ -79,7 +80,7 @@ const validateDefaultSchema = (store: SyncStore) => {
   }
 }
 
-const resolveSchema = (store: SyncStore, schema?: SchemaFallback): SyncSchema => {
+const resolveSchema = (store: Store<any>, schema?: SchemaFallback): SyncSchema => {
   if (schema) {
     return {
       tables: schema.tables,
@@ -120,7 +121,7 @@ const resolveSchema = (store: SyncStore, schema?: SchemaFallback): SyncSchema =>
  * @returns Dispose function that stops sync and cleans up resources
  */
 export const initFileSync = (
-  store: SyncStore, 
+  store: Store<any>, 
   config: InitFileSyncConfig
 ): (() => Promise<void>) => {
   if (singleton) {

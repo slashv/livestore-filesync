@@ -4,14 +4,15 @@ packages:
   - tests/e2e
 
 catalog:
-  '@livestore/adapter-web': 0.4.0-dev.20
-  '@livestore/adapter-node': 0.4.0-dev.20
-  '@livestore/livestore': 0.4.0-dev.20
-  '@livestore/peer-deps': 0.4.0-dev.20
-  '@livestore/react': 0.4.0-dev.20
-  '@livestore/sync-cf': 0.4.0-dev.20
-  '@livestore/utils': 0.4.0-dev.20
-  '@livestore/wa-sqlite': 0.4.0-dev.20
-  '@effect/platform': 0.92.1
-  '@effect/platform-node': 0.98.4
-  effect: 3.18.4
+  '@livestore/adapter-web': 0.4.0-dev.22
+  '@livestore/adapter-node': 0.4.0-dev.22
+  '@livestore/devtools-vite': 0.4.0-dev.22
+  '@livestore/livestore': 0.4.0-dev.22
+  '@livestore/peer-deps': 0.4.0-dev.22
+  '@livestore/react': 0.4.0-dev.22
+  '@livestore/sync-cf': 0.4.0-dev.22
+  '@livestore/utils': 0.4.0-dev.22
+  '@livestore/wa-sqlite': 0.4.0-dev.22
+  '@effect/platform': 0.93.8
+  '@effect/platform-node': 0.103.0
+  effect: 3.19.12
