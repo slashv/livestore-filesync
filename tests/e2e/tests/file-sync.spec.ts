@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   createTestImage,
+  createMultipleTestImages,
   waitForLiveStore,
   waitForImageLoaded,
   getRemoteKey,
@@ -360,5 +361,201 @@ test.describe('File Sync', () => {
 
     await context1.close()
     await context2.close()
+  })
+
+  test('should handle single file upload in same-context tabs without errors', async ({ browser }) => {
+    // Simpler test case: single file upload with two tabs open
+    // This replicates the bug where even a single file causes errors
+    // when another tab is open in the same browser context
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // Create a SINGLE browser context (shared SharedWorker between pages)
+    const context = await browser.newContext()
+
+    // Open two pages (tabs) in the SAME context
+    const page1 = await context.newPage()
+    const page2 = await context.newPage()
+
+    // Set up error tracking on both pages
+    const errors: string[] = []
+    const consoleMessages: string[] = []
+
+    const trackErrors = (page: typeof page1, label: string) => {
+      page.on('pageerror', (error) => {
+        errors.push(`[${label}] ${error.message}`)
+      })
+      page.on('console', (msg) => {
+        const text = msg.text()
+        if (
+          text.includes('UNIQUE constraint') ||
+          text.includes('UnknownError') ||
+          text.includes('SqliteError') ||
+          text.includes('ERROR')
+        ) {
+          consoleMessages.push(`[${label}] ${text}`)
+        }
+      })
+    }
+
+    trackErrors(page1, 'Tab1')
+    trackErrors(page2, 'Tab2')
+
+    // Navigate both tabs to the app with the same storeId
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStore(page1)
+    await waitForLiveStore(page2)
+
+    // Verify both start with empty state
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page2.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Upload a single file in Tab 1
+    const testImage = createTestImage('blue')
+    await page1.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for file card to appear in Tab 1
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    })
+
+    // Wait for image to load in Tab 1
+    await waitForImageLoaded(page1.locator('[data-testid="file-image"]'), 10000)
+
+    // Wait for file card to sync to Tab 2
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    })
+
+    // Give some time for any async errors to surface
+    await page1.waitForTimeout(2000)
+
+    // Log all captured messages for debugging
+    if (consoleMessages.length > 0) {
+      console.log('Console messages with errors:', consoleMessages)
+    }
+    if (errors.length > 0) {
+      console.log('Page errors:', errors)
+    }
+
+    // Check for any LiveStore/SQLite errors
+    const criticalErrors = [
+      ...errors,
+      ...consoleMessages.filter(
+        (m) =>
+          m.includes('UNIQUE constraint') ||
+          m.includes('SqliteError') ||
+          m.includes('UnknownError')
+      ),
+    ]
+
+    expect(criticalErrors).toHaveLength(0)
+
+    await context.close()
+  })
+
+  test('should handle multiple file uploads in same-context tabs without errors', async ({ browser }) => {
+    // This test replicates the bug where adding multiple files in one tab
+    // while another tab is open in the same browser context causes
+    // "UNIQUE constraint failed: files.id" errors.
+    //
+    // Same browser context = SharedWorker is shared between tabs
+    // This is different from separate contexts which simulate different browsers/clients
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // Create a SINGLE browser context (shared SharedWorker between pages)
+    const context = await browser.newContext()
+
+    // Open two pages (tabs) in the SAME context
+    const page1 = await context.newPage()
+    const page2 = await context.newPage()
+
+    // Set up error tracking on both pages
+    const errors: string[] = []
+    const consoleMessages: string[] = []
+
+    const trackErrors = (page: typeof page1, label: string) => {
+      page.on('pageerror', (error) => {
+        errors.push(`[${label}] ${error.message}`)
+      })
+      page.on('console', (msg) => {
+        const text = msg.text()
+        if (
+          text.includes('UNIQUE constraint') ||
+          text.includes('UnknownError') ||
+          text.includes('SqliteError') ||
+          text.includes('ERROR')
+        ) {
+          consoleMessages.push(`[${label}] ${text}`)
+        }
+      })
+    }
+
+    trackErrors(page1, 'Tab1')
+    trackErrors(page2, 'Tab2')
+
+    // Navigate both tabs to the app with the same storeId
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStore(page1)
+    await waitForLiveStore(page2)
+
+    // Verify both start with empty state
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page2.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Create multiple test images (6+ to trigger the race condition)
+    const testImages = createMultipleTestImages(8)
+
+    // Upload all files at once in Tab 1
+    await page1.locator('input[type="file"]').setInputFiles(testImages)
+
+    // Wait for file cards to appear in Tab 1
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(8, {
+      timeout: 30000,
+    })
+
+    // Wait for all images to load in Tab 1
+    const page1Images = page1.locator('[data-testid="file-image"]')
+    for (let i = 0; i < 8; i++) {
+      await waitForImageLoaded(page1Images.nth(i), 15000)
+    }
+
+    // Wait for file cards to sync to Tab 2
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(8, {
+      timeout: 30000,
+    })
+
+    // Give some time for any async errors to surface
+    await page1.waitForTimeout(2000)
+
+    // Log all captured messages for debugging
+    if (consoleMessages.length > 0) {
+      console.log('Console messages with errors:', consoleMessages)
+    }
+    if (errors.length > 0) {
+      console.log('Page errors:', errors)
+    }
+
+    // Check for any LiveStore/SQLite errors
+    const criticalErrors = [
+      ...errors,
+      ...consoleMessages.filter(
+        (m) =>
+          m.includes('UNIQUE constraint') ||
+          m.includes('SqliteError') ||
+          m.includes('UnknownError')
+      ),
+    ]
+
+    expect(criticalErrors).toHaveLength(0)
+
+    await context.close()
   })
 })

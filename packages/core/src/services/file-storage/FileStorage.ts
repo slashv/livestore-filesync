@@ -122,6 +122,7 @@ export const makeFileStorage = (
 
     const createFileRecord = (params: { id: string; path: string; contentHash: string }) =>
       Effect.sync(() => {
+        console.log("createFileRecord file ID:", params.id)
         store.commit(
           events.fileCreated({
             id: params.id,

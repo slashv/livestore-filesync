@@ -12,7 +12,7 @@ import SyncStatus from './components/SyncStatus.vue'
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
 // Bump default storeId when schema changes to avoid loading an incompatible persisted db in dev.
-const storeId = urlParams.get('storeId') || 'vue_filesync_store_v6'
+const storeId = urlParams.get('storeId') || 'vue_filesync_store_v9'
 
 const adapter = makePersistedAdapter({
   storage: { type: 'opfs' },

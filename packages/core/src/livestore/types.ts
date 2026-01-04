@@ -6,8 +6,8 @@
  * @module
  */
 
-import { queryDb } from "@livestore/livestore"
-import type { Store } from "@livestore/livestore"
+import { queryDb, StoreInternalsSymbol } from "@livestore/livestore"
+import type { Store, ClientSession } from "@livestore/livestore"
 import type { createFileSyncSchema } from "../schema/index.js"
 
 export type FileSyncSchema = ReturnType<typeof createFileSyncSchema>
@@ -33,4 +33,12 @@ export interface LiveStoreDeps {
   schema: SyncSchema
   storeId: string
   localPathRoot?: string
+}
+
+/**
+ * Get the ClientSession from a Store instance.
+ * This provides access to lockStatus for leader election.
+ */
+export const getClientSession = (store: SyncStore): ClientSession => {
+  return (store as any)[StoreInternalsSymbol].clientSession
 }

@@ -220,6 +220,16 @@ This ensures a good user experience:
 - Other clients show a placeholder until the upload completes
 - After edits, the correct version is displayed (based on content hash matching)
 
+## Multi-Tab Support
+
+FileSync is designed to work correctly when multiple browser tabs are open to the same app. It uses LiveStore's built-in leader election (via Web Locks API) to ensure only one tab runs the sync loop at a time. This prevents race conditions and duplicate operations.
+
+- **Leader tab**: Runs the sync loop, handles uploads/downloads
+- **Non-leader tabs**: Can still save/update/delete files — operations are synced to the leader via SharedWorker
+- **Automatic failover**: If the leader tab closes, another tab automatically becomes leader
+
+No configuration required — this works automatically.
+
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)

@@ -4,10 +4,14 @@
  * Core sync orchestration service that coordinates file synchronization
  * between local OPFS storage and remote storage.
  *
+ * IMPORTANT: In multi-tab scenarios, only the leader tab runs the sync loop.
+ * This prevents race conditions where multiple tabs try to update state
+ * and enqueue transfers simultaneously.
+ *
  * @module
  */
 
-import { Context, Effect, Fiber, Layer, Ref, Scope } from "effect"
+import { Context, Effect, Fiber, Layer, Ref, Scope, Stream, SubscriptionRef } from "effect"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { LocalFileStateManager } from "../local-file-state/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
@@ -19,7 +23,7 @@ import {
 } from "../sync-executor/index.js"
 import { makeStoreRoot, stripFilesRoot } from "../../utils/path.js"
 import { hashFile } from "../../utils/index.js"
-import type { LiveStoreDeps } from "../../livestore/types.js"
+import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
 import type {
   FileRecord,
   FileSyncEvent,
@@ -128,11 +132,16 @@ export const makeFileSync = (
     const { store, schema, storeId } = deps
     const { tables, events, queryDb } = schema
 
+    // Get client session for leader election
+    const clientSession = getClientSession(store)
+
     // State
     const onlineRef = yield* Ref.make(true)
     const runningRef = yield* Ref.make(false)
     const unsubscribeRef = yield* Ref.make<(() => void) | null>(null)
     const activeSyncOpsRef = yield* Ref.make(0)
+    const isLeaderRef = yield* Ref.make(false)
+    const leaderWatcherFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
 
     // Semaphore to ensure checkAndSync doesn't run concurrently with itself
     // This prevents race conditions where multiple reconciliations interleave
@@ -531,6 +540,84 @@ export const makeFileSync = (
         })
       )
 
+    // Start the sync loop (only called when we're the leader)
+    const startSyncLoop = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const isLeader = yield* Ref.get(isLeaderRef)
+        if (!isLeader) return
+
+        // Unsubscribe from any existing subscription first
+        const existingUnsub = yield* Ref.get(unsubscribeRef)
+        if (existingUnsub) {
+          existingUnsub()
+          yield* Ref.set(unsubscribeRef, null)
+        }
+
+        // Subscribe to file changes
+        const unsubscribe = yield* Effect.sync(() => {
+          const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
+          return store.subscribe(fileQuery, () => {
+            // Only run sync if we're still the leader
+            Effect.runPromise(
+              Effect.gen(function* () {
+                const stillLeader = yield* Ref.get(isLeaderRef)
+                if (stillLeader) {
+                  yield* checkAndSync()
+                }
+              })
+            ).catch(() => { })
+          })
+        })
+
+        yield* Ref.set(unsubscribeRef, unsubscribe)
+
+        // Initial sync
+        yield* checkAndSync()
+      })
+
+    // Stop the sync loop (called when we lose leadership)
+    const stopSyncLoop = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        // Pause executor processing
+        yield* executor.pause()
+
+        // Unsubscribe from file changes
+        const unsubscribe = yield* Ref.get(unsubscribeRef)
+        if (unsubscribe) {
+          unsubscribe()
+          yield* Ref.set(unsubscribeRef, null)
+        }
+      })
+
+    // Watch for leadership changes
+    const watchLeadership = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function* () {
+        // Use SubscriptionRef's changes stream to watch lockStatus
+        yield* clientSession.lockStatus.changes.pipe(
+          Stream.tap((status) =>
+            Effect.gen(function* () {
+              const wasLeader = yield* Ref.get(isLeaderRef)
+              const isNowLeader = status === "has-lock"
+
+              if (isNowLeader && !wasLeader) {
+                // Became leader - start sync loop
+                yield* Effect.logDebug("[FileSync] Became leader, starting sync loop")
+                yield* Ref.set(isLeaderRef, true)
+                yield* executor.resume()
+                yield* startSyncLoop()
+              } else if (!isNowLeader && wasLeader) {
+                // Lost leadership - stop sync loop
+                yield* Effect.logDebug("[FileSync] Lost leadership, stopping sync loop")
+                yield* Ref.set(isLeaderRef, false)
+                yield* stopSyncLoop()
+              }
+            })
+          ),
+          Stream.runDrain,
+          Effect.forkScoped
+        )
+      })
+
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function* () {
@@ -542,18 +629,21 @@ export const makeFileSync = (
         // Start the executor
         yield* executor.start()
 
-        // Subscribe to file changes
-        const unsubscribe = yield* Effect.sync(() => {
-          const fileQuery = queryDb(tables.files.select().where({ deletedAt: null }))
-          return store.subscribe(fileQuery, () => {
-            Effect.runPromise(checkAndSync()).catch(() => { })
-          })
-        })
+        // Check initial lock status
+        const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
+        const isInitialLeader = initialStatus === "has-lock"
+        yield* Ref.set(isLeaderRef, isInitialLeader)
 
-        yield* Ref.set(unsubscribeRef, unsubscribe)
+        if (isInitialLeader) {
+          yield* Effect.logDebug("[FileSync] Starting as leader")
+          yield* startSyncLoop()
+        } else {
+          yield* Effect.logDebug("[FileSync] Starting as non-leader, waiting for leadership")
+        }
 
-        // Initial sync
-        yield* checkAndSync()
+        // Watch for leadership changes
+        const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
+        yield* Ref.set(leaderWatcherFiberRef, watchFiber)
       })
 
     const stop = (): Effect.Effect<void> =>
@@ -562,6 +652,13 @@ export const makeFileSync = (
         if (!running) return
 
         yield* Ref.set(runningRef, false)
+
+        // Stop leader watcher
+        const leaderWatcherFiber = yield* Ref.get(leaderWatcherFiberRef)
+        if (leaderWatcherFiber) {
+          yield* Fiber.interrupt(leaderWatcherFiber)
+          yield* Ref.set(leaderWatcherFiberRef, null)
+        }
 
         // Stop health check if running
         yield* stopHealthCheckLoop()
@@ -581,6 +678,9 @@ export const makeFileSync = (
           unsubscribe()
           yield* Ref.set(unsubscribeRef, null)
         }
+
+        // Reset leader status
+        yield* Ref.set(isLeaderRef, false)
       })
 
     const syncNow = (): Effect.Effect<void> => checkAndSync()

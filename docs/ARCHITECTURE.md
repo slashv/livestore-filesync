@@ -275,6 +275,58 @@ This ensures:
 - Other clients show placeholder until upload completes
 - Correct version is displayed after edits (hash comparison)
 
+## Multi-Tab Coordination
+
+In browser environments, multiple tabs may be open to the same LiveStore store. LiveStore uses a
+SharedWorker and Web Locks API to elect a single "leader" tab that runs the SQLite database.
+Non-leader tabs proxy their operations through the SharedWorker.
+
+**FileSync follows this same pattern**: only the leader tab runs the sync loop. This prevents
+race conditions where multiple tabs try to reconcile state, enqueue transfers, and update
+`localFileState` simultaneously.
+
+### How It Works
+
+1. **Leader Election**: LiveStore's `ClientSession` exposes a `lockStatus` SubscriptionRef that
+   indicates whether the current tab holds the leader lock (`'has-lock'` or `'no-lock'`).
+
+2. **Leader-Only Sync Loop**: The `FileSync` service subscribes to `lockStatus.changes`:
+   - When a tab becomes leader, it starts the sync loop (subscribes to file changes, reconciles
+     state, enqueues transfers)
+   - When a tab loses leadership, it stops the sync loop
+
+3. **All Tabs Can Still Operate**: Non-leader tabs can still call `saveFile`, `updateFile`, and
+   `deleteFile`. These operations commit events to LiveStore, which syncs them to the leader tab
+   via the SharedWorker. The leader's sync loop then handles the actual upload/download.
+
+### Implementation Details
+
+The `FileSync` service tracks leadership state with:
+- `isLeaderRef`: Whether this tab is currently the leader
+- `leaderWatcherFiberRef`: Background fiber watching for leadership changes
+
+```typescript
+// Simplified flow
+const watchLeadership = () =>
+  clientSession.lockStatus.changes.pipe(
+    Stream.tap((status) => {
+      if (status === 'has-lock' && !wasLeader) {
+        // Became leader - start sync loop
+        startSyncLoop()
+      } else if (status === 'no-lock' && wasLeader) {
+        // Lost leadership - stop sync loop
+        stopSyncLoop()
+      }
+    }),
+    Stream.runDrain
+  )
+```
+
+This ensures:
+- No duplicate sync operations across tabs
+- Automatic failover when the leader tab closes
+- Consistent state management via the leader's sync loop
+
 ## Sync Status
 
 The `getSyncStatus()` utility derives aggregate sync status from the `localFileState` client document.
