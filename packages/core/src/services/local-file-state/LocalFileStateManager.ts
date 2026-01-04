@@ -11,7 +11,7 @@
  * @module
  */
 
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Effect, Layer } from "effect"
 import type { LiveStoreDeps } from "../../livestore/types.js"
 import type {
   LocalFileState,
@@ -106,23 +106,8 @@ export const makeLocalFileStateManager = (
     const { store, schema } = deps
     const { tables, events, queryDb } = schema
 
-    // Semaphore with 1 permit ensures only one update runs at a time
-    const updateLock = yield* Ref.make(false)
-
-    // Acquire lock, run update, release lock
-    const withLock = <A>(effect: Effect.Effect<A>): Effect.Effect<A> =>
-      Effect.gen(function* () {
-        // Spin-wait for lock (simple approach, sufficient for this use case)
-        while (yield* Ref.get(updateLock)) {
-          yield* Effect.yieldNow()
-        }
-        yield* Ref.set(updateLock, true)
-        try {
-          return yield* effect
-        } finally {
-          yield* Ref.set(updateLock, false)
-        }
-      })
+    // Create a semaphore with 1 permit to ensure only one update runs at a time
+    const semaphore = yield* Effect.makeSemaphore(1)
 
     // Read current state from LiveStore
     const readState = (): LocalFilesState => {
@@ -138,10 +123,11 @@ export const makeLocalFileStateManager = (
     }
 
     // Core atomic update - all other methods use this
+    // Uses semaphore.withPermits(1) to ensure only one update runs at a time
     const atomicUpdate = (
       updater: (state: LocalFilesState) => LocalFilesState
     ): Effect.Effect<void> =>
-      withLock(
+      semaphore.withPermits(1)(
         Effect.sync(() => {
           const currentState = readState()
           const nextState = updater(currentState)

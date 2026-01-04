@@ -134,6 +134,10 @@ export const makeFileSync = (
     const unsubscribeRef = yield* Ref.make<(() => void) | null>(null)
     const activeSyncOpsRef = yield* Ref.make(0)
 
+    // Semaphore to ensure checkAndSync doesn't run concurrently with itself
+    // This prevents race conditions where multiple reconciliations interleave
+    const checkAndSyncLock = yield* Effect.makeSemaphore(1)
+
     // Event callbacks
     const eventCallbacks = yield* Ref.make<FileSyncEventCallback[]>([])
 
@@ -400,90 +404,117 @@ export const makeFileSync = (
     const executor = yield* makeSyncExecutor(transferHandler, executorConfig)
 
     // Two-pass reconciliation of local file state
+    // Pass 1 runs atomically (no disk I/O), Pass 2 does disk I/O for new files only
     const reconcileLocalFileState = (): Effect.Effect<void> =>
       Effect.gen(function* () {
         const files = yield* getActiveFiles()
-        const localFiles = yield* stateManager.getState()
 
-        const nextLocalFilesState: LocalFilesStateMutable = { ...localFiles }
+        // Pass 1: Atomically reconcile existing state (no disk I/O)
+        // This ensures we don't clobber concurrent transfer status updates
+        yield* stateManager.atomicUpdate((currentState) => {
+          const nextState: LocalFilesStateMutable = {}
 
-        // Pass 1: reconcile using existing state and remote metadata only (no disk I/O)
-        for (const file of files) {
-          if (file.id in nextLocalFilesState) {
-            const localFile = nextLocalFilesState[file.id]!
-            const remoteMismatch = localFile.localHash !== file.contentHash
-            
-            // Preserve active transfer statuses (queued, inProgress) - don't overwrite them
-            const activeUploadStatuses = ["queued", "inProgress"] as const
-            const activeDownloadStatuses = ["queued", "inProgress"] as const
-            
-            const preserveUploadStatus = activeUploadStatuses.includes(
-              localFile.uploadStatus as typeof activeUploadStatuses[number]
-            )
-            const preserveDownloadStatus = activeDownloadStatuses.includes(
-              localFile.downloadStatus as typeof activeDownloadStatuses[number]
-            )
-            
-            nextLocalFilesState[file.id] = {
-              ...localFile,
-              downloadStatus: preserveDownloadStatus 
-                ? localFile.downloadStatus 
-                : (remoteMismatch ? "pending" : "done"),
-              uploadStatus: preserveUploadStatus ? localFile.uploadStatus : "done"
+          // Only keep files that are still active
+          for (const file of files) {
+            const existing = currentState[file.id]
+            if (existing) {
+              const remoteMismatch = existing.localHash !== file.contentHash
+              // Only consider download if file has a remote key
+              const needsDownload = remoteMismatch && !!file.remoteKey
+
+              // CRITICAL: Preserve active transfer statuses - these are being managed by
+              // concurrent upload/download operations and we must not overwrite them
+              const activeStatuses = ["queued", "inProgress"] as const
+              const preserveUploadStatus = activeStatuses.includes(
+                existing.uploadStatus as typeof activeStatuses[number]
+              )
+              const preserveDownloadStatus = activeStatuses.includes(
+                existing.downloadStatus as typeof activeStatuses[number]
+              )
+
+              nextState[file.id] = {
+                ...existing,
+                downloadStatus: preserveDownloadStatus
+                  ? existing.downloadStatus
+                  : needsDownload
+                    ? "pending"
+                    : "done",
+                uploadStatus: preserveUploadStatus ? existing.uploadStatus : "done"
+              }
             }
           }
-        }
 
-        // Pass 2: detect local files or mark downloads when no local state exists (disk I/O)
-        const additions: LocalFilesStateMutable = {}
+          return nextState
+        })
+
+        // Pass 2: Check disk for files not yet in state (disk I/O required)
+        // This happens outside the atomic block since disk I/O is slow
+        const currentState = yield* stateManager.getState()
 
         for (const file of files) {
-          if (file.id in nextLocalFilesState) continue
+          // Skip if already in state
+          if (file.id in currentState) continue
 
           const exists = yield* localStorage.fileExists(file.path)
           if (!exists) {
             if (file.remoteKey) {
-              additions[file.id] = {
+              // File exists remotely but not locally - need to download
+              yield* stateManager.setFileState(file.id, {
                 path: file.path,
                 localHash: "",
                 downloadStatus: "pending",
                 uploadStatus: "done",
                 lastSyncError: ""
-              }
+              })
             }
             continue
           }
 
+          // File exists locally - compute hash and determine sync needs
           const f = yield* localStorage.readFile(file.path)
           const localHash = yield* hashFile(f)
           const remoteMismatch = localHash !== file.contentHash
           const shouldUpload = !file.remoteKey
 
-          additions[file.id] = {
+          yield* stateManager.setFileState(file.id, {
             path: file.path,
             localHash,
             downloadStatus: remoteMismatch && file.remoteKey ? "pending" : "done",
             uploadStatus: shouldUpload ? "pending" : "done",
             lastSyncError: ""
-          }
+          })
         }
-
-        const merged: LocalFilesState = { ...nextLocalFilesState, ...additions }
-        yield* stateManager.replaceState(merged)
       }).pipe(Effect.catchAll(() => Effect.void))
 
     const syncFiles = (): Effect.Effect<void> =>
       Effect.gen(function* () {
         yield* emit({ type: "sync:start" })
 
-        const localFiles = yield* stateManager.getState()
-        for (const [fileId, localFile] of Object.entries(localFiles)) {
-          if (localFile.downloadStatus === "pending" || localFile.downloadStatus === "queued") {
-            yield* stateManager.setTransferStatus(fileId, "download", "queued")
-            yield* executor.enqueueDownload(fileId)
+        // Collect files to enqueue while atomically updating their status
+        const toEnqueue: { fileId: string; kind: "upload" | "download" }[] = []
+
+        yield* stateManager.atomicUpdate((currentState) => {
+          const nextState = { ...currentState }
+
+          for (const [fileId, localFile] of Object.entries(nextState)) {
+            if (localFile.downloadStatus === "pending") {
+              nextState[fileId] = { ...localFile, downloadStatus: "queued" }
+              toEnqueue.push({ fileId, kind: "download" })
+            }
+            if (localFile.uploadStatus === "pending") {
+              nextState[fileId] = { ...nextState[fileId], uploadStatus: "queued" }
+              toEnqueue.push({ fileId, kind: "upload" })
+            }
           }
-          if (localFile.uploadStatus === "pending" || localFile.uploadStatus === "queued") {
-            yield* stateManager.setTransferStatus(fileId, "upload", "queued")
+
+          return nextState
+        })
+
+        // Enqueue after the atomic state update (outside the atomic block)
+        for (const { fileId, kind } of toEnqueue) {
+          if (kind === "download") {
+            yield* executor.enqueueDownload(fileId)
+          } else {
             yield* executor.enqueueUpload(fileId)
           }
         }
@@ -492,11 +523,13 @@ export const makeFileSync = (
       })
 
     const checkAndSync = (): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        yield* reconcileLocalFileState()
-        yield* syncFiles()
-        yield* scheduleCleanupIfIdle()
-      })
+      checkAndSyncLock.withPermits(1)(
+        Effect.gen(function* () {
+          yield* reconcileLocalFileState()
+          yield* syncFiles()
+          yield* scheduleCleanupIfIdle()
+        })
+      )
 
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
