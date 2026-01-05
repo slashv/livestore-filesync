@@ -122,7 +122,7 @@ watch(() => props.file.updatedAt, async () => {
           </tr>
           <tr>
             <td class="label">Local File: Download</td>
-            <td data-testid="file-status">{{ localFile?.downloadStatus }}</td>
+            <td data-testid="file-download-status">{{ localFile?.downloadStatus }}</td>
           </tr>
           <tr>
             <td class="label">Local File: Upload</td>

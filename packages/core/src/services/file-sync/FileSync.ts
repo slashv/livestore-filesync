@@ -430,6 +430,8 @@ export const makeFileSync = (
               const remoteMismatch = existing.localHash !== file.contentHash
               // Only consider download if file has a remote key
               const needsDownload = remoteMismatch && !!file.remoteKey
+              // Need upload if file doesn't have a remote key yet
+              const needsUpload = !file.remoteKey
 
               // CRITICAL: Preserve active transfer statuses - these are being managed by
               // concurrent upload/download operations and we must not overwrite them
@@ -448,7 +450,11 @@ export const makeFileSync = (
                   : needsDownload
                     ? "pending"
                     : "done",
-                uploadStatus: preserveUploadStatus ? existing.uploadStatus : "done"
+                uploadStatus: preserveUploadStatus
+                  ? existing.uploadStatus
+                  : needsUpload
+                    ? "pending"
+                    : "done"
               }
             }
           }
@@ -540,6 +546,37 @@ export const makeFileSync = (
         })
       )
 
+    // Recovery: Reset stale "inProgress" statuses to "pending"
+    // This handles the case where a page refresh interrupted an in-flight transfer.
+    // On a fresh page load, no transfer can actually be in progress, so any
+    // "inProgress" status is stale and should be reset to allow retry.
+    const recoverStaleTransfers = (): Effect.Effect<void> =>
+      stateManager.atomicUpdate((currentState) => {
+        let hasChanges = false
+        const nextState = { ...currentState }
+
+        for (const [fileId, localFile] of Object.entries(nextState)) {
+          let updated = false
+          const updatedFile = { ...localFile }
+
+          if (localFile.uploadStatus === "inProgress") {
+            updatedFile.uploadStatus = "pending"
+            updated = true
+          }
+          if (localFile.downloadStatus === "inProgress") {
+            updatedFile.downloadStatus = "pending"
+            updated = true
+          }
+
+          if (updated) {
+            nextState[fileId] = updatedFile
+            hasChanges = true
+          }
+        }
+
+        return hasChanges ? nextState : currentState
+      })
+
     // Start the sync loop (only called when we're the leader)
     const startSyncLoop = (): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -552,6 +589,11 @@ export const makeFileSync = (
           existingUnsub()
           yield* Ref.set(unsubscribeRef, null)
         }
+
+        // IMPORTANT: Recover from stale "inProgress" states before reconciliation.
+        // This handles page refresh mid-transfer scenarios where the transfer fiber
+        // died but the state was persisted as "inProgress".
+        yield* recoverStaleTransfers()
 
         // Subscribe to file changes
         const unsubscribe = yield* Effect.sync(() => {

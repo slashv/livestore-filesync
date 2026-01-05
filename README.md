@@ -6,7 +6,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 1. **Local-first storage**: Files are always written to local storage first (OPFS in browsers, filesystem in Node.js), ensuring immediate availability even offline.
 
-2. **Content-Addressable Storage (CAS)**: Files are named by their SHA-256 hash. Duplicate content automatically collapses to a single file, saving storage and bandwidth.
+2. **Content-Addressable Storage (CAS)**: Files are named by their hash which makes things so much easier by avoiding duplicated content and automatic change detection.
 
 3. **Background sync**: The sync engine handles bidirectional synchronization — uploading local files to remote storage and downloading files that exist remotely but not locally.
 
@@ -79,7 +79,7 @@ See `examples/` for complete implementations:
 
 ## Filesystem Adapters
 
-The core package has a pluggable filesystem architecture. It expects any layer that provides the `@effect/platform` `FileSystem` interface.
+The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. Use any existing effect Filesystem or write your own. OPFS provided as doesn't exist in Effect platform browser and was the most suitable for browsers.
 
 **Browser (OPFS)**: Use the provided `@livestore-filesync/opfs` package:
 ```typescript
@@ -92,8 +92,6 @@ initFileSync(store, { fileSystem: opfsLayer(), ... })
 import { NodeFileSystem } from '@effect/platform-node'
 createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
-
-Custom adapters can be created by implementing the Effect Platform `FileSystem` interface.
 
 ## Backend Storage
 
@@ -153,7 +151,7 @@ Requires S3 credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SEC
 
 There are two ways to resolve file URLs in the browser:
 
-### Option 1: Service Worker (recommended for simpler component code)
+### Option 1: Service Worker (simpler component code if targeting browser)
 
 The service worker intercepts requests to `/livestore-filesync-files/*` and serves files from OPFS, falling back to remote storage. This lets you use `file.path` directly as an image src.
 
@@ -219,6 +217,8 @@ This ensures a good user experience:
 - The originating client displays files immediately from local storage
 - Other clients show a placeholder until the upload completes
 - After edits, the correct version is displayed (based on content hash matching)
+
+Pattern suitable both when using service worker (see React example) and without (see Vue example).
 
 ## Multi-Tab Support
 
