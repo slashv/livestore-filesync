@@ -558,4 +558,161 @@ test.describe('File Sync', () => {
 
     await context.close()
   })
+
+  test('should sync 10 files across two browsers with two tabs each', async ({ browser }) => {
+    // This test verifies syncing works correctly when:
+    // - Browser 1 has two tabs (Tab A, Tab B) sharing the same SharedWorker
+    // - Browser 2 has two tabs (Tab C, Tab D) sharing the same SharedWorker
+    // - 10 files uploaded in one tab should sync to all 4 tabs
+    //
+    // KNOWN ISSUE: Opening multiple browser contexts simultaneously can trigger
+    // a LiveStore WASM SQLite bug: "function signature mismatch" during
+    // changeset_apply/rollback in client-session-sync-processor:pull.
+    // This occurs when a new client pulls existing changesets while another
+    // client is actively making changes. We work around this by staggering
+    // the tab navigation to allow each context to stabilize before opening the next.
+    // See: https://github.com/livestorejs/livestore - needs minimal repro
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+    const fileCount = 10
+
+    // Create two separate browser contexts (simulates two different browsers/users)
+    const context1 = await browser.newContext()
+    const context2 = await browser.newContext()
+
+    // Create two tabs in each browser context
+    const browser1TabA = await context1.newPage()
+    const browser1TabB = await context1.newPage()
+    const browser2TabC = await context2.newPage()
+    const browser2TabD = await context2.newPage()
+
+    const allTabs = [browser1TabA, browser1TabB, browser2TabC, browser2TabD]
+    const tabNames = ['Browser1-TabA', 'Browser1-TabB', 'Browser2-TabC', 'Browser2-TabD']
+
+    // Set up error tracking on all tabs
+    const errors: string[] = []
+    const consoleMessages: string[] = []
+
+    const trackErrors = (page: typeof browser1TabA, label: string) => {
+      page.on('pageerror', (error) => {
+        errors.push(`[${label}] ${error.message}`)
+      })
+      page.on('console', (msg) => {
+        const text = msg.text()
+        if (
+          text.includes('UNIQUE constraint') ||
+          text.includes('UnknownError') ||
+          text.includes('SqliteError') ||
+          text.includes('ERROR')
+        ) {
+          consoleMessages.push(`[${label}] ${text}`)
+        }
+      })
+    }
+
+    allTabs.forEach((tab, i) => trackErrors(tab, tabNames[i]))
+
+    // Navigate tabs sequentially with stabilization delays between browser contexts
+    // to avoid LiveStore WASM changeset race condition (see comment above)
+    await browser1TabA.goto(url)
+    await waitForLiveStore(browser1TabA)
+
+    await browser1TabB.goto(url)
+    await waitForLiveStore(browser1TabB)
+
+    // Allow Browser 1 context to fully stabilize before opening Browser 2
+    await browser1TabA.waitForTimeout(1000)
+
+    await browser2TabC.goto(url)
+    await waitForLiveStore(browser2TabC)
+
+    await browser2TabD.goto(url)
+    await waitForLiveStore(browser2TabD)
+
+    // Verify all tabs start with empty state
+    await Promise.all(
+      allTabs.map((tab) =>
+        expect(tab.locator('[data-testid="empty-state"]')).toBeVisible()
+      )
+    )
+
+    // Upload 10 files in Browser 1, Tab A
+    const testImages = createMultipleTestImages(fileCount)
+    await browser1TabA.locator('input[type="file"]').setInputFiles(testImages)
+
+    // Wait for all file cards to appear in the originating tab
+    await expect(browser1TabA.locator('[data-testid="file-card"]')).toHaveCount(fileCount, {
+      timeout: 30000,
+    })
+
+    // Wait for all images to load in the originating tab
+    const originatingImages = browser1TabA.locator('[data-testid="file-image"]')
+    for (let i = 0; i < fileCount; i++) {
+      await waitForImageLoaded(originatingImages.nth(i), 20000)
+    }
+    console.log(`✓ Browser1-TabA: All ${fileCount} files uploaded and displayed`)
+
+    // Wait for all files to sync to all other tabs
+    for (let tabIndex = 1; tabIndex < allTabs.length; tabIndex++) {
+      const tab = allTabs[tabIndex]
+      const tabName = tabNames[tabIndex]
+
+      // Wait for all file cards to appear
+      await expect(tab.locator('[data-testid="file-card"]')).toHaveCount(fileCount, {
+        timeout: 30000,
+      })
+
+      // Wait for all canDisplay to become true (files are available)
+      const canDisplayLocators = tab.locator('[data-testid="file-can-display"]')
+      await expect(canDisplayLocators).toHaveCount(fileCount, { timeout: 10000 })
+      
+      // Poll until all files can be displayed
+      await expect
+        .poll(
+          async () => {
+            const texts = await canDisplayLocators.allTextContents()
+            return texts.every((text) => text === 'true')
+          },
+          { timeout: 30000, intervals: [500] }
+        )
+        .toBe(true)
+
+      // Wait for all images to load (Firefox can be slower with blob URLs)
+      const tabImages = tab.locator('[data-testid="file-image"]')
+      for (let i = 0; i < fileCount; i++) {
+        await waitForImageLoaded(tabImages.nth(i), 20000)
+      }
+
+      console.log(`✓ ${tabName}: All ${fileCount} files synced and displayed`)
+    }
+
+    // Give some time for any async errors to surface
+    await browser1TabA.waitForTimeout(2000)
+
+    // Log all captured messages for debugging
+    if (consoleMessages.length > 0) {
+      console.log('Console messages with errors:', consoleMessages)
+    }
+    if (errors.length > 0) {
+      console.log('Page errors:', errors)
+    }
+
+    // Check for any critical errors
+    const criticalErrors = [
+      ...errors,
+      ...consoleMessages.filter(
+        (m) =>
+          m.includes('UNIQUE constraint') ||
+          m.includes('SqliteError') ||
+          m.includes('UnknownError')
+      ),
+    ]
+
+    expect(criticalErrors).toHaveLength(0)
+
+    // Cleanup
+    await context1.close()
+    await context2.close()
+  })
 })
