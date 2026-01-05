@@ -55,6 +55,27 @@ export async function waitForLiveStore(page: Page): Promise<void> {
 }
 
 /**
+ * Wait for LiveStore to finish loading AND initial sync to complete.
+ * This waits for the sync status to show no pending operations.
+ */
+export async function waitForLiveStoreAndSync(page: Page): Promise<void> {
+  await waitForLiveStore(page)
+  
+  // Wait for sync status panel to be visible
+  await page.waitForSelector('[data-testid="sync-status-panel"]', { timeout: 30000 })
+  
+  // Wait for sync to not be in progress (isSyncing = No, hasPending = No)
+  await expect.poll(
+    async () => {
+      const isSyncing = await page.locator('[data-testid="sync-is-syncing"]').textContent()
+      const hasPending = await page.locator('[data-testid="sync-has-pending"]').textContent()
+      return isSyncing === 'No' && hasPending === 'No'
+    },
+    { timeout: 30000, intervals: [100, 250, 500] }
+  ).toBe(true)
+}
+
+/**
  * Wait for an image element to be fully loaded.
  */
 export async function waitForImageLoaded(

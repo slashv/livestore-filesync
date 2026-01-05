@@ -3,6 +3,7 @@ import {
   createTestImage,
   createMultipleTestImages,
   waitForLiveStore,
+  waitForLiveStoreAndSync,
   waitForImageLoaded,
   getRemoteKey,
   toRemoteUrl,
@@ -613,22 +614,19 @@ test.describe('File Sync', () => {
 
     allTabs.forEach((tab, i) => trackErrors(tab, tabNames[i]))
 
-    // Navigate tabs sequentially with stabilization delays between browser contexts
+    // Navigate tabs sequentially and wait for each to complete initial sync
     // to avoid LiveStore WASM changeset race condition (see comment above)
     await browser1TabA.goto(url)
-    await waitForLiveStore(browser1TabA)
+    await waitForLiveStoreAndSync(browser1TabA)
 
     await browser1TabB.goto(url)
-    await waitForLiveStore(browser1TabB)
-
-    // Allow Browser 1 context to fully stabilize before opening Browser 2
-    await browser1TabA.waitForTimeout(1000)
+    await waitForLiveStoreAndSync(browser1TabB)
 
     await browser2TabC.goto(url)
-    await waitForLiveStore(browser2TabC)
+    await waitForLiveStoreAndSync(browser2TabC)
 
     await browser2TabD.goto(url)
-    await waitForLiveStore(browser2TabD)
+    await waitForLiveStoreAndSync(browser2TabD)
 
     // Verify all tabs start with empty state
     await Promise.all(
