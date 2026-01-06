@@ -2,15 +2,11 @@
 
 Local-first file sync for LiveStore apps. Files are stored locally first, then synced between clients via remote storage in the background.
 
-## How It Works
+- **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
-1. **Local-first storage**: Files are always written to local storage first (OPFS in browsers, filesystem in Node.js), ensuring immediate availability even offline.
+- **Content-Addressable Storage (CAS)**: Files are named by their hash which avoids duplicated content and allows for automatic change detection.
 
-2. **Content-Addressable Storage (CAS)**: Files are named by their hash which makes things so much easier by avoiding duplicated content and automatic change detection.
-
-3. **Background sync**: The sync engine handles bidirectional synchronization — uploading local files to remote storage and downloading files that exist remotely but not locally.
-
-4. **Built for LiveStore**: File metadata lives in LiveStore tables, so you get reactive queries over your files with the same local-first sync model as the rest of your app.
+- **Background sync**: Sync engine runs in background to automatically upload and download files between clients and keep track of state.
 
 ## Packages
 
