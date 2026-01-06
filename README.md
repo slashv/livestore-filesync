@@ -8,7 +8,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 - **Background sync**: Sync engine runs in background to automatically upload and download files between clients and keep track of state.
 
-- **Pluggable filesystems**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem. Use cloudflare R2 or any S3 compatible remote storage service.
+- **Pluggable filesystems**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem. Use cloudflare R2 or any S3 compatible service for the remote storage.
 
 ## Packages
 
