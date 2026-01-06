@@ -77,7 +77,7 @@ See `examples/` for complete implementations:
 
 ## Filesystem Adapters
 
-The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. Use any existing effect Filesystem or write your own. OPFS provided as doesn't exist in Effect platform browser and was the most suitable for browsers.
+The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. An OPFS adapter is provided and recommended as most suitable for browsers since Effects Platform browser doesn't support it yet.
 
 **Browser (OPFS)**: Use the provided `@livestore-filesync/opfs` package:
 ```typescript
