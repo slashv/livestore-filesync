@@ -535,3 +535,26 @@ const totalProgress = computed(() => computeTotalProgress(activeTransfers.value)
   </div>
 </template>
 ```
+
+### Implementation Notes
+
+When an `onProgress` callback is provided, the underlying transfer mechanism changes:
+
+- **Uploads**: Switches from `fetch()` to `XMLHttpRequest`. This is necessary because the Fetch API
+  does not expose upload progress events. XHR's `upload.onprogress` event provides byte-level
+  progress during the request body transmission.
+
+- **Downloads**: Switches from `response.blob()` to streaming via `response.body.getReader()`.
+  This allows tracking bytes as they arrive rather than waiting for the complete response.
+
+When no `onProgress` callback is provided, the simpler `fetch()` API is used for both operations.
+This fallback exists because:
+
+- `fetch()` provides a cleaner, Promise-based API with better `AbortController` integration
+- For uploads, XHR is only needed for its progress events (a feature `fetch` lacks)
+- The simpler code path has fewer potential failure points
+
+For most use cases, this implementation detail is transparent. However, be aware that:
+
+- XHR uploads may behave slightly differently in edge cases (e.g., timeout handling)
+- Streaming downloads accumulate chunks in memory before creating the final Blob

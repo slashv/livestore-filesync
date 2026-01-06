@@ -60,7 +60,14 @@ export interface TransferProgressEvent {
 export interface UploadOptions {
   /** Storage key for the file */
   readonly key: string
-  /** Progress callback, called periodically during transfer */
+  /**
+   * Progress callback, called periodically during transfer.
+   *
+   * **Implementation note:** When provided, uploads use `XMLHttpRequest` instead of `fetch()`
+   * to enable progress tracking. This is necessary because the Fetch API does not expose
+   * upload progress events. XHR's `upload.onprogress` provides byte-level progress during
+   * the request body transmission.
+   */
   readonly onProgress?: (progress: TransferProgressEvent) => void
 }
 
@@ -68,7 +75,12 @@ export interface UploadOptions {
  * Options for download operations
  */
 export interface DownloadOptions {
-  /** Progress callback, called periodically during transfer */
+  /**
+   * Progress callback, called periodically during transfer.
+   *
+   * **Implementation note:** When provided, downloads use streaming via `response.body.getReader()`
+   * instead of `response.blob()` to enable byte-level progress tracking as chunks arrive.
+   */
   readonly onProgress?: (progress: TransferProgressEvent) => void
 }
 
