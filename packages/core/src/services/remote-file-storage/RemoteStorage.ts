@@ -45,6 +45,34 @@ export interface RemoteUploadResult {
 }
 
 /**
+ * Progress event for file transfers
+ */
+export interface TransferProgressEvent {
+  /** Bytes transferred so far */
+  readonly loaded: number
+  /** Total bytes to transfer (may be 0 if unknown) */
+  readonly total: number
+}
+
+/**
+ * Options for upload operations
+ */
+export interface UploadOptions {
+  /** Storage key for the file */
+  readonly key: string
+  /** Progress callback, called periodically during transfer */
+  readonly onProgress?: (progress: TransferProgressEvent) => void
+}
+
+/**
+ * Options for download operations
+ */
+export interface DownloadOptions {
+  /** Progress callback, called periodically during transfer */
+  readonly onProgress?: (progress: TransferProgressEvent) => void
+}
+
+/**
  * RemoteStorage adapter interface
  *
  * Implement this interface to create custom storage backends.
@@ -55,13 +83,13 @@ export interface RemoteStorageAdapter {
    */
   readonly upload: (
     file: File,
-    options: { key: string }
+    options: UploadOptions
   ) => Effect.Effect<RemoteUploadResult, UploadError>
 
   /**
    * Download a file from remote storage
    */
-  readonly download: (key: string) => Effect.Effect<File, DownloadError>
+  readonly download: (key: string, options?: DownloadOptions) => Effect.Effect<File, DownloadError>
 
   /**
    * Delete a file from remote storage
@@ -186,7 +214,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
   const upload = (
     file: File,
-    options: { key: string }
+    options: UploadOptions
   ): Effect.Effect<RemoteUploadResult, UploadError> =>
     Effect.gen(function* () {
       const signed = yield* signUpload({
@@ -195,15 +223,68 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         contentLength: file.size
       })
 
-      const response = yield* Effect.tryPromise({
-        try: async () => {
-          const r = await fetch(signed.url, {
-            method: signed.method,
-            ...(signed.headers ? { headers: signed.headers } : {}),
-            body: file
-          })
-          return r
-        },
+      // If no progress callback, use simple fetch
+      if (!options.onProgress) {
+        const response = yield* Effect.tryPromise({
+          try: async () => {
+            const r = await fetch(signed.url, {
+              method: signed.method,
+              ...(signed.headers ? { headers: signed.headers } : {}),
+              body: file
+            })
+            return r
+          },
+          catch: (error) =>
+            new UploadError({
+              message: `Failed to upload`,
+              cause: error
+            })
+        })
+
+        if (!response.ok) {
+          return yield* Effect.fail(
+            new UploadError({
+              message: `Upload failed with status: ${response.status}`
+            })
+          )
+        }
+
+        const etag = response.headers.get("ETag")
+        return etag ? { key: options.key, etag } : { key: options.key }
+      }
+
+      // Use XMLHttpRequest for upload progress tracking
+      const result = yield* Effect.tryPromise({
+        try: () =>
+          new Promise<{ etag?: string }>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable) {
+                options.onProgress!({ loaded: event.loaded, total: event.total })
+              }
+            }
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                const etag = xhr.getResponseHeader("ETag")
+                resolve(etag ? { etag } : {})
+              } else {
+                reject(new Error(`Upload failed with status: ${xhr.status}`))
+              }
+            }
+
+            xhr.onerror = () => reject(new Error("Upload network error"))
+            xhr.ontimeout = () => reject(new Error("Upload timeout"))
+
+            xhr.open(signed.method, signed.url)
+            if (signed.headers) {
+              Object.entries(signed.headers).forEach(([k, v]) =>
+                xhr.setRequestHeader(k, v)
+              )
+            }
+            xhr.send(file)
+          }),
         catch: (error) =>
           new UploadError({
             message: `Failed to upload`,
@@ -211,19 +292,10 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
           })
       })
 
-      if (!response.ok) {
-        return yield* Effect.fail(
-          new UploadError({
-            message: `Upload failed with status: ${response.status}`
-          })
-        )
-      }
-
-      const etag = response.headers.get("ETag")
-      return etag ? { key: options.key, etag } : { key: options.key }
+      return result.etag ? { key: options.key, etag: result.etag } : { key: options.key }
     })
 
-  const download = (key: string): Effect.Effect<File, DownloadError> =>
+  const download = (key: string, options?: DownloadOptions): Effect.Effect<File, DownloadError> =>
     Effect.gen(function* () {
       const signed = yield* signDownload(key)
       const response = yield* Effect.tryPromise({
@@ -251,16 +323,48 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         )
       }
 
-      const blob = yield* Effect.tryPromise({
-        try: async () => await response.blob(),
-        catch: (error) =>
-          new DownloadError({
-            message: `Failed to read response body`,
-            url: key,
-            cause: error
-          })
-      })
+      const contentLength = parseInt(response.headers.get("Content-Length") || "0", 10)
+      const reader = response.body?.getReader()
 
+      // If no progress callback or no reader (streaming not supported), use simple blob()
+      if (!options?.onProgress || !reader) {
+        const blob = yield* Effect.tryPromise({
+          try: async () => await response.blob(),
+          catch: (error) =>
+            new DownloadError({
+              message: `Failed to read response body`,
+              url: key,
+              cause: error
+            })
+        })
+
+        const filename = key.split("/").pop() || "file"
+        return new File([blob], filename, { type: blob.type })
+      }
+
+      // Stream download with progress tracking
+      const chunks: Uint8Array[] = []
+      let loaded = 0
+
+      while (true) {
+        const readResult = yield* Effect.tryPromise({
+          try: () => reader.read(),
+          catch: (error) =>
+            new DownloadError({
+              message: `Stream read failed`,
+              url: key,
+              cause: error
+            })
+        })
+
+        if (readResult.done) break
+
+        chunks.push(readResult.value)
+        loaded += readResult.value.length
+        options.onProgress({ loaded, total: contentLength })
+      }
+
+      const blob = new Blob(chunks as BlobPart[], { type: response.headers.get("Content-Type") || "application/octet-stream" })
       const filename = key.split("/").pop() || "file"
       return new File([blob], filename, { type: blob.type })
     })

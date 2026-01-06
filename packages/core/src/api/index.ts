@@ -34,8 +34,15 @@ export {
   resolveFileUrl,
   isOnline,
   triggerSync,
+  onFileSyncEvent,
   type InitFileSyncConfig
 } from "./singleton.js"
 
 // Sync status utilities
-export { getSyncStatus } from "./sync-status.js"
+export {
+  getSyncStatus,
+  createActiveTransferProgress,
+  updateActiveTransfers,
+  removeActiveTransfer,
+  computeTotalProgress
+} from "./sync-status.js"

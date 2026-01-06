@@ -231,6 +231,240 @@ describe("FileSync", () => {
   })
 })
 
+describe("FileSync - Transfer Progress Events", () => {
+  it("emits upload:progress events during file upload", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { uploadDelayMs: 200 },
+      executorConfig: { maxConcurrentUploads: 1 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function* () {
+      return yield* FileSync
+    }))
+    const fileStorage = await runtime.runPromise(Effect.gen(function* () {
+      return yield* FileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const progressEvents: Array<{
+      type: string
+      fileId: string
+      loaded?: number
+      total?: number
+    }> = []
+
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "upload:progress") {
+        progressEvents.push({
+          type: event.type,
+          fileId: event.fileId,
+          loaded: event.progress.loaded,
+          total: event.progress.total
+        })
+      } else if (event.type === "upload:start" || event.type === "upload:complete") {
+        progressEvents.push({ type: event.type, fileId: event.fileId })
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+
+      // Save a file
+      const files = generateTestFiles(1)
+      const result = await runtime.runPromise(fileStorage.saveFile(files[0]))
+
+      // Wait for upload to complete
+      await delay(400)
+
+      // Should have received progress events
+      const fileProgressEvents = progressEvents.filter(
+        (e) => e.fileId === result.fileId && e.type === "upload:progress"
+      )
+      expect(fileProgressEvents.length).toBeGreaterThan(0)
+
+      // Each progress event should have valid loaded/total values
+      for (const event of fileProgressEvents) {
+        expect(event.loaded).toBeDefined()
+        expect(event.total).toBeDefined()
+        expect(event.loaded!).toBeGreaterThanOrEqual(0)
+        expect(event.total!).toBeGreaterThan(0)
+      }
+
+      // Should have start and complete events
+      expect(progressEvents.some((e) => e.type === "upload:start" && e.fileId === result.fileId)).toBe(true)
+      expect(progressEvents.some((e) => e.type === "upload:complete" && e.fileId === result.fileId)).toBe(true)
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("emits download:progress events during file download", async () => {
+    const { deps, store, events, shutdown } = await createTestStore()
+    const { runtime, storeRef } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { downloadDelayMs: 200 },
+      executorConfig: { maxConcurrentDownloads: 1 }
+    })
+
+    const fileId = crypto.randomUUID()
+    const path = makeStoredPath(deps.storeId, "download-progress-hash")
+    const remoteKey = stripFilesRoot(path)
+
+    // Pre-populate remote storage with file
+    await Effect.runPromise(
+      Ref.update(storeRef, (store) => {
+        const newStore = new Map(store)
+        const content = new TextEncoder().encode("test content for download progress")
+        newStore.set(remoteKey, {
+          data: new Uint8Array(content),
+          mimeType: "text/plain",
+          name: "test.txt"
+        })
+        return newStore
+      })
+    )
+
+    // Create file record with remote key (simulates file from another client)
+    store.commit(
+      events.fileCreated({
+        id: fileId,
+        path,
+        contentHash: "download-progress-hash",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+    )
+    store.commit(
+      events.fileUpdated({
+        id: fileId,
+        path,
+        remoteKey,
+        contentHash: "download-progress-hash",
+        updatedAt: new Date()
+      })
+    )
+
+    const fileSync = await runtime.runPromise(Effect.gen(function* () {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const progressEvents: Array<{
+      type: string
+      fileId: string
+      loaded?: number
+      total?: number
+    }> = []
+
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "download:progress") {
+        progressEvents.push({
+          type: event.type,
+          fileId: event.fileId,
+          loaded: event.progress.loaded,
+          total: event.progress.total
+        })
+      } else if (event.type === "download:start" || event.type === "download:complete") {
+        progressEvents.push({ type: event.type, fileId: event.fileId })
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+
+      // Wait for download to complete
+      await delay(500)
+
+      // Should have received progress events
+      const fileProgressEvents = progressEvents.filter(
+        (e) => e.fileId === fileId && e.type === "download:progress"
+      )
+      expect(fileProgressEvents.length).toBeGreaterThan(0)
+
+      // Each progress event should have valid loaded/total values
+      for (const event of fileProgressEvents) {
+        expect(event.loaded).toBeDefined()
+        expect(event.total).toBeDefined()
+        expect(event.loaded!).toBeGreaterThanOrEqual(0)
+        expect(event.total!).toBeGreaterThan(0)
+      }
+
+      // Should have start and complete events
+      expect(progressEvents.some((e) => e.type === "download:start" && e.fileId === fileId)).toBe(true)
+      expect(progressEvents.some((e) => e.type === "download:complete" && e.fileId === fileId)).toBe(true)
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("progress events contain correct TransferProgress structure", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { uploadDelayMs: 150 },
+      executorConfig: { maxConcurrentUploads: 1 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function* () {
+      return yield* FileSync
+    }))
+    const fileStorage = await runtime.runPromise(Effect.gen(function* () {
+      return yield* FileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    let capturedProgress: {
+      kind: string
+      fileId: string
+      status: string
+      loaded: number
+      total: number
+    } | null = null
+
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "upload:progress" && !capturedProgress) {
+        capturedProgress = {
+          kind: event.progress.kind,
+          fileId: event.progress.fileId,
+          status: event.progress.status,
+          loaded: event.progress.loaded,
+          total: event.progress.total
+        }
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+
+      const files = generateTestFiles(1)
+      const result = await runtime.runPromise(fileStorage.saveFile(files[0]))
+
+      await delay(300)
+
+      // Verify captured progress has correct structure
+      expect(capturedProgress).not.toBeNull()
+      expect(capturedProgress!.kind).toBe("upload")
+      expect(capturedProgress!.fileId).toBe(result.fileId)
+      expect(capturedProgress!.status).toBe("inProgress")
+      expect(typeof capturedProgress!.loaded).toBe("number")
+      expect(typeof capturedProgress!.total).toBe("number")
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
 describe("FileSync - Multi-file upload sync status", () => {
   it("queues multiple files for upload when saved concurrently", async () => {
     const { deps, shutdown } = await createTestStore()

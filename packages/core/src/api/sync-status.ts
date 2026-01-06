@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { LocalFilesState, SyncStatus, SyncError } from "../types/index.js"
+import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncStatus, SyncError } from "../types/index.js"
 
 /**
  * Compute aggregate sync status from local files state
@@ -120,4 +120,89 @@ export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
     pendingDownloadFileIds,
     errors
   }
+}
+
+/**
+ * Create an ActiveTransferProgress object from progress values
+ * 
+ * @param fileId - The file ID being transferred
+ * @param kind - Whether this is an upload or download
+ * @param loaded - Bytes transferred so far
+ * @param total - Total bytes to transfer
+ * @returns An ActiveTransferProgress object
+ */
+export function createActiveTransferProgress(
+  fileId: string,
+  kind: "upload" | "download",
+  loaded: number,
+  total: number
+): ActiveTransferProgress {
+  const percent = total > 0 ? Math.round((loaded / total) * 100) : null
+  return { fileId, kind, loaded, total, percent }
+}
+
+/**
+ * Update an ActiveTransfers map with new progress
+ * 
+ * @param transfers - Current active transfers map
+ * @param progress - New progress to merge
+ * @returns Updated active transfers map
+ */
+export function updateActiveTransfers(
+  transfers: ActiveTransfers,
+  progress: ActiveTransferProgress
+): ActiveTransfers {
+  return { ...transfers, [progress.fileId]: progress }
+}
+
+/**
+ * Remove a file from the active transfers map
+ * 
+ * @param transfers - Current active transfers map
+ * @param fileId - File ID to remove
+ * @returns Updated active transfers map
+ */
+export function removeActiveTransfer(
+  transfers: ActiveTransfers,
+  fileId: string
+): ActiveTransfers {
+  const { [fileId]: _, ...rest } = transfers
+  return rest
+}
+
+/**
+ * Compute total progress across all active transfers
+ * 
+ * @param transfers - Active transfers map
+ * @returns Object with totalLoaded, totalSize, and overall percent
+ */
+export function computeTotalProgress(transfers: ActiveTransfers): {
+  totalLoaded: number
+  totalSize: number
+  percent: number | null
+  count: number
+} {
+  const values = Object.values(transfers)
+  if (values.length === 0) {
+    return { totalLoaded: 0, totalSize: 0, percent: null, count: 0 }
+  }
+
+  let totalLoaded = 0
+  let totalSize = 0
+  let hasUnknownSize = false
+
+  for (const transfer of values) {
+    totalLoaded += transfer.loaded
+    if (transfer.total > 0) {
+      totalSize += transfer.total
+    } else {
+      hasUnknownSize = true
+    }
+  }
+
+  const percent = hasUnknownSize || totalSize === 0
+    ? null
+    : Math.round((totalLoaded / totalSize) * 100)
+
+  return { totalLoaded, totalSize, percent, count: values.length }
 }

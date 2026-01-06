@@ -10,10 +10,13 @@ export {
   RemoteStorage,
   RemoteStorageConfigTag,
   RemoteStorageLive,
+  type DownloadOptions,
   type RemoteStorageAdapter,
   type RemoteStorageConfig,
   type RemoteUploadResult,
-  type RemoteStorageService
+  type RemoteStorageService,
+  type TransferProgressEvent,
+  type UploadOptions
 } from "./RemoteStorage.js"
 
 export {

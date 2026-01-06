@@ -6,7 +6,7 @@
 
 import { Effect, Layer, Ref } from "effect"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
-import { RemoteStorage, type RemoteStorageConfig, type RemoteStorageService } from "./RemoteStorage.js"
+import { RemoteStorage, type DownloadOptions, type RemoteStorageConfig, type RemoteStorageService, type UploadOptions } from "./RemoteStorage.js"
 
 /**
  * In-memory file storage state
@@ -65,7 +65,7 @@ export const makeMemoryRemoteStorage = (
 
   const upload = (
     file: File,
-    uploadOptions: { key: string }
+    uploadOptions: UploadOptions
   ): Effect.Effect<{ key: string; etag?: string }, UploadError> =>
     Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
@@ -78,9 +78,23 @@ export const makeMemoryRemoteStorage = (
         )
       }
 
-      // Apply upload delay if configured (for testing timing)
-      if (options.uploadDelayMs && options.uploadDelayMs > 0) {
-        yield* Effect.sleep(`${options.uploadDelayMs} millis`)
+      // Simulate progress for upload with delay
+      const totalSize = file.size
+      const delayMs = options.uploadDelayMs ?? 0
+
+      if (delayMs > 0 && uploadOptions.onProgress) {
+        // Simulate chunked upload progress
+        const chunks = 4
+        const chunkDelay = delayMs / chunks
+        for (let i = 1; i <= chunks; i++) {
+          yield* Effect.sleep(`${chunkDelay} millis`)
+          uploadOptions.onProgress({
+            loaded: Math.min(Math.round((totalSize * i) / chunks), totalSize),
+            total: totalSize
+          })
+        }
+      } else if (delayMs > 0) {
+        yield* Effect.sleep(`${delayMs} millis`)
       }
 
       const buffer = yield* Effect.tryPromise({
@@ -107,7 +121,7 @@ export const makeMemoryRemoteStorage = (
       return { key }
     })
 
-  const download = (key: string): Effect.Effect<File, DownloadError> =>
+  const download = (key: string, downloadOptions?: DownloadOptions): Effect.Effect<File, DownloadError> =>
     Effect.gen(function* () {
       const options = yield* Ref.get(optionsRef)
 
@@ -120,11 +134,6 @@ export const makeMemoryRemoteStorage = (
         )
       }
 
-      // Apply download delay if configured (for testing timing)
-      if (options.downloadDelayMs && options.downloadDelayMs > 0) {
-        yield* Effect.sleep(`${options.downloadDelayMs} millis`)
-      }
-
       const store = yield* Ref.get(storeRef)
       const entry = store.get(key)
 
@@ -135,6 +144,24 @@ export const makeMemoryRemoteStorage = (
             url: key
           })
         )
+      }
+
+      const totalSize = entry.data.byteLength
+      const delayMs = options.downloadDelayMs ?? 0
+
+      // Simulate progress for download with delay
+      if (delayMs > 0 && downloadOptions?.onProgress) {
+        const chunks = 4
+        const chunkDelay = delayMs / chunks
+        for (let i = 1; i <= chunks; i++) {
+          yield* Effect.sleep(`${chunkDelay} millis`)
+          downloadOptions.onProgress({
+            loaded: Math.min(Math.round((totalSize * i) / chunks), totalSize),
+            total: totalSize
+          })
+        }
+      } else if (delayMs > 0) {
+        yield* Effect.sleep(`${delayMs} millis`)
       }
 
       // Cast Uint8Array buffer to ArrayBuffer for File compatibility

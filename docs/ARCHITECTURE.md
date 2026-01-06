@@ -430,3 +430,108 @@ const unsubscribe = store.subscribe(
 // Later, to unsubscribe:
 unsubscribe()
 ```
+
+## Transfer Progress
+
+FileSync emits `upload:progress` and `download:progress` events during file transfers, allowing UI
+components to display real-time progress (e.g., progress bars, percentage complete).
+
+### Subscribing to Progress Events
+
+```typescript
+import {
+  onFileSyncEvent,
+  createActiveTransferProgress,
+  updateActiveTransfers,
+  removeActiveTransfer,
+  computeTotalProgress,
+  type ActiveTransfers
+} from '@livestore-filesync/core'
+
+let transfers: ActiveTransfers = {}
+
+const unsubscribe = onFileSyncEvent((event) => {
+  if (event.type === 'upload:progress' || event.type === 'download:progress') {
+    const progress = createActiveTransferProgress(
+      event.fileId,
+      event.progress.kind,
+      event.progress.loaded,
+      event.progress.total
+    )
+    transfers = updateActiveTransfers(transfers, progress)
+  } else if (
+    event.type === 'upload:complete' ||
+    event.type === 'upload:error' ||
+    event.type === 'download:complete' ||
+    event.type === 'download:error'
+  ) {
+    transfers = removeActiveTransfer(transfers, event.fileId)
+  }
+})
+
+// Get aggregate progress stats
+const { totalLoaded, totalSize, percent, count } = computeTotalProgress(transfers)
+```
+
+### Progress Event Structure
+
+The `upload:progress` and `download:progress` events contain a `progress` object:
+
+```typescript
+interface TransferProgress {
+  kind: "upload" | "download"  // Type of transfer
+  fileId: string               // ID of file being transferred
+  status: TransferStatus       // Current status (always "inProgress" for progress events)
+  loaded: number               // Bytes transferred so far
+  total: number                // Total bytes to transfer (may be 0 if unknown)
+}
+```
+
+### Vue Example
+
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import {
+  onFileSyncEvent,
+  createActiveTransferProgress,
+  updateActiveTransfers,
+  removeActiveTransfer,
+  computeTotalProgress,
+  type ActiveTransfers
+} from '@livestore-filesync/core'
+
+const activeTransfers = ref<ActiveTransfers>({})
+let unsubscribe: (() => void) | null = null
+
+onMounted(() => {
+  unsubscribe = onFileSyncEvent((event) => {
+    if (event.type === 'upload:progress' || event.type === 'download:progress') {
+      const progress = createActiveTransferProgress(
+        event.fileId,
+        event.progress.kind,
+        event.progress.loaded,
+        event.progress.total
+      )
+      activeTransfers.value = updateActiveTransfers(activeTransfers.value, progress)
+    } else if (
+      event.type === 'upload:complete' || event.type === 'upload:error' ||
+      event.type === 'download:complete' || event.type === 'download:error'
+    ) {
+      activeTransfers.value = removeActiveTransfer(activeTransfers.value, event.fileId)
+    }
+  })
+})
+
+onUnmounted(() => unsubscribe?.())
+
+const totalProgress = computed(() => computeTotalProgress(activeTransfers.value))
+</script>
+
+<template>
+  <div v-if="totalProgress.count > 0">
+    Transfer: {{ totalProgress.percent ?? '?' }}%
+    ({{ totalProgress.totalLoaded }}/{{ totalProgress.totalSize }} bytes)
+  </div>
+</template>
+```

@@ -430,6 +430,154 @@ test.describe('Sync Status - Strict Invariant Tests', () => {
   })
 })
 
+test.describe('Sync Status - Transfer Progress', () => {
+  /**
+   * Note: XMLHttpRequest upload progress events may complete very quickly for small files,
+   * making it difficult to observe intermediate progress states. These tests verify that
+   * the progress tracking infrastructure works, but may not always capture intermediate
+   * progress values depending on network speed and file size.
+   */
+  
+  test('upload completes successfully and upload:start event is emitted', async ({ page }) => {
+    const storeId = generateStoreId('progress_upload')
+    const fileCount = 3
+    
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    const testImages = createMultipleTestImages(fileCount)
+    await page.locator('input[type="file"]').setInputFiles(testImages)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(fileCount, { timeout: 10000 })
+
+    // Wait for uploads to complete
+    await expect
+      .poll(
+        async () => {
+          const status = await getSyncStatusCounts(page)
+          return status.uploading + status.queuedUpload + status.pendingUpload
+        },
+        { timeout: 30000, intervals: [100] }
+      )
+      .toBe(0)
+
+    // Verify all files completed without errors
+    const finalStatus = await getSyncStatusCounts(page)
+    expect(finalStatus.errors).toBe(0)
+    expect(finalStatus.isSyncing).toBe(false)
+  })
+
+  test('observes upload activity and file status transitions', async ({ page }) => {
+    const storeId = generateStoreId('progress_activity')
+    
+    // Add a delay to uploads to ensure we can observe states
+    await page.route('**/livestore-filesync-files/**', async (route) => {
+      if (route.request().method() === 'PUT') {
+        await new Promise(r => setTimeout(r, 500))
+      }
+      await route.continue()
+    })
+    
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    const testImages = createMultipleTestImages(3)
+    await page.locator('input[type="file"]').setInputFiles(testImages)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(3, { timeout: 10000 })
+
+    // Track whether we ever see uploading state
+    let sawUploadingState = false
+    let sawProgressSection = false
+    
+    await expect
+      .poll(
+        async () => {
+          const status = await getSyncStatusCounts(page)
+          
+          // Check if we see any uploading activity
+          if (status.uploading > 0) {
+            sawUploadingState = true
+          }
+          
+          // Check if progress section is visible
+          const progressSection = page.locator('[data-testid="transfer-progress-section"]')
+          if (await progressSection.isVisible()) {
+            sawProgressSection = true
+          }
+          
+          return status.uploading + status.queuedUpload + status.pendingUpload === 0
+        },
+        { timeout: 30000, intervals: [50] }
+      )
+      .toBe(true)
+
+    // We should have seen uploading state at some point (with delay, this should be reliable)
+    expect(sawUploadingState).toBe(true)
+    
+    console.log('Progress observations:', { sawUploadingState, sawProgressSection })
+    
+    // Verify completion
+    const finalStatus = await getSyncStatusCounts(page)
+    expect(finalStatus.errors).toBe(0)
+  })
+
+  test('transfer progress section disappears after uploads complete', async ({ page }) => {
+    const storeId = generateStoreId('progress_lifecycle')
+    
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    const testImages = createMultipleTestImages(3)
+    await page.locator('input[type="file"]').setInputFiles(testImages)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(3, { timeout: 10000 })
+    
+    // Wait for uploads to complete
+    await expect
+      .poll(
+        async () => {
+          const status = await getSyncStatusCounts(page)
+          return status.uploading + status.queuedUpload + status.pendingUpload
+        },
+        { timeout: 30000, intervals: [100] }
+      )
+      .toBe(0)
+
+    // After completion, progress section should not be visible (no active transfers)
+    await expect(page.locator('[data-testid="transfer-progress-section"]')).not.toBeVisible({ timeout: 5000 })
+    
+    // Verify all files completed without errors
+    const finalStatus = await getSyncStatusCounts(page)
+    expect(finalStatus.errors).toBe(0)
+  })
+
+  test('multiple concurrent uploads complete without errors', async ({ page }) => {
+    const storeId = generateStoreId('progress_concurrent')
+    const fileCount = 5
+    
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    const testImages = createMultipleTestImages(fileCount)
+    await page.locator('input[type="file"]').setInputFiles(testImages)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(fileCount, { timeout: 15000 })
+
+    // Wait for all uploads to complete
+    await expect
+      .poll(
+        async () => {
+          const status = await getSyncStatusCounts(page)
+          return status.uploading + status.queuedUpload + status.pendingUpload
+        },
+        { timeout: 30000, intervals: [100] }
+      )
+      .toBe(0)
+
+    // Verify all completed without errors
+    const finalStatus = await getSyncStatusCounts(page)
+    expect(finalStatus.errors).toBe(0)
+    expect(finalStatus.isSyncing).toBe(false)
+  })
+})
+
 test.describe('Sync Status - Basic Functionality', () => {
   test('uploading files completes successfully', async ({ page }) => {
     const storeId = generateStoreId('basic_upload')

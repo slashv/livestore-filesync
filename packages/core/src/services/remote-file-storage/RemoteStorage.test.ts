@@ -233,6 +233,133 @@ describe("RemoteStorage", () => {
     })
   })
 
+  describe("progress callbacks", () => {
+    it("should call onProgress during upload with memory storage", async () => {
+      const progressEvents: Array<{ loaded: number; total: number }> = []
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const { service, optionsRef } = yield* createTestStorage()
+          // Set upload delay to trigger progress events
+          yield* Ref.set(optionsRef, { uploadDelayMs: 100 })
+
+          const file = new File(["hello world test content"], "test.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "progress-test")
+
+          yield* service.upload(file, {
+            key,
+            onProgress: (progress) => {
+              progressEvents.push({ loaded: progress.loaded, total: progress.total })
+            }
+          })
+        })
+      )
+
+      // Should have received progress events
+      expect(progressEvents.length).toBeGreaterThan(0)
+      
+      // All progress events should have valid values
+      for (const event of progressEvents) {
+        expect(event.loaded).toBeGreaterThanOrEqual(0)
+        expect(event.total).toBeGreaterThan(0)
+        expect(event.loaded).toBeLessThanOrEqual(event.total)
+      }
+
+      // Last progress event should be at 100%
+      const lastEvent = progressEvents[progressEvents.length - 1]
+      expect(lastEvent.loaded).toBe(lastEvent.total)
+    })
+
+    it("should call onProgress during download with memory storage", async () => {
+      const progressEvents: Array<{ loaded: number; total: number }> = []
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const { service, optionsRef } = yield* createTestStorage()
+          
+          // First upload a file
+          const originalFile = new File(["hello world test content for download"], "test.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "download-progress-test")
+          yield* service.upload(originalFile, { key })
+
+          // Set download delay to trigger progress events
+          yield* Ref.set(optionsRef, { downloadDelayMs: 100 })
+
+          // Download with progress callback
+          yield* service.download(key, {
+            onProgress: (progress) => {
+              progressEvents.push({ loaded: progress.loaded, total: progress.total })
+            }
+          })
+        })
+      )
+
+      // Should have received progress events
+      expect(progressEvents.length).toBeGreaterThan(0)
+      
+      // All progress events should have valid values
+      for (const event of progressEvents) {
+        expect(event.loaded).toBeGreaterThanOrEqual(0)
+        expect(event.total).toBeGreaterThan(0)
+        expect(event.loaded).toBeLessThanOrEqual(event.total)
+      }
+
+      // Last progress event should be at 100%
+      const lastEvent = progressEvents[progressEvents.length - 1]
+      expect(lastEvent.loaded).toBe(lastEvent.total)
+    })
+
+    it("should work without onProgress callback", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const { service, optionsRef } = yield* createTestStorage()
+          yield* Ref.set(optionsRef, { uploadDelayMs: 50 })
+
+          const file = new File(["test"], "test.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "no-progress-test")
+
+          // Upload without progress callback
+          yield* service.upload(file, { key })
+          
+          // Download without progress callback
+          yield* Ref.set(optionsRef, { downloadDelayMs: 50 })
+          const downloaded = yield* service.download(key)
+          
+          return yield* Effect.promise(() => downloaded.text())
+        })
+      )
+
+      expect(result).toBe("test")
+    })
+
+    it("should report progress with increasing loaded values", async () => {
+      const progressEvents: Array<{ loaded: number; total: number }> = []
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const { service, optionsRef } = yield* createTestStorage()
+          yield* Ref.set(optionsRef, { uploadDelayMs: 200 })
+
+          const content = "x".repeat(1000) // Create a larger file
+          const file = new File([content], "large.txt", { type: "text/plain" })
+          const key = makeStoredPath("store-1", "increasing-progress")
+
+          yield* service.upload(file, {
+            key,
+            onProgress: (progress) => {
+              progressEvents.push({ loaded: progress.loaded, total: progress.total })
+            }
+          })
+        })
+      )
+
+      // Verify loaded values are monotonically increasing
+      for (let i = 1; i < progressEvents.length; i++) {
+        expect(progressEvents[i].loaded).toBeGreaterThanOrEqual(progressEvents[i - 1].loaded)
+      }
+    })
+  })
+
   describe("HTTP adapter", () => {
     const originalFetch = globalThis.fetch
 
@@ -300,6 +427,7 @@ describe("RemoteStorage", () => {
         if (String(url) === "https://s3.local/get-url") {
           return {
             ok: true,
+            headers: new Headers({ "Content-Type": "text/plain", "Content-Length": "8" }),
             blob: async () => new Blob(["download"], { type: "text/plain" })
           } as Response
         }

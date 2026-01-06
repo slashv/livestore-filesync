@@ -302,7 +302,24 @@ export const makeFileSync = (
           return yield* Effect.fail(error)
         }
 
-        const downloadedFile = yield* remoteStorage.download(file.remoteKey)
+        const downloadedFile = yield* remoteStorage.download(file.remoteKey, {
+          onProgress: (progress) => {
+            // Fire-and-forget progress event - don't block the download
+            Effect.runFork(
+              emit({
+                type: "download:progress",
+                fileId,
+                progress: {
+                  kind: "download",
+                  fileId,
+                  status: "inProgress",
+                  loaded: progress.loaded,
+                  total: progress.total
+                }
+              })
+            )
+          }
+        })
         yield* localStorage.writeFile(file.path, downloadedFile)
         const localHash = yield* hashFile(downloadedFile)
 
@@ -351,7 +368,25 @@ export const makeFileSync = (
 
         const localFile = yield* localStorage.readFile(file.path)
         const remoteKey = stripFilesRoot(file.path)
-        const uploadResult = yield* remoteStorage.upload(localFile, { key: remoteKey })
+        const uploadResult = yield* remoteStorage.upload(localFile, {
+          key: remoteKey,
+          onProgress: (progress) => {
+            // Fire-and-forget progress event - don't block the upload
+            Effect.runFork(
+              emit({
+                type: "upload:progress",
+                fileId,
+                progress: {
+                  kind: "upload",
+                  fileId,
+                  status: "inProgress",
+                  loaded: progress.loaded,
+                  total: progress.total
+                }
+              })
+            )
+          }
+        })
 
         const latestFile = yield* getFile(fileId)
         if (!latestFile || latestFile.deletedAt) {

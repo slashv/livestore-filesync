@@ -149,7 +149,13 @@ export const initFileSync = (
     schema,
     remote,
     fileSystem: config.fileSystem,
-    ...(config.options ? { options: config.options } : {})
+    options: {
+      ...config.options,
+      onEvent: (event) => {
+        config.options?.onEvent?.(event)
+        _broadcastEvent(event)
+      }
+    }
   })
 
   // Auto-start by default
@@ -187,3 +193,43 @@ export const getFileUrl = (path: string) => requireFileSync().getFileUrl(path)
 export const resolveFileUrl = (fileId: string) => requireFileSync().resolveFileUrl(fileId)
 export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
+
+// Event subscription storage
+const eventListeners: Set<(event: import("../types/index.js").FileSyncEvent) => void> = new Set()
+
+/**
+ * Subscribe to file sync events.
+ * Returns an unsubscribe function.
+ * 
+ * @example
+ * ```typescript
+ * import { onFileSyncEvent, createActiveTransferProgress, updateActiveTransfers } from '@livestore-filesync/core'
+ * 
+ * let transfers = {}
+ * const unsub = onFileSyncEvent((event) => {
+ *   if (event.type === 'upload:progress') {
+ *     const progress = createActiveTransferProgress(
+ *       event.fileId, 'upload',
+ *       event.progress.loaded, event.progress.total
+ *     )
+ *     transfers = updateActiveTransfers(transfers, progress)
+ *   }
+ * })
+ * ```
+ */
+export const onFileSyncEvent = (
+  callback: (event: import("../types/index.js").FileSyncEvent) => void
+): (() => void) => {
+  eventListeners.add(callback)
+  return () => {
+    eventListeners.delete(callback)
+  }
+}
+
+// Internal function to broadcast events to all listeners
+// This is wired up during initFileSync
+export const _broadcastEvent = (event: import("../types/index.js").FileSyncEvent): void => {
+  for (const listener of eventListeners) {
+    listener(event)
+  }
+}

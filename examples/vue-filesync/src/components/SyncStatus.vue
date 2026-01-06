@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
-import { getSyncStatus } from '@livestore-filesync/core'
+import {
+  getSyncStatus,
+  onFileSyncEvent,
+  createActiveTransferProgress,
+  updateActiveTransfers,
+  removeActiveTransfer,
+  computeTotalProgress,
+  type ActiveTransfers
+} from '@livestore-filesync/core'
 import { tables } from '../livestore/schema'
 
 const { store } = useStore()
@@ -10,6 +18,43 @@ const { localFiles } = store.useClientDocument(tables.localFileState)
 const syncStatus = computed(() => {
   return getSyncStatus(localFiles.value ?? {})
 })
+
+// Track active transfer progress
+const activeTransfers = ref<ActiveTransfers>({})
+
+// Subscribe to file sync events for progress tracking
+let unsubscribe: (() => void) | null = null
+
+onMounted(() => {
+  unsubscribe = onFileSyncEvent((event) => {
+    if (event.type === 'upload:progress' || event.type === 'download:progress') {
+      const progress = createActiveTransferProgress(
+        event.fileId,
+        event.progress.kind,
+        event.progress.loaded,
+        event.progress.total
+      )
+      activeTransfers.value = updateActiveTransfers(activeTransfers.value, progress)
+    } else if (
+      event.type === 'upload:complete' ||
+      event.type === 'upload:error' ||
+      event.type === 'download:complete' ||
+      event.type === 'download:error'
+    ) {
+      activeTransfers.value = removeActiveTransfer(activeTransfers.value, event.fileId)
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubscribe?.()
+})
+
+// Computed total progress
+const totalProgress = computed(() => computeTotalProgress(activeTransfers.value))
+
+// List of active transfers for display
+const activeTransfersList = computed(() => Object.values(activeTransfers.value))
 </script>
 
 <template>
@@ -62,6 +107,22 @@ const syncStatus = computed(() => {
         </tr>
       </tbody>
     </table>
+
+    <template v-if="totalProgress.count > 0">
+      <h4>Transfer Progress</h4>
+      <div data-testid="transfer-progress-section">
+        <div data-testid="transfer-progress-total">
+          Total: {{ totalProgress.percent !== null ? totalProgress.percent + '%' : 'calculating...' }}
+          ({{ totalProgress.totalLoaded }} / {{ totalProgress.totalSize }} bytes, {{ totalProgress.count }} transfers)
+        </div>
+        <div v-for="transfer in activeTransfersList" :key="transfer.fileId" class="transfer-item" data-testid="transfer-progress-item">
+          <span data-testid="transfer-file-id">{{ transfer.fileId.slice(0, 8) }}...</span>
+          <span data-testid="transfer-kind">{{ transfer.kind }}</span>
+          <span data-testid="transfer-percent">{{ transfer.percent !== null ? transfer.percent + '%' : '?' }}</span>
+          <span data-testid="transfer-bytes">({{ transfer.loaded }}/{{ transfer.total }})</span>
+        </div>
+      </div>
+    </template>
 
     <template v-if="syncStatus.uploadingFileIds.length > 0">
       <h4>Uploading Files</h4>
@@ -163,5 +224,16 @@ ul {
 li {
   padding: 2px 0;
   word-break: break-all;
+}
+
+.transfer-item {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.transfer-item span {
+  white-space: nowrap;
 }
 </style>

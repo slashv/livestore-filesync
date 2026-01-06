@@ -191,6 +191,32 @@ export interface SyncStatus {
 }
 
 // ============================================
+// Transfer Progress Types
+// ============================================
+
+/**
+ * Active transfer progress for a single file
+ * This tracks the byte-level progress of an ongoing upload or download.
+ */
+export interface ActiveTransferProgress {
+  /** File ID being transferred */
+  readonly fileId: string
+  /** Whether this is an upload or download */
+  readonly kind: "upload" | "download"
+  /** Bytes transferred so far */
+  readonly loaded: number
+  /** Total bytes to transfer (may be 0 if unknown) */
+  readonly total: number
+  /** Progress percentage (0-100), or null if total is unknown */
+  readonly percent: number | null
+}
+
+/**
+ * Map of file IDs to their active transfer progress
+ */
+export type ActiveTransfers = Readonly<Record<string, ActiveTransferProgress>>
+
+// ============================================
 // Display State Utilities
 // ============================================
 
