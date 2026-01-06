@@ -96,8 +96,29 @@ const resolveLocalFileUrl = (root: string | undefined, storedPath: string): stri
   return `file://${fullPath}`
 }
 
+/**
+ * FileStorage configuration
+ */
+export interface FileStorageConfig {
+  /**
+   * Automatically prioritize downloads when resolving file URLs.
+   * When true, calling getFileUrl for a file that's queued for download
+   * will move it to the front of the download queue.
+   * @default true
+   */
+  readonly autoPrioritizeOnResolve?: boolean
+}
+
+/**
+ * Default FileStorage configuration
+ */
+export const defaultFileStorageConfig: FileStorageConfig = {
+  autoPrioritizeOnResolve: true
+}
+
 export const makeFileStorage = (
-  deps: LiveStoreDeps
+  deps: LiveStoreDeps,
+  config: FileStorageConfig = defaultFileStorageConfig
 ): Effect.Effect<FileStorageService, never, LocalFileStorage | RemoteStorage | FileSync> =>
   Effect.gen(function* () {
     const localStorage = yield* LocalFileStorage
@@ -274,6 +295,13 @@ export const makeFileStorage = (
           }
         }
 
+        // Auto-prioritize download if file is queued and config allows
+        if (config.autoPrioritizeOnResolve !== false) {
+          if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
+            yield* fileSync.prioritizeDownload(fileId)
+          }
+        }
+
         // Fall back to remote URL when present (minted on demand)
         if (!file.remoteKey) return null
         return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
@@ -299,6 +327,7 @@ export const makeFileStorage = (
  * Create a Layer for FileStorage
  */
 export const FileStorageLive = (
-  deps: LiveStoreDeps
+  deps: LiveStoreDeps,
+  config: FileStorageConfig = defaultFileStorageConfig
 ): Layer.Layer<FileStorage, never, LocalFileStorage | RemoteStorage | FileSync> =>
-  Layer.effect(FileStorage, makeFileStorage(deps))
+  Layer.effect(FileStorage, makeFileStorage(deps, config))

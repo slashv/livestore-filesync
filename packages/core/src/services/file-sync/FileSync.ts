@@ -62,6 +62,12 @@ export interface FileSyncService {
   ) => Effect.Effect<void>
 
   /**
+   * Prioritize download of a specific file.
+   * Moves the file to the front of the download queue if it's pending.
+   */
+  readonly prioritizeDownload: (fileId: string) => Effect.Effect<void>
+
+  /**
    * Set online/offline status
    */
   readonly setOnline: (online: boolean) => Effect.Effect<void>
@@ -811,11 +817,15 @@ export const makeFileSync = (
 
     const getLocalFilesState = (): Effect.Effect<LocalFilesState> => stateManager.getState()
 
+    const prioritizeDownload = (fileId: string): Effect.Effect<void> =>
+      executor.prioritizeDownload(fileId)
+
     return {
       start,
       stop,
       syncNow,
       markLocalFileChanged,
+      prioritizeDownload,
       setOnline,
       isOnline,
       onEvent,

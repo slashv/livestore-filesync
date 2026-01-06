@@ -370,4 +370,132 @@ describe("SyncExecutor", () => {
       )
     })
   })
+
+  describe("prioritizeDownload", () => {
+    it("should process prioritized downloads before normal queue", async () => {
+      const processed: string[] = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          // Use a slower handler to ensure ordering can be observed
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("5 millis")
+                processed.push(`${kind}:${fileId}`)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.start()
+
+          // Enqueue normal files
+          yield* executor.enqueueDownload("normal1")
+          yield* executor.enqueueDownload("normal2")
+          yield* executor.enqueueDownload("normal3")
+
+          // Prioritize normal3 - should be processed before normal1 and normal2
+          yield* executor.prioritizeDownload("normal3")
+
+          // Resume processing
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          // normal3 should appear before normal1 and normal2
+          const normal1Index = processed.indexOf("download:normal1")
+          const normal2Index = processed.indexOf("download:normal2")
+          const normal3Index = processed.indexOf("download:normal3")
+
+          expect(normal3Index).toBeLessThan(normal1Index)
+          expect(normal3Index).toBeLessThan(normal2Index)
+        })
+      )
+    })
+
+    it("should not duplicate downloads when same file is in both queues", async () => {
+      const processCount = await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            () => Ref.update(countRef, (n) => n + 1),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.start()
+
+          // Enqueue file1 to normal queue
+          yield* executor.enqueueDownload("file1")
+
+          // Prioritize file1 - now it's in both queues
+          yield* executor.prioritizeDownload("file1")
+
+          // Resume processing
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          return yield* Ref.get(countRef)
+        })
+      )
+
+      // file1 should only be processed once
+      expect(processCount).toBe(1)
+    })
+
+    it("should be a no-op if file is not queued", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.void,
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Prioritize a file that was never enqueued - should not throw
+          yield* executor.prioritizeDownload("non-existent")
+
+          yield* executor.awaitIdle()
+        })
+      )
+    })
+
+    it("should be a no-op if file is already prioritized", async () => {
+      const processed: string[] = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("5 millis")
+                processed.push(`${kind}:${fileId}`)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.start()
+
+          yield* executor.enqueueDownload("file1")
+
+          // Prioritize twice - should only add once to high priority queue
+          yield* executor.prioritizeDownload("file1")
+          yield* executor.prioritizeDownload("file1")
+
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          // file1 should only appear once
+          const occurrences = processed.filter((p) => p === "download:file1").length
+          expect(occurrences).toBe(1)
+        })
+      )
+    })
+  })
 })

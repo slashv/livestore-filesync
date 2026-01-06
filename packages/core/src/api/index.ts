@@ -32,6 +32,7 @@ export {
   readFile,
   getFileUrl,
   resolveFileUrl,
+  prioritizeDownload,
   isOnline,
   triggerSync,
   onFileSyncEvent,

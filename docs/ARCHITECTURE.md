@@ -558,3 +558,94 @@ For most use cases, this implementation detail is transparent. However, be aware
 
 - XHR uploads may behave slightly differently in edge cases (e.g., timeout handling)
 - Streaming downloads accumulate chunks in memory before creating the final Blob
+
+## Download Prioritization
+
+When syncing files from remote storage, the default behavior downloads all files in FIFO order.
+However, applications often need to prioritize visible/needed files over background downloads.
+FileSync provides automatic and manual prioritization mechanisms.
+
+**Important:** Download prioritization only works with the `resolveFileUrl()` approach, not with
+the service worker approach. The service worker operates independently and fetches files on-demand
+when the browser requests them, bypassing the download queue entirely.
+
+### Automatic Prioritization (resolveFileUrl only)
+
+By default, when `resolveFileUrl(fileId)` is called for a file that's queued for download,
+that file is automatically moved to the front of the download queue. This means files that
+are being displayed get downloaded first.
+
+```typescript
+// When rendering a gallery, visible images get priority automatically
+const ImageCard = ({ file }) => {
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    // This call automatically prioritizes the download if queued
+    resolveFileUrl(file.id).then(setUrl)
+  }, [file.id])
+
+  return <img src={url ?? placeholderUrl} />
+}
+```
+
+This behavior can be disabled via configuration:
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    autoPrioritizeOnResolve: false  // Disable auto-prioritization
+  }
+})
+```
+
+### Manual Prioritization
+
+For cases where you want explicit control (e.g., preloading the next page), use
+`prioritizeDownload()`:
+
+```typescript
+import { prioritizeDownload } from '@livestore-filesync/core'
+
+// Preload files for the next page while user is on current page
+const preloadNextPage = (fileIds: string[]) => {
+  for (const id of fileIds) {
+    prioritizeDownload(id)
+  }
+}
+```
+
+### Service Worker vs resolveFileUrl
+
+The two URL resolution approaches have different download behaviors:
+
+| Aspect | Service Worker | resolveFileUrl() |
+|--------|----------------|------------------|
+| **Download trigger** | On-demand when browser requests file | Background sync loop |
+| **Prioritization** | N/A (immediate fetch) | Yes (queue-based) |
+| **Queue integration** | None (bypasses queue) | Full integration |
+| **Best for** | Simple apps, immediate display | Large galleries, controlled loading |
+
+If you need download prioritization (e.g., for a photo gallery where visible images should
+load first), use `resolveFileUrl()`. If you prefer simpler component code and don't need
+queue control, use the service worker.
+
+### Implementation Details
+
+The download queue uses a two-queue priority system:
+
+1. **High priority queue**: Processed first, populated by `prioritizeDownload()` calls
+2. **Normal queue**: Standard FIFO queue, populated by the sync reconciliation loop
+
+The worker always drains the high priority queue before processing the normal queue.
+Deduplication ensures files aren't downloaded twice if they appear in both queues.
+
+When prioritizing a file:
+- If the file is already downloaded or in-flight, the call is a no-op
+- If the file is already in the high priority queue, the call is a no-op
+- If the file is in the normal queue, it's added to the high priority queue
+  (the normal queue entry is skipped later via deduplication)
+
+This approach provides O(1) prioritization without rebuilding the queue.

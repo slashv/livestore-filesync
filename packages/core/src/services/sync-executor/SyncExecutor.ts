@@ -106,6 +106,13 @@ export interface SyncExecutorService {
   readonly enqueueUpload: (fileId: string) => Effect.Effect<void>
 
   /**
+   * Prioritize a download - moves it to high priority queue.
+   * If already queued in normal queue, it will be processed from high priority first.
+   * If already in high priority, inflight, or processed, this is a no-op.
+   */
+  readonly prioritizeDownload: (fileId: string) => Effect.Effect<void>
+
+  /**
    * Pause processing (e.g., when going offline)
    */
   readonly pause: () => Effect.Effect<void>
@@ -167,6 +174,8 @@ export const makeSyncExecutor = (
 ): Effect.Effect<SyncExecutorService, never, Scope.Scope> =>
   Effect.gen(function*() {
     // Create queues for downloads and uploads
+    // Downloads use two queues: high priority (processed first) and normal
+    const highPriorityDownloadQueue = yield* Queue.unbounded<string>()
     const downloadQueue = yield* Queue.unbounded<string>()
     const uploadQueue = yield* Queue.unbounded<string>()
 
@@ -178,8 +187,12 @@ export const makeSyncExecutor = (
     })
 
     // Track queued file IDs to avoid duplicates
+    const highPriorityDownloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
     const downloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
     const uploadQueuedSet = yield* Ref.make<Set<string>>(new Set())
+
+    // Track processed downloads to skip duplicates when same file is in both queues
+    const downloadProcessedSet = yield* Ref.make<Set<string>>(new Set())
 
     // Signal for idle waiting
     const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
@@ -194,15 +207,21 @@ export const makeSyncExecutor = (
     // Check if we're idle and signal if needed
     const checkIdle = Effect.gen(function*() {
       const state = yield* Ref.get(stateRef)
+      const highPriorityDownloadQueueSize = yield* Queue.size(highPriorityDownloadQueue)
       const downloadQueueSize = yield* Queue.size(downloadQueue)
       const uploadQueueSize = yield* Queue.size(uploadQueue)
 
       if (
         state.downloadsInflight === 0 &&
         state.uploadsInflight === 0 &&
+        highPriorityDownloadQueueSize === 0 &&
         downloadQueueSize === 0 &&
         uploadQueueSize === 0
       ) {
+        // Clear processed set when idle to avoid unbounded memory growth
+        yield* Ref.set(downloadProcessedSet, new Set())
+        yield* Ref.set(highPriorityDownloadQueuedSet, new Set())
+
         const maybeDeferred = yield* Ref.get(idleDeferred)
         if (Option.isSome(maybeDeferred)) {
           yield* Deferred.succeed(maybeDeferred.value, undefined)
@@ -224,13 +243,30 @@ export const makeSyncExecutor = (
           uploadsInflight: kind === "upload" ? s.uploadsInflight + 1 : s.uploadsInflight
         }))
 
-        // Remove from queued set
-        const queuedSet = kind === "download" ? downloadQueuedSet : uploadQueuedSet
-        yield* Ref.update(queuedSet, (set) => {
-          const newSet = new Set(set)
-          newSet.delete(fileId)
-          return newSet
-        })
+        // Remove from queued sets and mark as processed for downloads
+        if (kind === "download") {
+          yield* Ref.update(downloadQueuedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.delete(fileId)
+            return newSet
+          })
+          yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.delete(fileId)
+            return newSet
+          })
+          yield* Ref.update(downloadProcessedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.add(fileId)
+            return newSet
+          })
+        } else {
+          yield* Ref.update(uploadQueuedSet, (set) => {
+            const newSet = new Set(set)
+            newSet.delete(fileId)
+            return newSet
+          })
+        }
 
         // Execute with retry
         const result = yield* handler(kind, fileId).pipe(
@@ -254,70 +290,97 @@ export const makeSyncExecutor = (
         return result
       })
 
-    // Worker that processes a queue
-    const createWorker = (
-      kind: TransferKind,
-      queue: Queue.Queue<string>,
-      getMaxConcurrent: () => number,
-      getInflight: (state: ExecutorState) => number
-    ): Effect.Effect<void, never, Scope.Scope> =>
+    // Worker that processes uploads (single queue)
+    const createUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Process loop
         const processLoop: Effect.Effect<void> = Effect.gen(function*() {
           // Check if paused
           const state = yield* Ref.get(stateRef)
           if (state.paused) {
-            // Wait a bit and retry
             yield* Effect.sleep(Duration.millis(100))
             return
           }
 
           // Check if we can start more tasks
-          const currentInflight = getInflight(state)
-          if (currentInflight >= getMaxConcurrent()) {
-            // Wait a bit and retry
+          if (state.uploadsInflight >= config.maxConcurrentUploads) {
             yield* Effect.sleep(Duration.millis(50))
             return
           }
 
           // Try to get a task from the queue (non-blocking)
-          const maybeFileId = yield* Queue.poll(queue)
+          const maybeFileId = yield* Queue.poll(uploadQueue)
           if (Option.isNone(maybeFileId)) {
-            // Queue is empty, wait a bit
             yield* Effect.sleep(Duration.millis(100))
             return
           }
 
           // Process the task in the background
-          yield* Effect.fork(processTask(kind, maybeFileId.value))
+          yield* Effect.fork(processTask("upload", maybeFileId.value))
         })
 
-        // Run the process loop forever
+        yield* Effect.forever(processLoop).pipe(Effect.interruptible)
+      })
+
+    // Worker that processes downloads with priority (high priority queue first)
+    const createDownloadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        const processLoop: Effect.Effect<void> = Effect.gen(function*() {
+          // Check if paused
+          const state = yield* Ref.get(stateRef)
+          if (state.paused) {
+            yield* Effect.sleep(Duration.millis(100))
+            return
+          }
+
+          // Check if we can start more tasks
+          if (state.downloadsInflight >= config.maxConcurrentDownloads) {
+            yield* Effect.sleep(Duration.millis(50))
+            return
+          }
+
+          // Try high priority queue first
+          const maybeHighPriority = yield* Queue.poll(highPriorityDownloadQueue)
+          if (Option.isSome(maybeHighPriority)) {
+            const fileId = maybeHighPriority.value
+            // Check if already processed (could happen if file was in both queues)
+            const processed = yield* Ref.get(downloadProcessedSet)
+            if (!processed.has(fileId)) {
+              yield* Effect.fork(processTask("download", fileId))
+            } else {
+              // Item was skipped - check if we're idle now
+              yield* checkIdle
+            }
+            return
+          }
+
+          // Fall back to normal queue
+          const maybeNormal = yield* Queue.poll(downloadQueue)
+          if (Option.isSome(maybeNormal)) {
+            const fileId = maybeNormal.value
+            // Check if already processed via high priority queue
+            const processed = yield* Ref.get(downloadProcessedSet)
+            if (!processed.has(fileId)) {
+              yield* Effect.fork(processTask("download", fileId))
+            } else {
+              // Item was skipped - check if we're idle now
+              yield* checkIdle
+            }
+            return
+          }
+
+          // Both queues empty, wait a bit
+          yield* Effect.sleep(Duration.millis(100))
+        })
+
         yield* Effect.forever(processLoop).pipe(Effect.interruptible)
       })
 
     // Start workers
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Create download workers
-        const downloadWorker = createWorker(
-          "download",
-          downloadQueue,
-          () => config.maxConcurrentDownloads,
-          (s) => s.downloadsInflight
-        )
-
-        // Create upload workers
-        const uploadWorker = createWorker(
-          "upload",
-          uploadQueue,
-          () => config.maxConcurrentUploads,
-          (s) => s.uploadsInflight
-        )
-
-        // Fork both workers
-        yield* Effect.forkScoped(downloadWorker)
-        yield* Effect.forkScoped(uploadWorker)
+        // Fork download and upload workers
+        yield* Effect.forkScoped(createDownloadWorker())
+        yield* Effect.forkScoped(createUploadWorker())
       })
 
     const enqueueDownload = (fileId: string): Effect.Effect<void> =>
@@ -346,6 +409,32 @@ export const makeSyncExecutor = (
         }
       })
 
+    const prioritizeDownload = (fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        // Check if already processed or in high priority queue
+        const processed = yield* Ref.get(downloadProcessedSet)
+        if (processed.has(fileId)) return
+
+        const highQueued = yield* Ref.get(highPriorityDownloadQueuedSet)
+        if (highQueued.has(fileId)) return
+
+        // Check if file is actually queued in normal queue (otherwise nothing to prioritize)
+        const normalQueued = yield* Ref.get(downloadQueuedSet)
+        if (!normalQueued.has(fileId)) return
+
+        // Add to high priority queue
+        yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return newSet
+        })
+        yield* Queue.offer(highPriorityDownloadQueue, fileId)
+
+        // Note: We don't remove from normal queue since Effect Queue doesn't support removal.
+        // The worker will skip it when it reaches it in the normal queue because
+        // it will already be in the downloadProcessedSet by then.
+      })
+
     const pause = (): Effect.Effect<void> =>
       Ref.update(stateRef, (s) => ({ ...s, paused: true }))
 
@@ -364,21 +453,33 @@ export const makeSyncExecutor = (
       )
 
     const getQueuedCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
-      Effect.all({
-        downloads: Queue.size(downloadQueue),
-        uploads: Queue.size(uploadQueue)
+      Effect.gen(function*() {
+        // Use the queued sets for accurate counts (they track unique file IDs)
+        const highPriorityQueued = yield* Ref.get(highPriorityDownloadQueuedSet)
+        const normalQueued = yield* Ref.get(downloadQueuedSet)
+        const uploadsQueued = yield* Ref.get(uploadQueuedSet)
+
+        // Union of both download sets to avoid double-counting
+        const allDownloadIds = new Set([...highPriorityQueued, ...normalQueued])
+
+        return {
+          downloads: allDownloadIds.size,
+          uploads: uploadsQueued.size
+        }
       })
 
     const awaitIdle = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Check if already idle
         const state = yield* Ref.get(stateRef)
+        const highPriorityDownloadQueueSize = yield* Queue.size(highPriorityDownloadQueue)
         const downloadQueueSize = yield* Queue.size(downloadQueue)
         const uploadQueueSize = yield* Queue.size(uploadQueue)
 
         if (
           state.downloadsInflight === 0 &&
           state.uploadsInflight === 0 &&
+          highPriorityDownloadQueueSize === 0 &&
           downloadQueueSize === 0 &&
           uploadQueueSize === 0
         ) {
@@ -396,6 +497,7 @@ export const makeSyncExecutor = (
     return {
       enqueueDownload,
       enqueueUpload,
+      prioritizeDownload,
       pause,
       resume,
       isPaused,

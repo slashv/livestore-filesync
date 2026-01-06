@@ -191,6 +191,7 @@ export const deleteFile = (fileId: string) => requireFileSync().deleteFile(fileI
 export const readFile = (path: string) => requireFileSync().readFile(path)
 export const getFileUrl = (path: string) => requireFileSync().getFileUrl(path)
 export const resolveFileUrl = (fileId: string) => requireFileSync().resolveFileUrl(fileId)
+export const prioritizeDownload = (fileId: string) => requireFileSync().prioritizeDownload(fileId)
 export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
 

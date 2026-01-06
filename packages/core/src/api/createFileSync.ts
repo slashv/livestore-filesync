@@ -100,6 +100,13 @@ export interface CreateFileSyncConfig {
     healthCheckIntervalMs?: number
     gcDelayMs?: number
     onEvent?: (event: SyncEvent) => void
+    /**
+     * Automatically prioritize downloads when resolving file URLs.
+     * When true (default), calling resolveFileUrl for a file that's queued for download
+     * will move it to the front of the download queue.
+     * @default true
+     */
+    autoPrioritizeOnResolve?: boolean
   }
 }
 
@@ -130,6 +137,12 @@ export interface FileSyncInstance {
 
   /** Resolve a file URL with local->remote fallback by file ID */
   resolveFileUrl: (fileId: string) => Promise<string | null>
+
+  /**
+   * Prioritize download of a specific file.
+   * Moves the file to the front of the download queue if it's pending/queued.
+   */
+  prioritizeDownload: (fileId: string) => Promise<void>
 
   /** Check if currently online */
   isOnline: () => boolean
@@ -246,7 +259,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const FileSyncLayer = Layer.provide(BaseLayer)(FileSyncLive(deps, fileSyncConfig))
   const FileStorageLayer = Layer.provide(Layer.mergeAll(BaseLayer, FileSyncLayer))(
-    FileStorageLive(deps)
+    FileStorageLive(deps, { autoPrioritizeOnResolve: options.autoPrioritizeOnResolve ?? true })
   )
 
   const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
@@ -379,6 +392,11 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     return runEffect(fileStorage.getFileUrl(fileId))
   }
 
+  const prioritizeDownload = async (fileId: string): Promise<void> => {
+    const fileSync = await getFileSyncService()
+    return runEffect(fileSync.prioritizeDownload(fileId))
+  }
+
   const triggerSync = () => {
     void (async () => {
       const fileSync = await getFileSyncService()
@@ -402,6 +420,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     readFile,
     getFileUrl,
     resolveFileUrl,
+    prioritizeDownload,
     isOnline: () => online,
     triggerSync,
     dispose

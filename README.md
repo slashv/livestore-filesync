@@ -149,11 +149,20 @@ Requires S3 credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SEC
 
 ## File URL Resolution
 
-There are two ways to resolve file URLs in the browser:
+There are two ways to resolve file URLs in the browser, each with different trade-offs:
 
-### Option 1: Service Worker (simpler component code if targeting browser)
+| | Service Worker | resolveFileUrl() |
+|---|---|---|
+| **Component code** | Simpler (`<img src={file.path}>`) | Requires async URL resolution |
+| **Download prioritization** | No (on-demand fetching) | Yes (auto-prioritizes visible files) |
+| **Setup complexity** | Requires SW registration | No extra setup |
+| **Best for** | Simple apps, fewer files | Galleries, lazy-loaded content |
+
+### Option 1: Service Worker (simpler component code)
 
 The service worker intercepts requests to `/livestore-filesync-files/*` and serves files from OPFS, falling back to remote storage. This lets you use `file.path` directly as an image src.
+
+**Note:** The service worker fetches files on-demand when requested, bypassing the download queue. This means download prioritization is not available with this approach — files are fetched immediately when the browser requests them.
 
 **Setup:**
 
@@ -180,9 +189,9 @@ await initServiceWorker({ authToken })
 
 The bundled service worker works in all browsers including Firefox. See `examples/react-filesync` for a complete implementation.
 
-### Option 2: resolveFileUrl() (no service worker needed)
+### Option 2: resolveFileUrl() (with download prioritization)
 
-If you prefer not to use a service worker, use `resolveFileUrl()` to get a URL for each file. This returns a signed remote URL.
+Use `resolveFileUrl()` to get a URL for each file. This approach integrates with the download queue and automatically prioritizes files that are being displayed.
 
 ```typescript
 import { resolveFileUrl } from '@livestore-filesync/core'
@@ -190,6 +199,8 @@ import { resolveFileUrl } from '@livestore-filesync/core'
 const url = await resolveFileUrl(file.id)
 // Use url in your component
 ```
+
+**Automatic prioritization:** When `resolveFileUrl()` is called for a file that's queued for download, that file is automatically moved to the front of the queue. This ensures visible files are downloaded before background files.
 
 See `examples/vue-filesync` for this approach.
 
