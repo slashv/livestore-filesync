@@ -8,6 +8,8 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 - **Background sync**: Sync engine runs in background to automatically upload and download files between clients and keep track of state.
 
+- **Pluggable filesystems**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem. Use cloudflare R2 or any S3 compatible remote storage service.
+
 ## Packages
 
 | Package | Description |
@@ -62,10 +64,10 @@ const dispose = initFileSync(store, {
 ### 3. Use the API
 
 ```typescript
-import { saveFile, getFileUrl } from '@livestore-filesync/core'
+import { saveFile, resolveFileUrl } from '@livestore-filesync/core'
 
 const result = await saveFile(file)
-const url = await getFileUrl(result.fileId)
+const url = await resolveFileUrl(result.fileId)
 ```
 
 See `examples/` for complete implementations:
