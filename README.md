@@ -6,9 +6,10 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 - **Content-Addressable Storage (CAS)**: Files are named by their hash which avoids duplicated content and allows for automatic change detection.
 
-- **Background sync**: Sync engine runs in background to automatically upload and download files between clients and keep track of state.
+- **Effect Platform Filesystem**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem.
 
-- **Pluggable filesystems**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem. Use cloudflare R2 or any S3 compatible service for the remote storage.
+- **R2 and S3 remote storage**: Built in support for Cloudflare R2 and any S3 compatible remote storage service.
+
 
 ## Packages
 
@@ -77,7 +78,7 @@ See `examples/` for complete implementations:
 
 ## Filesystem Adapters
 
-The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. An OPFS adapter is provided and recommended as most suitable for browsers since Effects Platform browser doesn't support it yet.
+The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. An OPFS adapter is provided and recommended for browsers since Effects Platform Browser does not support it yet.
 
 **Browser (OPFS)**: Use the provided `@livestore-filesync/opfs` package:
 ```typescript
