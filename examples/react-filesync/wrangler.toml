@@ -1,9 +1,12 @@
 name = "livestore-filesync-react-example"
-main = "src/cf-worker/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
+main = "src/cf-worker/index.r2.ts"
+# main = "src/cf-worker/index.s3.ts"
+
 # R2 bucket for file storage
+# Comment out this section when using S3 Signer mode
 [[r2_buckets]]
 binding = "FILE_BUCKET"
 bucket_name = "livestore-filesync-dev"

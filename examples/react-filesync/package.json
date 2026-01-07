@@ -5,6 +5,7 @@
   "private": true,
   "dependencies": {
     "@livestore-filesync/r2": "workspace:*",
+    "@livestore-filesync/s3-signer": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/opfs": "workspace:*",
     "@livestore/adapter-web": "catalog:",

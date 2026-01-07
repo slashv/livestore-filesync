@@ -94,14 +94,16 @@ createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 
 ## Backend Storage
 
-The client expects a **signer service** that mints short-lived URLs for uploads/downloads and handles deletes. The API contract:
+The client expects a **signer service** running in a server-side process that mints short-lived URLs for uploads/downloads and handles deletes. In the examples, we leverage the existing LiveStore Cloudflare Worker to host this signer service alongside LiveStore sync — see the `src/cf-worker/` folder in each example for the implementation.
+
+The API contract:
 
 - `GET /health` — Health check
 - `POST /v1/sign/upload` — Returns `{ url, method, headers?, expiresAt }`
 - `POST /v1/sign/download` — Returns `{ url, headers?, expiresAt }`
 - `POST /v1/delete` — Deletes an object (returns 204)
 
-We provide two backend implementations:
+We provide two backend implementations. **To switch between them, update the `main` entry point in your `wrangler.toml`** to point to either `index.r2.ts` or `index.s3.ts` — both files are provided in each example's `cf-worker/` folder:
 
 ### R2 Adapter (`@livestore-filesync/r2`)
 

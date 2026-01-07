@@ -2,28 +2,8 @@ name = "livestore-filesync-vue-example"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
-# =============================================================================
-# Two worker modes available:
-# =============================================================================
-#
-# 1. R2 Gateway mode (default): main = "src/cf-worker/index.r2.ts"
-#    - Handles LiveStore sync + file storage via R2 binding
-#    - Files proxied through Worker
-#    - Simpler setup, works with Wrangler's local R2 emulation
-#    - Requires the [[r2_buckets]] section below
-#
-# 2. S3 Signer mode: main = "src/cf-worker/index.s3.ts"
-#    - Handles LiveStore sync + S3 URL signing
-#    - Files uploaded directly to R2 via presigned URLs (not proxied)
-#    - Higher performance, better for large files
-#    - Requires S3_* environment variables (see .dev.vars.example)
-#    - Requires CORS configured on R2 bucket (see r2-cors.json)
-#    - Comment out the [[r2_buckets]] section (not needed)
-#
-# =============================================================================
-
-# main = "src/cf-worker/index.s3.ts"
 main = "src/cf-worker/index.r2.ts"
+# main = "src/cf-worker/index.s3.ts"
 
 # R2 bucket for file storage (only needed for R2 Gateway mode)
 # Comment out this section when using S3 Signer mode
