@@ -2,7 +2,7 @@
  * FileSync Service
  *
  * Core sync orchestration service that coordinates file synchronization
- * between local OPFS storage and remote storage.
+ * between local storage and remote storage, and provides file CRUD helpers.
  *
  * IMPORTANT: In multi-tab scenarios, only the leader tab runs the sync loop.
  * This prevents race conditions where multiple tabs try to update state
@@ -13,15 +13,18 @@
 
 import type { Scope } from "effect"
 import { Context, Effect, Fiber, Layer, Ref, Stream, SubscriptionRef } from "effect"
+import { StorageError } from "../../errors/index.js"
+import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
 import type {
+  FileOperationResult,
   FileRecord,
   FileSyncEvent,
   FileSyncEventCallback,
   LocalFilesState,
   LocalFilesStateMutable
 } from "../../types/index.js"
-import { hashFile } from "../../utils/index.js"
+import { hashFile, makeStoredPath } from "../../utils/index.js"
 import { makeStoreRoot, stripFilesRoot } from "../../utils/path.js"
 import { LocalFileStateManager } from "../local-file-state/index.js"
 import { LocalFileStorage } from "../local-file-storage/index.js"
@@ -52,6 +55,31 @@ export interface FileSyncService {
    * Manually trigger a sync check
    */
   readonly syncNow: () => Effect.Effect<void>
+
+  /**
+   * Save a new file locally and queue for upload
+   */
+  readonly saveFile: (file: File) => Effect.Effect<FileOperationResult, HashError | StorageError>
+
+  /**
+   * Update an existing file
+   */
+  readonly updateFile: (
+    fileId: string,
+    file: File
+  ) => Effect.Effect<FileOperationResult, Error | HashError | StorageError>
+
+  /**
+   * Delete a file (soft delete in store, cleanup local/remote)
+   */
+  readonly deleteFile: (fileId: string) => Effect.Effect<void>
+
+  /**
+   * Resolve a file URL with local->remote fallback by file ID
+   */
+  readonly resolveFileUrl: (
+    fileId: string
+  ) => Effect.Effect<string | null, StorageError | FileNotFoundError>
 
   /**
    * Mark a local file as changed (triggers upload)
@@ -97,6 +125,22 @@ export class FileSync extends Context.Tag("FileSync")<
   FileSyncService
 >() {}
 
+const isNode = (): boolean => typeof process !== "undefined" && !!process.versions?.node
+
+const resolveLocalFileUrl = (root: string | undefined, storedPath: string): string => {
+  // Build a file:// URL (for Node/Electron main) without node:* imports so bundlers don't externalize node modules in browser builds.
+  const normalize = (value: string): string => value.replace(/\\/g, "/")
+  const normalizedRoot = root ? normalize(root).replace(/\/+$/, "") : ""
+  const rootWithSlash = normalizedRoot
+    ? normalizedRoot.startsWith("/")
+      ? normalizedRoot
+      : `/${normalizedRoot}`
+    : ""
+  const normalizedPath = normalize(storedPath).replace(/^\/+/, "")
+  const fullPath = `${rootWithSlash || ""}/${normalizedPath}`.replace(/\/{2,}/g, "/")
+  return `file://${fullPath}`
+}
+
 /**
  * FileSync configuration
  */
@@ -115,6 +159,14 @@ export interface FileSyncConfig {
    * Cleanup delay for deleted local files (ms)
    */
   readonly gcDelayMs?: number
+
+  /**
+   * Automatically prioritize downloads when resolving file URLs.
+   * When true (default), calling resolveFileUrl for a file that's queued for download
+   * will move it to the front of the download queue.
+   * @default true
+   */
+  readonly autoPrioritizeOnResolve?: boolean
 }
 
 /**
@@ -122,7 +174,8 @@ export interface FileSyncConfig {
  */
 export const defaultFileSyncConfig: FileSyncConfig = {
   healthCheckIntervalMs: 10000,
-  gcDelayMs: 300
+  gcDelayMs: 300,
+  autoPrioritizeOnResolve: true
 }
 
 /**
@@ -191,6 +244,8 @@ export const makeFileSync = (
         return files[0]
       })
 
+    const getLocalFilesState = (): Effect.Effect<LocalFilesState> => stateManager.getState()
+
     const updateFileRemoteKey = (fileId: string, remoteKey: string): Effect.Effect<void> =>
       Effect.sync(() => {
         const files = store.query<Array<FileRecord>>(queryDb(tables.files.where({ id: fileId })))
@@ -205,6 +260,45 @@ export const makeFileSync = (
             updatedAt: new Date()
           })
         )
+      })
+
+    const createFileRecord = (params: { id: string; path: string; contentHash: string }) =>
+      Effect.sync(() => {
+        console.log("createFileRecord file ID:", params.id)
+        store.commit(
+          events.fileCreated({
+            id: params.id,
+            path: params.path,
+            contentHash: params.contentHash,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+        )
+      })
+
+    const updateFileRecord = (params: {
+      id: string
+      path: string
+      contentHash: string
+      remoteKey?: string
+    }) =>
+      Effect.gen(function*() {
+        const file = yield* getFile(params.id)
+        if (!file) return
+        store.commit(
+          events.fileUpdated({
+            id: params.id,
+            path: params.path,
+            remoteKey: params.remoteKey ?? file.remoteKey,
+            contentHash: params.contentHash,
+            updatedAt: new Date()
+          })
+        )
+      })
+
+    const deleteFileRecord = (fileId: string) =>
+      Effect.sync(() => {
+        store.commit(events.fileDeleted({ id: fileId, deletedAt: new Date() }))
       })
 
     // Cleanup deleted local files when idle
@@ -786,6 +880,102 @@ export const makeFileSync = (
         yield* executor.enqueueUpload(fileId)
       })
 
+    const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
+      Effect.gen(function*() {
+        const id = crypto.randomUUID()
+        const contentHash = yield* hashFile(file)
+        const path = makeStoredPath(storeId, contentHash)
+
+        yield* localStorage.writeFile(path, file)
+        yield* createFileRecord({ id, path, contentHash })
+        yield* markLocalFileChanged(id, path, contentHash)
+
+        return { fileId: id, path, contentHash }
+      })
+
+    const updateFile = (
+      fileId: string,
+      file: File
+    ): Effect.Effect<FileOperationResult, Error | HashError | StorageError> =>
+      Effect.gen(function*() {
+        const existingFile = yield* getFile(fileId)
+        if (!existingFile) {
+          return yield* Effect.fail(new Error(`File not found: ${fileId}`))
+        }
+
+        const contentHash = yield* hashFile(file)
+        const path = makeStoredPath(storeId, contentHash)
+
+        if (contentHash !== existingFile.contentHash) {
+          yield* localStorage.writeFile(path, file)
+          yield* updateFileRecord({ id: fileId, path, contentHash, remoteKey: "" })
+
+          if (path !== existingFile.path) {
+            yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
+          }
+
+          if (existingFile.remoteKey) {
+            yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
+          }
+
+          yield* markLocalFileChanged(fileId, path, contentHash)
+        }
+
+        return { fileId, path, contentHash }
+      })
+
+    const deleteFile = (fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const existingFile = yield* getFile(fileId)
+        if (!existingFile) return
+
+        yield* deleteFileRecord(fileId)
+
+        yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
+
+        if (existingFile.remoteKey) {
+          yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
+        }
+      })
+
+    const resolveFileUrl = (
+      fileId: string
+    ): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
+      Effect.gen(function*() {
+        const file = yield* getFile(fileId)
+        if (!file) return null
+
+        const localState = yield* getLocalFilesState()
+        const local = localState[fileId]
+
+        if (local?.localHash) {
+          const exists = yield* localStorage.fileExists(file.path)
+          if (exists) {
+            if (isNode()) {
+              return resolveLocalFileUrl(deps.localPathRoot, file.path)
+            }
+            return yield* localStorage.getFileUrl(file.path)
+          }
+        }
+
+        if (config.autoPrioritizeOnResolve !== false) {
+          if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
+            yield* executor.prioritizeDownload(fileId)
+          }
+        }
+
+        if (!file.remoteKey) return null
+        return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
+          Effect.mapError(
+            (error) =>
+              new StorageError({
+                message: "Failed to resolve remote URL",
+                cause: error
+              })
+          )
+        )
+      })
+
     const setOnline = (online: boolean): Effect.Effect<void> =>
       Effect.gen(function*() {
         const wasOnline = yield* Ref.get(onlineRef)
@@ -816,14 +1006,16 @@ export const makeFileSync = (
       }
     }
 
-    const getLocalFilesState = (): Effect.Effect<LocalFilesState> => stateManager.getState()
-
     const prioritizeDownload = (fileId: string): Effect.Effect<void> => executor.prioritizeDownload(fileId)
 
     return {
       start,
       stop,
       syncNow,
+      saveFile,
+      updateFile,
+      deleteFile,
+      resolveFileUrl,
       markLocalFileChanged,
       prioritizeDownload,
       setOnline,

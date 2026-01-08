@@ -5,8 +5,6 @@ import { describe, expect, it } from "vitest"
 import type { LiveStoreDeps } from "../src/livestore/types.js"
 import { createFileSyncSchema } from "../src/schema/index.js"
 import {
-  FileStorage,
-  FileStorageLive,
   FileSync,
   FileSyncLive,
   LocalFileStateManagerLive,
@@ -16,7 +14,7 @@ import {
 } from "../src/services/index.js"
 import { sanitizeStoreId } from "../src/utils/index.js"
 
-describe("FileStorage remote delete", () => {
+describe("FileSync remote delete", () => {
   it("deletes the remote file if the file is deleted during an in-flight upload", async () => {
     const adapter = makeAdapter({ storage: { type: "in-memory" } })
     const fileSyncSchema = createFileSyncSchema()
@@ -66,20 +64,12 @@ describe("FileStorage remote delete", () => {
         }
       })
     )
-    const FileStorageLayer = Layer.provide(Layer.mergeAll(BaseLayer, FileSyncLayer))(
-      FileStorageLive(deps)
-    )
-    const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
+    const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer)
     const runtime = ManagedRuntime.make(MainLayer)
 
     const fileSync = await runtime.runPromise(
       Effect.gen(function*() {
         return yield* FileSync
-      })
-    )
-    const fileStorage = await runtime.runPromise(
-      Effect.gen(function*() {
-        return yield* FileStorage
       })
     )
 
@@ -99,11 +89,11 @@ describe("FileStorage remote delete", () => {
       })
 
       const file = new File(["hello world"], "hello.txt", { type: "text/plain" })
-      const result = await runtime.runPromise(fileStorage.saveFile(file))
+      const result = await runtime.runPromise(fileSync.saveFile(file))
       targetFileId = result.fileId
 
       await Effect.runPromise(Deferred.await(uploadStarted))
-      await runtime.runPromise(fileStorage.deleteFile(targetFileId))
+      await runtime.runPromise(fileSync.deleteFile(targetFileId))
 
       await Effect.runPromise(Deferred.succeed(allowUpload, undefined))
       await uploadCompleted

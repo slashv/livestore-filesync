@@ -12,3 +12,9 @@ NEVER EDIT FILES IN THE reference FOLDER.
 Use the tasks/ folder for persistent implementation plans. Documents in this folder might not be up to date so only use for historical reference context.
 
 Use the docs/ folder for up to date documentation. If we change any aspects relating to documents in this folder make sure to keep the docs updated.
+
+After completed a task always:
+- Make sure docs are updated to reflect and relevant changes (README.md and docs/ files)
+- Ensure tests pass (pnpm test)
+- Ensure types are correct (pnpm check)
+- Ensure no linting error (pnpm lint / pnpm lint-fix and manually fix any remaining lint issues)

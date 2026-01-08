@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
-import { FileSyncLive } from "../file-sync/index.js"
 import { LocalFileStateManagerLive } from "../local-file-state/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import { RemoteStorageMemory } from "../remote-file-storage/index.js"
-import { FileStorage, FileStorageLive } from "./index.js"
+import { FileSync, FileSyncLive } from "./index.js"
 
 const createRuntime = (deps: Parameters<typeof FileSyncLive>[0]) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
@@ -24,19 +23,16 @@ const createRuntime = (deps: Parameters<typeof FileSyncLive>[0]) => {
       }
     })
   )
-  const fileStorageLayer = Layer.provide(Layer.mergeAll(baseLayer, fileSyncLayer))(
-    FileStorageLive(deps)
-  )
-  const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer, fileStorageLayer)
+  const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer)
   return ManagedRuntime.make(mainLayer)
 }
 
-describe("FileStorage", () => {
+describe("FileSync - File operations", () => {
   it("saves files and records metadata", async () => {
     const { deps, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
     }))
     const localStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* LocalFileStorage
@@ -44,7 +40,7 @@ describe("FileStorage", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileStorage.saveFile(new File(["data"], "data.txt")), scope))
+      await runtime.runPromise(Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope))
 
       const files = store.query(
         deps.schema.queryDb(tables.files.select())
@@ -65,8 +61,8 @@ describe("FileStorage", () => {
   it("updates files and cleans up old paths", async () => {
     const { deps, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
     }))
     const localStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* LocalFileStorage
@@ -75,10 +71,10 @@ describe("FileStorage", () => {
 
     try {
       const initial = await runtime.runPromise(
-        Scope.extend(fileStorage.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       const updated = await runtime.runPromise(
-        Scope.extend(fileStorage.updateFile(initial.fileId, new File(["next"], "next.txt")), scope)
+        Scope.extend(fileSync.updateFile(initial.fileId, new File(["next"], "next.txt")), scope)
       )
 
       expect(updated.path).not.toBe(initial.path)
@@ -101,8 +97,8 @@ describe("FileStorage", () => {
   it("deletes files and marks records deleted", async () => {
     const { deps, events, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
     }))
     const localStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* LocalFileStorage
@@ -111,7 +107,7 @@ describe("FileStorage", () => {
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileStorage.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       store.commit(
         events.fileUpdated({
@@ -123,7 +119,7 @@ describe("FileStorage", () => {
         })
       )
 
-      await runtime.runPromise(Scope.extend(fileStorage.deleteFile(saved.fileId), scope))
+      await runtime.runPromise(Scope.extend(fileSync.deleteFile(saved.fileId), scope))
 
       const records = store.query(
         deps.schema.queryDb(tables.files.where({ id: saved.fileId }))
@@ -142,17 +138,17 @@ describe("FileStorage", () => {
   it("prefers local file URLs and falls back to remote URLs", async () => {
     const { deps, events, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
     }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileStorage.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       const localUrl = await runtime.runPromise(
-        Scope.extend(fileStorage.getFileUrl(saved.fileId), scope)
+        Scope.extend(fileSync.resolveFileUrl(saved.fileId), scope)
       )
 
       expect(localUrl?.startsWith("file://")).toBe(true)
@@ -180,7 +176,7 @@ describe("FileStorage", () => {
       )
 
       const remoteUrl = await runtime.runPromise(
-        Scope.extend(fileStorage.getFileUrl(remoteId), scope)
+        Scope.extend(fileSync.resolveFileUrl(remoteId), scope)
       )
       expect(remoteUrl).toBe(`https://test-storage.local/${stripFilesRoot(remotePath)}`)
 

@@ -25,12 +25,10 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 - `SyncExecutor`: manages upload/download queues with concurrency limits and retry/backoff logic.
 
-- `FileSync`: orchestration service. Tracks online state, reconciles LiveStore file records with
-  local state, schedules transfers through `SyncExecutor`, updates remote URLs, and runs GC/health
-  checks. Uses `LocalFileStateManager` for all state mutations.
-
-- `FileStorage`: high-level API used by `saveFile`, `updateFile`, `deleteFile`, and `getFileUrl`.
-  It hashes content, writes to local storage, updates LiveStore records, and triggers `FileSync`.
+- `FileSync`: orchestration service and primary CRUD API. Tracks online state, reconciles LiveStore
+  file records with local state, schedules transfers through `SyncExecutor`, updates remote URLs,
+  and runs GC/health checks. It also handles `saveFile`, `updateFile`, `deleteFile`, and
+  `resolveFileUrl`, always writing locally first.
 
 ## FileSystem requirement
 
@@ -71,18 +69,18 @@ Text diagram (arrows show the main direction of calls):
 [App API]
    |
    v
-[FileStorage] <-------------------------------> [LiveStore store + schema]
+[FileSync] <-------------------------------> [LiveStore store + schema]
    |  \                                          (files table + local state)
    |   \
    |    v
-   |  [FileSync] ----> [SyncExecutor] ----> [RemoteStorage] ---> Remote backend
-   |      |
-   |      v
-   +--> [LocalFileStorage] ----> [FileSystem (OPFS/Node/custom)]
+   |  [SyncExecutor] ----> [RemoteStorage] ---> Remote backend
+   |
+   v
+[LocalFileStorage] ----> [FileSystem (OPFS/Node/custom)]
 ```
 
 Notes:
-- `FileStorage` is the primary entry point for CRUD; it always writes locally first.
+- `FileSync` is the primary entry point for CRUD; it always writes locally first and then queues sync.
 - `FileSync` handles background uploads/downloads and keeps metadata in the LiveStore tables.
 - `LocalFileStorage` is the only layer that touches the filesystem adapter directly.
 - `RemoteStorage` is the only layer that knows about the remote backend API.
@@ -111,10 +109,7 @@ This mirrors the Effect layer wiring in `createFileSync`:
 [FileSyncLive(deps, config)] <--- Layer.provide(BaseLayer)
                                             |
                                             v
-[FileStorageLive(deps)] <--------- Layer.provide(mergeAll(BaseLayer, FileSyncLayer))
-                                            |
-                                            v
-[MainLayer] = mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
+[MainLayer] = mergeAll(BaseLayer, FileSyncLayer)
 ```
 
 ## API Usage: Singleton vs Instance
@@ -133,7 +128,7 @@ import {
   stopFileSync,
   disposeFileSync,
   saveFile,
-  getFileUrl,
+  resolveFileUrl,
   deleteFile
 } from '@livestore-filesync/core'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
@@ -148,7 +143,7 @@ startFileSync()
 
 // Use anywhere after initialization
 const result = await saveFile(file)
-const url = await getFileUrl(result.fileId)
+const url = await resolveFileUrl(result.fileId)
 
 // Cleanup on app unmount
 stopFileSync()
@@ -179,7 +174,7 @@ const fileSync = createFileSync({
 fileSync.start()
 
 const result = await fileSync.saveFile(file)
-const url = await fileSync.getFileUrl(result.fileId)
+const url = await fileSync.resolveFileUrl(result.fileId)
 
 await fileSync.stop()
 await fileSync.dispose()

@@ -4,7 +4,6 @@ import { createTestStore, delay, generateTestFiles } from "../../../test/helpers
 import { getSyncStatus } from "../../api/sync-status.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
-import { FileStorage, FileStorageLive } from "../file-storage/index.js"
 import { LocalFileStateManagerLive } from "../local-file-state/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import {
@@ -56,11 +55,7 @@ const createRuntimeWithConfig = async (
     })
   )
 
-  const fileStorageLayer = Layer.provide(Layer.mergeAll(baseLayer, fileSyncLayer))(
-    FileStorageLive(deps)
-  )
-
-  const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer, fileStorageLayer)
+  const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer)
   return {
     runtime: ManagedRuntime.make(mainLayer),
     optionsRef,
@@ -242,9 +237,6 @@ describe("FileSync - Transfer Progress Events", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     const progressEvents: Array<{
@@ -272,7 +264,7 @@ describe("FileSync - Transfer Progress Events", () => {
 
       // Save a file
       const files = generateTestFiles(1)
-      const result = await runtime.runPromise(fileStorage.saveFile(files[0]))
+      const result = await runtime.runPromise(fileSync.saveFile(files[0]))
 
       // Wait for upload to complete
       await delay(400)
@@ -415,9 +407,6 @@ describe("FileSync - Transfer Progress Events", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     let capturedProgress: {
@@ -444,7 +433,7 @@ describe("FileSync - Transfer Progress Events", () => {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
 
       const files = generateTestFiles(1)
-      const result = await runtime.runPromise(fileStorage.saveFile(files[0]))
+      const result = await runtime.runPromise(fileSync.saveFile(files[0]))
 
       await delay(300)
 
@@ -476,9 +465,6 @@ describe("FileSync - Multi-file upload sync status", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
@@ -488,7 +474,7 @@ describe("FileSync - Multi-file upload sync status", () => {
       // Save 5 files concurrently (like Gallery.vue does with Promise.all)
       const files = generateTestFiles(5)
       const results = await Promise.all(
-        files.map((f) => runtime.runPromise(fileStorage.saveFile(f)))
+        files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
 
       // All 5 files should have been saved
@@ -528,9 +514,6 @@ describe("FileSync - Multi-file upload sync status", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
@@ -540,7 +523,7 @@ describe("FileSync - Multi-file upload sync status", () => {
       const fileCount = 5
       const files = generateTestFiles(fileCount)
       const results = await Promise.all(
-        files.map((f) => runtime.runPromise(fileStorage.saveFile(f)))
+        files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
 
       const fileIds = results.map((r) => r.fileId)
@@ -581,9 +564,6 @@ describe("FileSync - Multi-file upload sync status", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
@@ -592,7 +572,7 @@ describe("FileSync - Multi-file upload sync status", () => {
       // Save 3 files concurrently
       const files = generateTestFiles(3)
       const results = await Promise.all(
-        files.map((f) => runtime.runPromise(fileStorage.saveFile(f)))
+        files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
 
       // Wait for first upload to start processing
@@ -645,9 +625,6 @@ describe("FileSync - Multi-file upload sync status", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
@@ -657,7 +634,7 @@ describe("FileSync - Multi-file upload sync status", () => {
       // Add 10 files as fast as possible
       const files = generateTestFiles(10)
       const results = await Promise.all(
-        files.map((f) => runtime.runPromise(fileStorage.saveFile(f)))
+        files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
@@ -704,9 +681,6 @@ describe("FileSync - Multi-file upload sync status", () => {
     const fileSync = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileSync
     }))
-    const fileStorage = await runtime.runPromise(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
     const scope = await runtime.runPromise(Scope.make())
 
     try {
@@ -715,7 +689,7 @@ describe("FileSync - Multi-file upload sync status", () => {
       // Save 5 files
       const files = generateTestFiles(5)
       const results = await Promise.all(
-        files.map((f) => runtime.runPromise(fileStorage.saveFile(f)))
+        files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
 
       // Wait for executor to pick up tasks

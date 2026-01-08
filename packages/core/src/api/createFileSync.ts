@@ -13,11 +13,8 @@
 import type { FileSystem } from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
-import type { FileStorageService } from "../services/file-storage/index.js"
 import type { FileSyncConfig, FileSyncService } from "../services/file-sync/index.js"
 import {
-  FileStorage,
-  FileStorageLive,
   FileSync,
   FileSyncLive,
   LocalFileStateManagerLive,
@@ -205,7 +202,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let disposed = false
   let scope: Scope.CloseableScope | null = null
   let fileSyncService: FileSyncService | null = null
-  let fileStorageService: FileStorageService | null = null
 
   const storeId = sanitizeStoreId(store.storeId)
   const deps: LiveStoreDeps = {
@@ -234,7 +230,10 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.healthCheckIntervalMs !== undefined
       ? { healthCheckIntervalMs: options.healthCheckIntervalMs }
       : {}),
-    ...(options.gcDelayMs !== undefined ? { gcDelayMs: options.gcDelayMs } : {})
+    ...(options.gcDelayMs !== undefined ? { gcDelayMs: options.gcDelayMs } : {}),
+    ...(options.autoPrioritizeOnResolve !== undefined
+      ? { autoPrioritizeOnResolve: options.autoPrioritizeOnResolve }
+      : {})
   }
 
   if (!fileSystem) {
@@ -256,11 +255,8 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   )
 
   const FileSyncLayer = Layer.provide(BaseLayer)(FileSyncLive(deps, fileSyncConfig))
-  const FileStorageLayer = Layer.provide(Layer.mergeAll(BaseLayer, FileSyncLayer))(
-    FileStorageLive(deps, { autoPrioritizeOnResolve: options.autoPrioritizeOnResolve ?? true })
-  )
 
-  const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
+  const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer)
 
   const runtime = ManagedRuntime.make(MainLayer)
 
@@ -279,14 +275,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
       return yield* FileSync
     }))
     return fileSyncService
-  }
-
-  const getFileStorageService = async (): Promise<FileStorageService> => {
-    if (fileStorageService) return fileStorageService
-    fileStorageService = await runEffect(Effect.gen(function*() {
-      return yield* FileStorage
-    }))
-    return fileStorageService
   }
 
   // Connectivity wiring (browser-only)
@@ -353,18 +341,18 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const saveFile = async (file: File): Promise<SyncFileOperationResult> => {
-    const storage = await getFileStorageService()
-    return runEffect(storage.saveFile(file))
+    const fileSync = await getFileSyncService()
+    return runEffect(fileSync.saveFile(file))
   }
 
   const updateFile = async (fileId: string, file: File): Promise<SyncFileOperationResult> => {
-    const storage = await getFileStorageService()
-    return runEffect(storage.updateFile(fileId, file))
+    const fileSync = await getFileSyncService()
+    return runEffect(fileSync.updateFile(fileId, file))
   }
 
   const deleteFile = async (fileId: string): Promise<void> => {
-    const storage = await getFileStorageService()
-    await runEffect(storage.deleteFile(fileId))
+    const fileSync = await getFileSyncService()
+    await runEffect(fileSync.deleteFile(fileId))
   }
 
   const readFile = async (path: string): Promise<File> =>
@@ -386,8 +374,8 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     )
 
   const resolveFileUrl = async (fileId: string): Promise<string | null> => {
-    const fileStorage = await getFileStorageService()
-    return runEffect(fileStorage.getFileUrl(fileId))
+    const fileSync = await getFileSyncService()
+    return runEffect(fileSync.resolveFileUrl(fileId))
   }
 
   const prioritizeDownload = async (fileId: string): Promise<void> => {

@@ -4,7 +4,6 @@
  * @module
  */
 
-export * from "./file-storage/index.js"
 export * from "./file-sync/index.js"
 export * from "./file-system/index.js"
 export * from "./local-file-state/index.js"
