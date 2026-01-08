@@ -10,7 +10,6 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 - **R2 and S3 remote storage**: Built in support for Cloudflare R2 and any S3 compatible remote storage service.
 
-
 ## Packages
 
 | Package | Description |
@@ -31,6 +30,8 @@ pnpm add @livestore-filesync/core @effect/platform-node
 ```
 
 ## Quick Start
+
+The easiest way to get started is to look at one of options in the `examples` folder. In order to keep this maintainable I have opted to not include framework specific adapters so each example (React, Vue) has an demonstration `FileSyncProvider` component you can use as reference. The only important thing to keep in mind is that it needs to be initialized after LiveStore.
 
 ### 1. Extend your LiveStore schema
 
