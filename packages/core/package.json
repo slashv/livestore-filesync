@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "license": "MIT",
   "description": "Framework-agnostic file syncing for LiveStore applications with OPFS support",
