@@ -205,6 +205,14 @@ The organization doesn't exist or you don't have publish access. Ensure:
 1. The `@livestore-filesync` org exists on npm
 2. Your npm account is a member with publish rights
 
+### "Unclean working tree" error during dry-run
+
+If you're testing with uncommitted changes, add `--no-git-checks`:
+
+```bash
+pnpm -r publish --dry-run --access public --no-git-checks
+```
+
 ### Files missing from published package
 
 Check what files will be included:
@@ -214,13 +222,19 @@ cd packages/core
 npm pack --dry-run
 ```
 
-To include/exclude files, add a `files` array to `package.json`:
+Each package has a `files` field in `package.json` that controls what gets published:
 
 ```json
 {
-  "files": ["dist", "README.md"]
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/src"
+  ]
 }
 ```
+
+This excludes test files and duplicate source directories from the published package.
 
 ## Post-publish Verification
 
@@ -246,6 +260,19 @@ npm unpublish @livestore-filesync/core@0.0.1
 ```
 
 Note: npm restricts unpublishing packages that have dependents or are older than 72 hours.
+
+## Package Sizes
+
+Expected package sizes after publish:
+
+| Package | Packed Size | Unpacked Size | Files |
+|---------|-------------|---------------|-------|
+| `@livestore-filesync/core` | ~84 kB | ~470 kB | ~155 |
+| `@livestore-filesync/opfs` | ~9 kB | ~42 kB | ~10 |
+| `@livestore-filesync/r2` | ~10 kB | ~57 kB | ~30 |
+| `@livestore-filesync/s3-signer` | ~8 kB | ~31 kB | ~26 |
+
+If sizes are significantly larger, check that test files and source directories are being excluded.
 
 ## Future Improvements
 

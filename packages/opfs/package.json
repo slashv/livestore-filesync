@@ -22,6 +22,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*"
+  ],
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "check": "tsc -b tsconfig.json",
