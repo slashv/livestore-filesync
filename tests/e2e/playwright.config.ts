@@ -41,6 +41,9 @@ export default defineConfig({
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
+      // Firefox has timing issues with Effect runtime under parallel load
+      // that can cause the SyncExecutor worker loop to stall. Allow retries.
+      retries: 2,
     },
   ],
 
