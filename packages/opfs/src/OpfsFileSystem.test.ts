@@ -1,5 +1,5 @@
-import { Effect } from "effect"
 import { SystemError } from "@effect/platform/Error"
+import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeOpfsFileSystem } from "./OpfsFileSystem.js"
 
@@ -123,7 +123,7 @@ class MockDirectoryHandle {
     const parent = this.entry
     const iterator = parent.entries.entries()
     return {
-      [Symbol.asyncIterator]: async function* () {
+      async *[Symbol.asyncIterator]() {
         for (const [name, entry] of iterator) {
           yield [
             name,

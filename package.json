@@ -1,20 +1,20 @@
 {
-  "name": "livestore-filesync-monorepo",
+  "name": "livestore-filesync",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "license": "MIT",
-  "description": "Framework-agnostic file syncing for LiveStore applications with OPFS support",
+  "description": "File syncing for LiveStore applications",
   "repository": {
     "type": "git",
-    "url": "https://github.com/example/livestore-filesync"
+    "url": "https://github.com/slashv/livestore-filesync"
   },
   "scripts": {
     "build": "pnpm -r build",
     "build:packages": "pnpm --filter '@livestore-filesync/*' build",
     "check": "pnpm -r check",
-    "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\"",
+    "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\" --ignore-pattern \"**/reference/**\"",
     "lint-fix": "pnpm lint --fix",
     "test": "pnpm -r test",
     "test:unit": "pnpm --filter @livestore-filesync/core test",

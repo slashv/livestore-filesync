@@ -223,11 +223,11 @@ export function initFileSyncServiceWorker(
 export function createMessageHandler(
   handlers: {
     onClearCache?: () => Promise<void>
-    onPrefetch?: (paths: string[]) => Promise<void>
+    onPrefetch?: (paths: Array<string>) => Promise<void>
   } = {}
 ): void {
   self.addEventListener("message", async (event: ExtendableMessageEvent) => {
-    const { type, payload } = event.data || {}
+    const { payload, type } = event.data || {}
 
     switch (type) {
       case "CLEAR_CACHE":

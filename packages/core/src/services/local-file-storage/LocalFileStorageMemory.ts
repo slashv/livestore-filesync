@@ -8,11 +8,8 @@
  */
 
 import { Effect, Layer, Ref } from "effect"
-import {
-  DirectoryNotFoundError,
-  FileNotFoundError,
-  StorageError
-} from "../../errors/index.js"
+import type { DirectoryNotFoundError } from "../../errors/index.js"
+import { FileNotFoundError, StorageError } from "../../errors/index.js"
 import { parsePath } from "../../utils/path.js"
 import { LocalFileStorage, type LocalFileStorageService } from "./LocalFileStorage.js"
 
@@ -124,11 +121,11 @@ export const makeMemoryLocalFileStorage = (
 
   const listFiles = (
     directory: string
-  ): Effect.Effect<string[], DirectoryNotFoundError | StorageError> =>
+  ): Effect.Effect<Array<string>, DirectoryNotFoundError | StorageError> =>
     Effect.gen(function*() {
       const store = yield* Ref.get(storeRef)
       const prefix = directory === "" ? "" : directory.endsWith("/") ? directory : `${directory}/`
-      const files: string[] = []
+      const files: Array<string> = []
 
       for (const path of store.keys()) {
         if (prefix === "" || path.startsWith(prefix)) {

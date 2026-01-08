@@ -51,7 +51,7 @@ export interface S3SignerHandlerConfig {
    * If not provided, defaults to parsing env.ALLOWED_KEY_PREFIXES.
    * Return empty/undefined to allow all keys.
    */
-  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => readonly string[] | undefined
+  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => ReadonlyArray<string> | undefined
 
   /**
    * Maximum expiry in seconds for presigned URLs (default: 900).
@@ -81,5 +81,3 @@ export type SignDownloadResponse = {
   headers?: Record<string, string>
   expiresAt: string
 }
-
-

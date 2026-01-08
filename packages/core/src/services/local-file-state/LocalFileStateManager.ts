@@ -13,11 +13,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import type { LiveStoreDeps } from "../../livestore/types.js"
-import type {
-  LocalFileState,
-  LocalFilesState,
-  TransferStatus
-} from "../../types/index.js"
+import type { LocalFilesState, LocalFileState, TransferStatus } from "../../types/index.js"
 
 /**
  * LocalFileStateManager service interface
@@ -102,9 +98,9 @@ export class LocalFileStateManager extends Context.Tag("LocalFileStateManager")<
 export const makeLocalFileStateManager = (
   deps: LiveStoreDeps
 ): Effect.Effect<LocalFileStateManagerService> =>
-  Effect.gen(function* () {
-    const { store, schema } = deps
-    const { tables, events, queryDb } = schema
+  Effect.gen(function*() {
+    const { schema, store } = deps
+    const { events, queryDb, tables } = schema
 
     // Create a semaphore with 1 permit to ensure only one update runs at a time
     const semaphore = yield* Effect.makeSemaphore(1)
@@ -199,12 +195,10 @@ export const makeLocalFileStateManager = (
       }))
 
     // Replace entire state
-    const replaceState = (state: LocalFilesState): Effect.Effect<void> =>
-      atomicUpdate(() => state)
+    const replaceState = (state: LocalFilesState): Effect.Effect<void> => atomicUpdate(() => state)
 
     // Get current state (no lock needed for reads)
-    const getState = (): Effect.Effect<LocalFilesState> =>
-      Effect.sync(readState)
+    const getState = (): Effect.Effect<LocalFilesState> => Effect.sync(readState)
 
     return {
       setFileState,
@@ -223,5 +217,4 @@ export const makeLocalFileStateManager = (
  */
 export const LocalFileStateManagerLive = (
   deps: LiveStoreDeps
-): Layer.Layer<LocalFileStateManager> =>
-  Layer.effect(LocalFileStateManager, makeLocalFileStateManager(deps))
+): Layer.Layer<LocalFileStateManager> => Layer.effect(LocalFileStateManager, makeLocalFileStateManager(deps))

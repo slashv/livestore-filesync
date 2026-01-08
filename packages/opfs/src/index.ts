@@ -5,9 +5,9 @@
  */
 
 export {
-  makeOpfsFileSystem,
   layer,
   layerDefault,
-  OPFSNotAvailableError,
-  type OpfsFileSystemOptions
+  makeOpfsFileSystem,
+  type OpfsFileSystemOptions,
+  OPFSNotAvailableError
 } from "./OpfsFileSystem.js"

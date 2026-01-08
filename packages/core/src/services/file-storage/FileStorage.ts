@@ -8,14 +8,14 @@
  */
 
 import { Context, Effect, Layer } from "effect"
-import { LocalFileStorage } from "../local-file-storage/index.js"
-import { RemoteStorage } from "../remote-file-storage/index.js"
-import { FileSync } from "../file-sync/index.js"
-import { hashFile, makeStoredPath } from "../../utils/index.js"
+import { StorageError } from "../../errors/index.js"
+import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import type { LiveStoreDeps } from "../../livestore/types.js"
 import type { FileOperationResult, FileRecord, LocalFilesState } from "../../types/index.js"
-import { StorageError } from "../../errors/index.js"
-import type { HashError, FileNotFoundError } from "../../errors/index.js"
+import { hashFile, makeStoredPath } from "../../utils/index.js"
+import { FileSync } from "../file-sync/index.js"
+import { LocalFileStorage } from "../local-file-storage/index.js"
+import { RemoteStorage } from "../remote-file-storage/index.js"
 
 /**
  * FileStorage service interface
@@ -46,7 +46,10 @@ export interface FileStorageService {
    *
    * @returns The updated file metadata
    */
-  readonly updateFile: (fileId: string, file: File) => Effect.Effect<FileOperationResult, Error | HashError | StorageError>
+  readonly updateFile: (
+    fileId: string,
+    file: File
+  ) => Effect.Effect<FileOperationResult, Error | HashError | StorageError>
 
   /**
    * Delete a file
@@ -75,7 +78,7 @@ export interface FileStorageService {
 export class FileStorage extends Context.Tag("FileStorage")<
   FileStorage,
   FileStorageService
->() { }
+>() {}
 
 /**
  * Create the FileStorage service
@@ -120,16 +123,16 @@ export const makeFileStorage = (
   deps: LiveStoreDeps,
   config: FileStorageConfig = defaultFileStorageConfig
 ): Effect.Effect<FileStorageService, never, LocalFileStorage | RemoteStorage | FileSync> =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const localStorage = yield* LocalFileStorage
     const remoteStorage = yield* RemoteStorage
     const fileSync = yield* FileSync
-    const { store, schema, storeId } = deps
-    const { tables, events, queryDb } = schema
+    const { schema, store, storeId } = deps
+    const { events, queryDb, tables } = schema
 
     const getFileRecord = (id: string): Effect.Effect<FileRecord | undefined> =>
       Effect.sync(() => {
-        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id })))
+        const files = store.query<Array<FileRecord>>(queryDb(tables.files.where({ id })))
         return files[0]
       })
 
@@ -162,7 +165,7 @@ export const makeFileStorage = (
       remoteKey?: string
     }) =>
       Effect.sync(() => {
-        const files = store.query<FileRecord[]>(queryDb(tables.files.where({ id: params.id })))
+        const files = store.query<Array<FileRecord>>(queryDb(tables.files.where({ id: params.id })))
         const file = files[0]
         if (!file) return
         store.commit(
@@ -182,7 +185,7 @@ export const makeFileStorage = (
       })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         // Generate ID
         const id = crypto.randomUUID()
 
@@ -208,7 +211,7 @@ export const makeFileStorage = (
       fileId: string,
       file: File
     ): Effect.Effect<FileOperationResult, Error | HashError | StorageError> =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         // Get existing file
         const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
@@ -249,7 +252,7 @@ export const makeFileStorage = (
       })
 
     const deleteFileOp = (fileId: string): Effect.Effect<void> =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         // Get existing file
         const existingFile = yield* getFileRecord(fileId)
         if (!existingFile) {
@@ -273,7 +276,7 @@ export const makeFileStorage = (
       })
 
     const getFileUrl = (fileId: string): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         // Get file record
         const file = yield* getFileRecord(fileId)
         if (!file) {

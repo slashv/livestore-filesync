@@ -8,10 +8,10 @@ export const invertImageFile = async (srcFile: File): Promise<File> => {
       el.src = blobUrl
     })
 
-    const canvas = document.createElement('canvas')
+    const canvas = document.createElement("canvas")
     canvas.width = img.naturalWidth
     canvas.height = img.naturalHeight
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext("2d")!
     ctx.drawImage(img, 0, 0)
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
@@ -23,9 +23,7 @@ export const invertImageFile = async (srcFile: File): Promise<File> => {
     }
     ctx.putImageData(imageData, 0, 0)
 
-    const editedBlob: Blob = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b as Blob), srcFile.type)
-    )
+    const editedBlob: Blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b as Blob), srcFile.type))
     return new File([editedBlob], srcFile.name, { type: srcFile.type, lastModified: Date.now() })
   } finally {
     URL.revokeObjectURL(blobUrl)

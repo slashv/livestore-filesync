@@ -1,13 +1,13 @@
-import React from "react";
-import { useStore } from "@livestore/react";
-import { getSyncStatus } from "@livestore-filesync/core";
-import { tables } from "../livestore/schema.ts";
-import { reactStoreOptions } from "../App.tsx";
+import { getSyncStatus } from "@livestore-filesync/core"
+import { useStore } from "@livestore/react"
+import React from "react"
+import { reactStoreOptions } from "../App.tsx"
+import { tables } from "../livestore/schema.ts"
 
 export const SyncStatus: React.FC = () => {
-  const store = useStore(reactStoreOptions);
-  const [localFileState] = store.useClientDocument(tables.localFileState);
-  const syncStatus = getSyncStatus(localFileState?.localFiles ?? {});
+  const store = useStore(reactStoreOptions)
+  const [localFileState] = store.useClientDocument(tables.localFileState)
+  const syncStatus = getSyncStatus(localFileState?.localFiles ?? {})
 
   return (
     <div className="sync-status" data-testid="sync-status-panel">
@@ -64,9 +64,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Uploading Files</h4>
           <ul>
-            {syncStatus.uploadingFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.uploadingFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -75,9 +73,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Downloading Files</h4>
           <ul>
-            {syncStatus.downloadingFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.downloadingFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -86,9 +82,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Queued Uploads</h4>
           <ul>
-            {syncStatus.queuedUploadFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.queuedUploadFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -97,9 +91,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Queued Downloads</h4>
           <ul>
-            {syncStatus.queuedDownloadFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.queuedDownloadFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -108,9 +100,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Pending Uploads</h4>
           <ul>
-            {syncStatus.pendingUploadFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.pendingUploadFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -119,9 +109,7 @@ export const SyncStatus: React.FC = () => {
         <>
           <h4>Pending Downloads</h4>
           <ul>
-            {syncStatus.pendingDownloadFileIds.map((id) => (
-              <li key={id}>{id}</li>
-            ))}
+            {syncStatus.pendingDownloadFileIds.map((id) => <li key={id}>{id}</li>)}
           </ul>
         </>
       )}
@@ -139,5 +127,5 @@ export const SyncStatus: React.FC = () => {
         </>
       )}
     </div>
-  );
-};
+  )
+}

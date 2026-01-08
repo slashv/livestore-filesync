@@ -5,11 +5,7 @@
  */
 
 // Service worker initialization (for use in SW context)
-export {
-  createMessageHandler,
-  initFileSyncServiceWorker,
-  type FileSyncSWConfig
-} from "./file-sync-sw.js"
+export { createMessageHandler, type FileSyncSWConfig, initFileSyncServiceWorker } from "./file-sync-sw.js"
 
 // Registration helpers (for use in main thread)
 export {
@@ -18,8 +14,8 @@ export {
   isServiceWorkerSupported,
   prefetchFiles,
   registerFileSyncServiceWorker,
-  sendMessageToServiceWorker,
-  unregisterFileSyncServiceWorker,
   type RegisterOptions,
-  type ServiceWorkerOptions
+  sendMessageToServiceWorker,
+  type ServiceWorkerOptions,
+  unregisterFileSyncServiceWorker
 } from "./registration.js"

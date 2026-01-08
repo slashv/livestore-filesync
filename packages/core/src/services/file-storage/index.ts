@@ -5,10 +5,10 @@
  */
 
 export {
-  FileStorage,
-  FileStorageLive,
-  makeFileStorage,
   defaultFileStorageConfig,
+  FileStorage,
+  type FileStorageConfig,
+  FileStorageLive,
   type FileStorageService,
-  type FileStorageConfig
+  makeFileStorage
 } from "./FileStorage.js"

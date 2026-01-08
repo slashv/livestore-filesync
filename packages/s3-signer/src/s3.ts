@@ -51,5 +51,3 @@ export function makeBucketUrl(env: S3SignerEnv): string {
   url.pathname = "/"
   return url.toString()
 }
-
-

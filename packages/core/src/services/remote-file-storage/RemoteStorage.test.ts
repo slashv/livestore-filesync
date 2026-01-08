@@ -1,12 +1,8 @@
 import { Effect, Exit, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
-import {
-  makeS3SignerRemoteStorage,
-  makeMemoryRemoteStorage,
-  type MemoryRemoteStorageOptions
-} from "./index.js"
 import { makeStoredPath } from "../../utils/index.js"
+import { makeMemoryRemoteStorage, makeS3SignerRemoteStorage, type MemoryRemoteStorageOptions } from "./index.js"
 
 describe("RemoteStorage", () => {
   const createTestStorage = () =>
@@ -108,7 +104,7 @@ describe("RemoteStorage", () => {
     it("should return false when offline", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { offline: true })
           return yield* service.checkHealth()
         })
@@ -122,7 +118,7 @@ describe("RemoteStorage", () => {
     it("should fail uploads when offline", async () => {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { offline: true })
 
           const file = new File(["test"], "test.txt")
@@ -139,7 +135,7 @@ describe("RemoteStorage", () => {
     it("should fail downloads when offline", async () => {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
 
           // First upload while online
           const file = new File(["test"], "test.txt")
@@ -161,7 +157,7 @@ describe("RemoteStorage", () => {
     it("should fail deletes when offline", async () => {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { offline: true })
           return yield* service.delete("file")
         })
@@ -178,7 +174,7 @@ describe("RemoteStorage", () => {
     it("should fail only uploads when failUploads is true", async () => {
       await Effect.runPromise(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
 
           // First upload while working
           const file = new File(["test"], "test.txt")
@@ -206,7 +202,7 @@ describe("RemoteStorage", () => {
     it("should use the custom baseUrl when provided", async () => {
       const result = await Effect.runPromise(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { baseUrl: "https://custom-storage.local" })
           const key = "custom-key"
           yield* service.upload(new File(["data"], "data.txt"), { key })
@@ -220,7 +216,7 @@ describe("RemoteStorage", () => {
     it("should fail downloads when failDownloads is true", async () => {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function*() {
-          const { service, optionsRef } = yield* createTestStorage()
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { failDownloads: true })
           return yield* service.download("https://test-storage.local/file")
         })
@@ -238,8 +234,8 @@ describe("RemoteStorage", () => {
       const progressEvents: Array<{ loaded: number; total: number }> = []
 
       await Effect.runPromise(
-        Effect.gen(function* () {
-          const { service, optionsRef } = yield* createTestStorage()
+        Effect.gen(function*() {
+          const { optionsRef, service } = yield* createTestStorage()
           // Set upload delay to trigger progress events
           yield* Ref.set(optionsRef, { uploadDelayMs: 100 })
 
@@ -257,7 +253,7 @@ describe("RemoteStorage", () => {
 
       // Should have received progress events
       expect(progressEvents.length).toBeGreaterThan(0)
-      
+
       // All progress events should have valid values
       for (const event of progressEvents) {
         expect(event.loaded).toBeGreaterThanOrEqual(0)
@@ -274,9 +270,9 @@ describe("RemoteStorage", () => {
       const progressEvents: Array<{ loaded: number; total: number }> = []
 
       await Effect.runPromise(
-        Effect.gen(function* () {
-          const { service, optionsRef } = yield* createTestStorage()
-          
+        Effect.gen(function*() {
+          const { optionsRef, service } = yield* createTestStorage()
+
           // First upload a file
           const originalFile = new File(["hello world test content for download"], "test.txt", { type: "text/plain" })
           const key = makeStoredPath("store-1", "download-progress-test")
@@ -296,7 +292,7 @@ describe("RemoteStorage", () => {
 
       // Should have received progress events
       expect(progressEvents.length).toBeGreaterThan(0)
-      
+
       // All progress events should have valid values
       for (const event of progressEvents) {
         expect(event.loaded).toBeGreaterThanOrEqual(0)
@@ -311,8 +307,8 @@ describe("RemoteStorage", () => {
 
     it("should work without onProgress callback", async () => {
       const result = await Effect.runPromise(
-        Effect.gen(function* () {
-          const { service, optionsRef } = yield* createTestStorage()
+        Effect.gen(function*() {
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { uploadDelayMs: 50 })
 
           const file = new File(["test"], "test.txt", { type: "text/plain" })
@@ -320,11 +316,11 @@ describe("RemoteStorage", () => {
 
           // Upload without progress callback
           yield* service.upload(file, { key })
-          
+
           // Download without progress callback
           yield* Ref.set(optionsRef, { downloadDelayMs: 50 })
           const downloaded = yield* service.download(key)
-          
+
           return yield* Effect.promise(() => downloaded.text())
         })
       )
@@ -336,8 +332,8 @@ describe("RemoteStorage", () => {
       const progressEvents: Array<{ loaded: number; total: number }> = []
 
       await Effect.runPromise(
-        Effect.gen(function* () {
-          const { service, optionsRef } = yield* createTestStorage()
+        Effect.gen(function*() {
+          const { optionsRef, service } = yield* createTestStorage()
           yield* Ref.set(optionsRef, { uploadDelayMs: 200 })
 
           const content = "x".repeat(1000) // Create a larger file
@@ -389,7 +385,7 @@ describe("RemoteStorage", () => {
           } as Response
         }
         if (String(url) === "https://s3.local/put-url") {
-          return { ok: true, headers: new Headers({ ETag: '"etag-1"' }) } as Response
+          return { ok: true, headers: new Headers({ ETag: "\"etag-1\"" }) } as Response
         }
         return { ok: false, status: 404 } as Response
       }) as typeof fetch
@@ -404,7 +400,7 @@ describe("RemoteStorage", () => {
       const upload = await Effect.runPromise(storage.upload(file, { key: "custom-key" }))
 
       expect(upload.key).toBe("custom-key")
-      expect(upload.etag).toBe('"etag-1"')
+      expect(upload.etag).toBe("\"etag-1\"")
       expect(capturedHeaders).toMatchObject({
         Authorization: "Bearer token-123",
         "X-Custom": "value",

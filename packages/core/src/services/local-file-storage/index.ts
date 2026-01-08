@@ -4,11 +4,7 @@
  * @module
  */
 
-export {
-  LocalFileStorage,
-  LocalFileStorageLive,
-  type LocalFileStorageService
-} from "./LocalFileStorage.js"
+export { LocalFileStorage, LocalFileStorageLive, type LocalFileStorageService } from "./LocalFileStorage.js"
 
 export {
   LocalFileStorageMemory,

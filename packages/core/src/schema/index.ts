@@ -171,23 +171,20 @@ export function createFileSyncSchema() {
   // Create materializers function
   const createMaterializers = <T extends typeof tables>(appTables: T) => ({
     "v1.FileCreated": ({
-      id,
-      path,
       contentHash,
       createdAt,
+      id,
+      path,
       updatedAt
-    }: FileCreatedPayload) =>
-      appTables.files.insert({ id, path, contentHash, createdAt, updatedAt }),
+    }: FileCreatedPayload) => appTables.files.insert({ id, path, contentHash, createdAt, updatedAt }),
     "v1.FileUpdated": ({
+      contentHash,
       id,
       path,
       remoteKey,
-      contentHash,
       updatedAt
-    }: FileUpdatedPayload) =>
-      appTables.files.update({ path, remoteKey, contentHash, updatedAt }).where({ id }),
-    "v1.FileDeleted": ({ id, deletedAt }: FileDeletedPayload) =>
-      appTables.files.update({ deletedAt }).where({ id })
+    }: FileUpdatedPayload) => appTables.files.update({ path, remoteKey, contentHash, updatedAt }).where({ id }),
+    "v1.FileDeleted": ({ deletedAt, id }: FileDeletedPayload) => appTables.files.update({ deletedAt }).where({ id })
   })
 
   return {

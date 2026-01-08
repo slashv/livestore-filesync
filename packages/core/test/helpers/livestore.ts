@@ -1,8 +1,8 @@
 import { makeAdapter } from "@livestore/adapter-node"
 import { createStorePromise, makeSchema, queryDb, State } from "@livestore/livestore"
+import type { LiveStoreDeps } from "../../src/livestore/types.js"
 import { createFileSyncSchema } from "../../src/schema/index.js"
 import { sanitizeStoreId } from "../../src/utils/index.js"
-import type { LiveStoreDeps } from "../../src/livestore/types.js"
 
 interface TestStoreOptions {
   storeId?: string
@@ -12,7 +12,7 @@ interface TestStoreOptions {
 export const createTestStore = async (options: TestStoreOptions = {}) => {
   const adapter = makeAdapter({ storage: { type: "in-memory" } })
   const fileSyncSchema = createFileSyncSchema()
-  const { tables, events, createMaterializers } = fileSyncSchema
+  const { createMaterializers, events, tables } = fileSyncSchema
   const materializers = State.SQLite.materializers(events, createMaterializers(tables))
   const state = State.SQLite.makeState({ tables, materializers })
   const schema = makeSchema({ events, state })
@@ -57,7 +57,7 @@ export interface GenerateTestFileOptions {
 export function generateTestFile(options: GenerateTestFileOptions = {}): File {
   const name = options.name ?? `test-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`
   const type = options.type ?? "text/plain"
-  
+
   let content: string
   if (options.content !== undefined) {
     content = options.content
@@ -65,25 +65,26 @@ export function generateTestFile(options: GenerateTestFileOptions = {}): File {
     const size = options.sizeBytes ?? 100
     content = "x".repeat(size)
   }
-  
+
   return new File([content], name, { type })
 }
 
 /**
  * Helper to create multiple unique test files
  */
-export function generateTestFiles(count: number, options: Omit<GenerateTestFileOptions, "name" | "content"> = {}): File[] {
-  return Array.from({ length: count }, (_, i) => 
+export function generateTestFiles(
+  count: number,
+  options: Omit<GenerateTestFileOptions, "name" | "content"> = {}
+): Array<File> {
+  return Array.from({ length: count }, (_, i) =>
     generateTestFile({
       ...options,
       name: `test-file-${i}-${Date.now()}.txt`,
       content: `content-for-file-${i}-${Math.random().toString(36).slice(2)}`
-    })
-  )
+    }))
 }
 
 /**
  * Simple delay helper for tests
  */
-export const delay = (ms: number): Promise<void> => 
-  new Promise(resolve => setTimeout(resolve, ms))
+export const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

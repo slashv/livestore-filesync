@@ -16,5 +16,3 @@ declare module "aws4fetch" {
     ): Promise<Request>
   }
 }
-
-

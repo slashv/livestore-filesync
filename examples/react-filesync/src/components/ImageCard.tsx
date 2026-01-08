@@ -1,60 +1,57 @@
-import React from "react";
-import { useStore } from "@livestore/react";
-import {
-  deleteFile,
-  getFileDisplayState,
-  readFile,
-  updateFile,
-} from "@livestore-filesync/core";
-import { tables } from "../livestore/schema.ts";
-import type { FileType } from "../types";
-import { reactStoreOptions } from "../App.tsx";
+import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
+import { useStore } from "@livestore/react"
+import React from "react"
+import { reactStoreOptions } from "../App.tsx"
+import { tables } from "../livestore/schema.ts"
+import type { FileType } from "../types"
 
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
-  const store = useStore(reactStoreOptions);
+  const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState);
+  const [localFileState] = store.useClientDocument(tables.localFileState)
   const displayState = getFileDisplayState(
     file,
     localFileState?.localFiles ?? {}
-  );
-  const { localState: localFile, canDisplay, isUploading } = displayState;
+  )
+  const { canDisplay, isUploading, localState: localFile } = displayState
 
-  const src = `/${file.path.replace(/^\/+/, "")}`;
+  const src = `/${file.path.replace(/^\/+/, "")}`
 
   const handleDelete = async () => {
     try {
-      await deleteFile(file.id);
+      await deleteFile(file.id)
     } catch (error) {
-      console.error("Failed to delete:", error);
+      console.error("Failed to delete:", error)
     }
-  };
+  }
 
   const handleEdit = async () => {
     try {
-      const srcFile = await readFile(file.path);
-      const edited = await invertImageFile(srcFile);
-      await updateFile(file.id, edited);
+      const srcFile = await readFile(file.path)
+      const edited = await invertImageFile(srcFile)
+      await updateFile(file.id, edited)
     } catch (error) {
-      console.error("Failed to edit:", error);
+      console.error("Failed to edit:", error)
     }
-  };
+  }
 
   return (
     <div className="card" data-testid="file-card">
       <div className="image-container">
-        {canDisplay ? (
-          <img
-            src={src}
-            alt={file.path}
-            className="image"
-            data-testid="file-image"
-          />
-        ) : (
-          <div className="image-placeholder" data-testid="file-placeholder">
-            {isUploading ? "Uploading..." : "Waiting for file..."}
-          </div>
-        )}
+        {canDisplay ?
+          (
+            <img
+              src={src}
+              alt={file.path}
+              className="image"
+              data-testid="file-image"
+            />
+          ) :
+          (
+            <div className="image-placeholder" data-testid="file-placeholder">
+              {isUploading ? "Uploading..." : "Waiting for file..."}
+            </div>
+          )}
       </div>
       <div className="info">
         <div className="header">
@@ -116,35 +113,37 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
               <td className="label">Can Display</td>
               <td data-testid="file-can-display">{String(canDisplay)}</td>
             </tr>
-            {localFile?.lastSyncError ? (
-              <tr>
-                <td className="label">Error</td>
-                <td>{localFile.lastSyncError}</td>
-              </tr>
-            ) : null}
+            {localFile?.lastSyncError ?
+              (
+                <tr>
+                  <td className="label">Error</td>
+                  <td>{localFile.lastSyncError}</td>
+                </tr>
+              ) :
+              null}
           </tbody>
         </table>
       </div>
     </div>
-  );
-};
+  )
+}
 
 async function invertImageFile(file: File): Promise<File> {
-  const imageBitmap = await createImageBitmap(file);
-  const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height);
-  const ctx = canvas.getContext("2d");
+  const imageBitmap = await createImageBitmap(file)
+  const canvas = new OffscreenCanvas(imageBitmap.width, imageBitmap.height)
+  const ctx = canvas.getContext("2d")
   if (!ctx) {
-    throw new Error("Canvas context not available");
+    throw new Error("Canvas context not available")
   }
-  ctx.drawImage(imageBitmap, 0, 0);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { data } = imageData;
+  ctx.drawImage(imageBitmap, 0, 0)
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const { data } = imageData
   for (let i = 0; i < data.length; i += 4) {
-    data[i] = 255 - data[i];
-    data[i + 1] = 255 - data[i + 1];
-    data[i + 2] = 255 - data[i + 2];
+    data[i] = 255 - data[i]
+    data[i + 1] = 255 - data[i + 1]
+    data[i + 2] = 255 - data[i + 2]
   }
-  ctx.putImageData(imageData, 0, 0);
-  const blob = await canvas.convertToBlob({ type: file.type || "image/png" });
-  return new File([blob], file.name, { type: blob.type });
+  ctx.putImageData(imageData, 0, 0)
+  const blob = await canvas.convertToBlob({ type: file.type || "image/png" })
+  return new File([blob], file.name, { type: blob.type })
 }

@@ -1,11 +1,5 @@
 import { errorResponse, handleCorsPreflightRequest } from "./cors.js"
-import {
-  handleDelete,
-  handleHealth,
-  handleSignDownload,
-  handleSignUpload,
-  resolveAllowedPrefixes
-} from "./routes.js"
+import { handleDelete, handleHealth, handleSignDownload, handleSignUpload, resolveAllowedPrefixes } from "./routes.js"
 import type { S3SignerEnv, S3SignerHandlerConfig } from "./types.js"
 
 const getProvidedToken = (request: Request): string | null => {
@@ -17,8 +11,8 @@ const getProvidedToken = (request: Request): string | null => {
 export function createS3SignerHandler(config: S3SignerHandlerConfig = {}) {
   const {
     basePath = "/api",
-    getAuthToken,
     getAllowedKeyPrefixes,
+    getAuthToken,
     maxExpirySeconds = 900
   } = config
 
@@ -66,5 +60,3 @@ export function createS3SignerHandler(config: S3SignerHandlerConfig = {}) {
     return null
   }
 }
-
-

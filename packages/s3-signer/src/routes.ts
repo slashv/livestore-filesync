@@ -16,7 +16,7 @@ const isKeySafe = (key: string): boolean => {
   return true
 }
 
-const parseAllowedPrefixes = (env: S3SignerEnv): readonly string[] => {
+const parseAllowedPrefixes = (env: S3SignerEnv): ReadonlyArray<string> => {
   const raw = env.ALLOWED_KEY_PREFIXES
   if (!raw) return []
   return raw
@@ -25,7 +25,7 @@ const parseAllowedPrefixes = (env: S3SignerEnv): readonly string[] => {
     .filter((s) => s.length > 0)
 }
 
-const isKeyAllowed = (key: string, prefixes: readonly string[]): boolean => {
+const isKeyAllowed = (key: string, prefixes: ReadonlyArray<string>): boolean => {
   if (prefixes.length === 0) return true
   for (const prefixRaw of prefixes) {
     const prefix = prefixRaw.replace(/^\/+/, "")
@@ -35,8 +35,7 @@ const isKeyAllowed = (key: string, prefixes: readonly string[]): boolean => {
   return false
 }
 
-const expirySecondsToIso = (seconds: number): string =>
-  new Date(Date.now() + seconds * 1000).toISOString()
+const expirySecondsToIso = (seconds: number): string => new Date(Date.now() + seconds * 1000).toISOString()
 
 export async function handleHealth(env: S3SignerEnv): Promise<Response> {
   try {
@@ -55,7 +54,7 @@ export async function handleHealth(env: S3SignerEnv): Promise<Response> {
 export async function handleSignUpload(
   request: Request,
   env: S3SignerEnv,
-  options: { maxExpirySeconds: number; allowedPrefixes: readonly string[] }
+  options: { maxExpirySeconds: number; allowedPrefixes: ReadonlyArray<string> }
 ): Promise<Response> {
   const body = (await request.json().catch(() => null)) as SignUploadRequest | null
   if (!body || typeof body.key !== "string") return errorResponse("Invalid request", 400)
@@ -88,7 +87,7 @@ export async function handleSignUpload(
 export async function handleSignDownload(
   request: Request,
   env: S3SignerEnv,
-  options: { maxExpirySeconds: number; allowedPrefixes: readonly string[] }
+  options: { maxExpirySeconds: number; allowedPrefixes: ReadonlyArray<string> }
 ): Promise<Response> {
   const body = (await request.json().catch(() => null)) as SignDownloadRequest | null
   if (!body || typeof body.key !== "string") return errorResponse("Invalid request", 400)
@@ -120,7 +119,7 @@ export async function handleSignDownload(
 export async function handleDelete(
   request: Request,
   env: S3SignerEnv,
-  options: { allowedPrefixes: readonly string[] }
+  options: { allowedPrefixes: ReadonlyArray<string> }
 ): Promise<Response> {
   const body = (await request.json().catch(() => null)) as { key?: unknown } | null
   if (!body || typeof body.key !== "string") return errorResponse("Invalid request", 400)
@@ -145,11 +144,9 @@ export async function handleDelete(
 export const resolveAllowedPrefixes = (
   env: S3SignerEnv,
   request: Request,
-  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => readonly string[] | undefined
-): readonly string[] => {
+  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => ReadonlyArray<string> | undefined
+): ReadonlyArray<string> => {
   const custom = getAllowedKeyPrefixes?.(env, request)
   if (custom) return custom
   return parseAllowedPrefixes(env)
 }
-
-

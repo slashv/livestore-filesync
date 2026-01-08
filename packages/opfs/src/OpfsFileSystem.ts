@@ -7,10 +7,10 @@
  * @module
  */
 
-import { Data, Effect, Layer, Option, Stream } from "effect"
 import { SystemError, type SystemErrorReason } from "@effect/platform/Error"
 import { FileSystem, Size } from "@effect/platform/FileSystem"
 import type * as FS from "@effect/platform/FileSystem"
+import { Data, Effect, Layer, Option, Stream } from "effect"
 
 export interface OpfsFileSystemOptions {
   readonly baseDirectory?: string
@@ -74,8 +74,7 @@ const makeSystemError = (
 const getOPFSRoot = (): Effect.Effect<FileSystemDirectoryHandle, SystemError> =>
   Effect.tryPromise({
     try: () => navigator.storage.getDirectory(),
-    catch: (cause) =>
-      makeSystemError("getRoot", "Unknown", "", cause)
+    catch: (cause) => makeSystemError("getRoot", "Unknown", "", cause)
   })
 
 const getDirectoryHandle = (
@@ -116,7 +115,7 @@ const getFileHandle = (
 ): Effect.Effect<FileSystemFileHandle, SystemError> => {
   const { directory, filename } = parsePath(path)
 
-  return Effect.gen(function* () {
+  return Effect.gen(function*() {
     const dirHandle = yield* getDirectoryHandle(root, directory, create, true)
     return yield* Effect.tryPromise({
       try: () => dirHandle.getFileHandle(filename, { create }),
@@ -156,7 +155,7 @@ export const makeOpfsFileSystem = (
   const baseDirectory = options.baseDirectory
 
   const access: FS.FileSystem["access"] = (path, _options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const { directory, filename } = parsePath(resolvedPath)
@@ -194,7 +193,7 @@ export const makeOpfsFileSystem = (
     })
 
   const copy: FS.FileSystem["copy"] = (fromPath, toPath, _options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const data = yield* readFile(fromPath)
       yield* writeFile(toPath, data)
 
@@ -209,19 +208,17 @@ export const makeOpfsFileSystem = (
     })
 
   const copyFile: FS.FileSystem["copyFile"] = (fromPath, toPath) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const data = yield* readFile(fromPath)
       yield* writeFile(toPath, data)
     })
 
-  const chmod: FS.FileSystem["chmod"] = (_path, _mode) =>
-    Effect.void // OPFS doesn't support chmod
+  const chmod: FS.FileSystem["chmod"] = (_path, _mode) => Effect.void // OPFS doesn't support chmod
 
-  const chown: FS.FileSystem["chown"] = (_path, _uid, _gid) =>
-    Effect.void // OPFS doesn't support chown
+  const chown: FS.FileSystem["chown"] = (_path, _uid, _gid) => Effect.void // OPFS doesn't support chown
 
   const exists: FS.FileSystem["exists"] = (path) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       if (path === "" || path === ".") return true
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
@@ -268,7 +265,7 @@ export const makeOpfsFileSystem = (
     Effect.fail(makeSystemError("link", "Unknown", "", new Error("OPFS does not support hard links")))
 
   const makeDirectory: FS.FileSystem["makeDirectory"] = (path, options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       if (path === "" || path === ".") return
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
@@ -276,7 +273,7 @@ export const makeOpfsFileSystem = (
     })
 
   const makeTempDirectory: FS.FileSystem["makeTempDirectory"] = (options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const prefix = options?.prefix ?? "tmp"
       const tempName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`
       const tempPath = options?.directory ? joinPath(options.directory, tempName) : tempName
@@ -291,7 +288,7 @@ export const makeOpfsFileSystem = (
     )
 
   const makeTempFile: FS.FileSystem["makeTempFile"] = (options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const prefix = options?.prefix ?? "tmp"
       const suffix = options?.suffix ?? ""
       const tempName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}${suffix}`
@@ -307,10 +304,12 @@ export const makeOpfsFileSystem = (
     )
 
   const open: FS.FileSystem["open"] = (_path, _options) =>
-    Effect.fail(makeSystemError("open", "Unknown", "", new Error("OPFS open() not implemented - use readFile/writeFile")))
+    Effect.fail(
+      makeSystemError("open", "Unknown", "", new Error("OPFS open() not implemented - use readFile/writeFile"))
+    )
 
   const readDirectory: FS.FileSystem["readDirectory"] = (path, options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const dirHandle = yield* getDirectoryHandle(root, resolvedPath, false, true)
@@ -329,7 +328,7 @@ export const makeOpfsFileSystem = (
       })
 
       // Process entries (handle recursion)
-      const result: string[] = []
+      const result: Array<string> = []
       for (const entry of directEntries) {
         result.push(entry.name)
         if (options?.recursive && entry.kind === "directory") {
@@ -342,7 +341,7 @@ export const makeOpfsFileSystem = (
     })
 
   const readFile: FS.FileSystem["readFile"] = (path) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const fileHandle = yield* getFileHandle(root, resolvedPath, false)
@@ -361,7 +360,7 @@ export const makeOpfsFileSystem = (
     })
 
   const readFileString: FS.FileSystem["readFileString"] = (path, encoding) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const data = yield* readFile(path)
       return new TextDecoder(encoding).decode(data)
     })
@@ -369,15 +368,14 @@ export const makeOpfsFileSystem = (
   const readLink: FS.FileSystem["readLink"] = (path) =>
     Effect.fail(makeSystemError("readLink", "Unknown", path, new Error("OPFS does not support symbolic links")))
 
-  const realPath: FS.FileSystem["realPath"] = (path) =>
-    Effect.succeed(resolvePath(baseDirectory, path))
+  const realPath: FS.FileSystem["realPath"] = (path) => Effect.succeed(resolvePath(baseDirectory, path))
 
   const remove: FS.FileSystem["remove"] = (path, options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const { directory, filename } = parsePath(resolvedPath)
-      
+
       const dirHandle = yield* getDirectoryHandle(root, directory, false, true).pipe(
         Effect.catchAll((error) => {
           if (options?.force) return Effect.succeed(null)
@@ -404,7 +402,7 @@ export const makeOpfsFileSystem = (
     })
 
   const rename: FS.FileSystem["rename"] = (oldPath, newPath) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       // OPFS doesn't have native rename, so copy + delete
       const data = yield* readFile(oldPath)
       yield* writeFile(newPath, data)
@@ -416,7 +414,7 @@ export const makeOpfsFileSystem = (
   }
 
   const stat: FS.FileSystem["stat"] = (path) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       if (path === "" || path === ".") {
         return makeFileInfo("Directory")
       }
@@ -480,7 +478,7 @@ export const makeOpfsFileSystem = (
     Effect.fail(makeSystemError("symlink", "Unknown", "", new Error("OPFS does not support symbolic links")))
 
   const truncate: FS.FileSystem["truncate"] = (path, length) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const fileHandle = yield* getFileHandle(root, resolvedPath, false)
@@ -498,14 +496,13 @@ export const makeOpfsFileSystem = (
       })
     })
 
-  const utimes: FS.FileSystem["utimes"] = (_path, _atime, _mtime) =>
-    Effect.void // OPFS doesn't support utimes
+  const utimes: FS.FileSystem["utimes"] = (_path, _atime, _mtime) => Effect.void // OPFS doesn't support utimes
 
   const watch: FS.FileSystem["watch"] = (_path, _options) =>
     Stream.fail(makeSystemError("watch", "Unknown", "", new Error("OPFS does not support file watching")))
 
   const writeFile: FS.FileSystem["writeFile"] = (path, data, _options) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const root = yield* getOPFSRoot()
       const resolvedPath = resolvePath(baseDirectory, path)
       const fileHandle = yield* getFileHandle(root, resolvedPath, true)

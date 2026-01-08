@@ -10,34 +10,34 @@
  * @module
  */
 
-import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import { FileSystem } from "@effect/platform/FileSystem"
+import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
+import type type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
+import type { FileStorageService } from "../services/file-storage/index.js"
+import type { FileSyncService } from "../services/file-sync/index.js"
+import type { FileSyncConfig } from "../services/file-sync/index.js"
 import {
   FileStorage,
   FileStorageLive,
   FileSync,
   FileSyncLive,
+  LocalFileStateManagerLive,
   LocalFileStorage,
   LocalFileStorageLive,
-  LocalFileStateManagerLive,
-  RemoteStorage,
   makeS3SignerRemoteStorage,
+  RemoteStorage,
   type RemoteStorageConfig
 } from "../services/index.js"
-import { sanitizeStoreId } from "../utils/index.js"
-import type { FileStorageService } from "../services/file-storage/index.js"
-import type { FileSyncService } from "../services/file-sync/index.js"
 import { defaultConfig as defaultExecutorConfig } from "../services/sync-executor/index.js"
 import type {
   FileOperationResult,
   FileRecord,
   FileSyncEvent,
-  LocalFileState,
   LocalFilesState,
+  LocalFileState,
   TransferStatus
 } from "../types/index.js"
-import type { SyncSchema, SyncStore, LiveStoreDeps } from "../livestore/types.js"
-import type { FileSyncConfig } from "../services/file-sync/index.js"
+import { sanitizeStoreId } from "../utils/index.js"
 
 /**
  * Transfer status for file operations
@@ -197,7 +197,7 @@ export interface FileSyncInstance {
  * ```
  */
 export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
-  const { store, schema, remote, fileSystem, options = {} } = config
+  const { fileSystem, options = {}, remote, schema, store } = config
 
   // State
   let online = typeof navigator !== "undefined" ? navigator.onLine : true
@@ -229,8 +229,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const fileSyncConfig: FileSyncConfig = {
     executorConfig: {
-      maxConcurrentDownloads:
-        options.maxConcurrentDownloads ?? defaultExecutorConfig.maxConcurrentDownloads,
+      maxConcurrentDownloads: options.maxConcurrentDownloads ?? defaultExecutorConfig.maxConcurrentDownloads,
       maxConcurrentUploads: options.maxConcurrentUploads ?? defaultExecutorConfig.maxConcurrentUploads
     },
     ...(options.healthCheckIntervalMs !== undefined
@@ -277,7 +276,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileSyncService = async (): Promise<FileSyncService> => {
     if (fileSyncService) return fileSyncService
-    fileSyncService = await runEffect(Effect.gen(function* () {
+    fileSyncService = await runEffect(Effect.gen(function*() {
       return yield* FileSync
     }))
     return fileSyncService
@@ -285,7 +284,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileStorageService = async (): Promise<FileStorageService> => {
     if (fileStorageService) return fileStorageService
-    fileStorageService = await runEffect(Effect.gen(function* () {
+    fileStorageService = await runEffect(Effect.gen(function*() {
       return yield* FileStorage
     }))
     return fileStorageService
@@ -371,7 +370,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const readFile = async (path: string): Promise<File> =>
     runEffect(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const localStorage = yield* LocalFileStorage
         return yield* localStorage.readFile(path)
       })
@@ -379,7 +378,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const getFileUrl = async (path: string): Promise<string | null> =>
     runEffect(
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const localStorage = yield* LocalFileStorage
         const exists = yield* localStorage.fileExists(path)
         if (!exists) return null

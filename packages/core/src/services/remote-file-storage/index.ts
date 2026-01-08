@@ -5,16 +5,16 @@
  */
 
 export {
-  makeS3SignerRemoteStorage,
-  makeRemoteStorageLive,
-  RemoteStorage,
-  RemoteStorageConfigTag,
-  RemoteStorageLive,
   type DownloadOptions,
+  makeRemoteStorageLive,
+  makeS3SignerRemoteStorage,
+  RemoteStorage,
   type RemoteStorageAdapter,
   type RemoteStorageConfig,
-  type RemoteUploadResult,
+  RemoteStorageConfigTag,
+  RemoteStorageLive,
   type RemoteStorageService,
+  type RemoteUploadResult,
   type TransferProgressEvent,
   type UploadOptions
 } from "./RemoteStorage.js"

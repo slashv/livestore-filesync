@@ -1,5 +1,5 @@
-import { makeSchema, Schema, State } from '@livestore/livestore'
-import { createFileSyncSchema } from '@livestore-filesync/core/schema'
+import { createFileSyncSchema } from "@livestore-filesync/core/schema"
+import { makeSchema, Schema, State } from "@livestore/livestore"
 
 export const SyncPayload = Schema.Struct({ authToken: Schema.String })
 

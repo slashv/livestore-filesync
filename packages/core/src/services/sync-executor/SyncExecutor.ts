@@ -7,8 +7,8 @@
  * @module
  */
 
-import { Context, Deferred, Effect, Layer, Option, Queue, Ref, Schedule, Scope } from "effect"
-import { Duration } from "effect"
+import type { Scope } from "effect"
+import { Context, Deferred, Duration, Effect, Layer, Option, Queue, Ref, Schedule } from "effect"
 
 /**
  * Transfer kind
@@ -272,9 +272,7 @@ export const makeSyncExecutor = (
         const result = yield* handler(kind, fileId).pipe(
           Effect.retry(retrySchedule),
           Effect.map(() => ({ kind, fileId, success: true as const })),
-          Effect.catchAll((error) =>
-            Effect.succeed({ kind, fileId, success: false as const, error })
-          )
+          Effect.catchAll((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
         )
 
         // Update inflight count
@@ -435,14 +433,11 @@ export const makeSyncExecutor = (
         // it will already be in the downloadProcessedSet by then.
       })
 
-    const pause = (): Effect.Effect<void> =>
-      Ref.update(stateRef, (s) => ({ ...s, paused: true }))
+    const pause = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: true }))
 
-    const resume = (): Effect.Effect<void> =>
-      Ref.update(stateRef, (s) => ({ ...s, paused: false }))
+    const resume = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: false }))
 
-    const isPaused = (): Effect.Effect<boolean> =>
-      Ref.get(stateRef).pipe(Effect.map((s) => s.paused))
+    const isPaused = (): Effect.Effect<boolean> => Ref.get(stateRef).pipe(Effect.map((s) => s.paused))
 
     const getInflightCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
       Ref.get(stateRef).pipe(

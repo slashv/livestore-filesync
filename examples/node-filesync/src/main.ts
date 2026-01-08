@@ -1,13 +1,13 @@
 import { env } from "node:process"
 
+import { NodeFileSystem } from "@effect/platform-node"
 import { makeAdapter as makeLiveStoreAdapter } from "@livestore/adapter-node"
 import { createStorePromise, queryDb } from "@livestore/livestore"
 import { makeWsSync } from "@livestore/sync-cf/client"
-import { NodeFileSystem } from "@effect/platform-node"
 
 import { createFileSync, type SyncStore } from "@livestore-filesync/core"
 
-import { SyncPayload, events, schema, tables } from "./livestore/schema.js"
+import { events, schema, SyncPayload, tables } from "./livestore/schema.js"
 
 const storeId = env.STORE_ID ?? "node_filesync_store"
 const authToken = env.AUTH_TOKEN ?? "insecure-token-change-me"
@@ -33,9 +33,9 @@ const store = (await createStorePromise({
 const fileSync = createFileSync({
   store,
   schema: {
-    tables: tables,
-    events: events,
-    queryDb: queryDb
+    tables,
+    events,
+    queryDb
   },
   remote: {
     signerBaseUrl: fileSyncBaseUrl,

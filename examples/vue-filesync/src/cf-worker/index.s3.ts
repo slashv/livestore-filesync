@@ -23,10 +23,10 @@
  * See .dev.vars.example for required environment variables.
  */
 
-import type { CfTypes } from '@livestore/sync-cf/cf-worker'
-import * as SyncBackend from '@livestore/sync-cf/cf-worker'
-import { SyncPayload } from '../livestore/schema.ts'
-import { createS3SignerHandler, type S3SignerEnv } from '@livestore-filesync/s3-signer'
+import { createS3SignerHandler, type S3SignerEnv } from "@livestore-filesync/s3-signer"
+import type { CfTypes } from "@livestore/sync-cf/cf-worker"
+import * as SyncBackend from "@livestore/sync-cf/cf-worker"
+import { SyncPayload } from "../livestore/schema.ts"
 
 // =============================================================================
 // Environment
@@ -42,11 +42,11 @@ interface Env extends SyncBackend.Env, S3SignerEnv {
 
 export class SyncBackendDO extends SyncBackend.makeDurableObject({
   onPush: async (message, context) => {
-    console.log('onPush', message.batch, 'storeId:', context.storeId, 'payload:', context.payload)
+    console.log("onPush", message.batch, "storeId:", context.storeId, "payload:", context.payload)
   },
   onPull: async (message, context) => {
-    console.log('onPull', message, 'storeId:', context.storeId, 'payload:', context.payload)
-  },
+    console.log("onPull", message, "storeId:", context.storeId, "payload:", context.payload)
+  }
 }) {}
 
 // =============================================================================
@@ -55,8 +55,8 @@ export class SyncBackendDO extends SyncBackend.makeDurableObject({
 
 // S3 signer handler (signs URLs for direct-to-R2 uploads)
 const s3SignerHandler = createS3SignerHandler({
-  basePath: '/api',
-  getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+  basePath: "/api",
+  getAuthToken: (env) => env.WORKER_AUTH_TOKEN
 })
 
 // =============================================================================
@@ -76,17 +76,17 @@ export default {
         request,
         searchParams,
         ctx,
-        syncBackendBinding: 'SYNC_BACKEND_DO',
+        syncBackendBinding: "SYNC_BACKEND_DO",
         syncPayloadSchema: SyncPayload,
         validatePayload: (payload, context) => {
           console.log(`Validating connection for store: ${context.storeId}`)
           if (payload?.authToken !== env.WORKER_AUTH_TOKEN) {
-            throw new Error('Invalid auth token')
+            throw new Error("Invalid auth token")
           }
-        },
+        }
       })
     }
 
-    return new Response('Not Found', { status: 404 })
-  },
+    return new Response("Not Found", { status: 404 })
+  }
 }

@@ -1,4 +1,4 @@
-import { tables, fileSyncSchema } from './livestore/schema'
+import type { fileSyncSchema, tables } from "./livestore/schema"
 
 export type LocalFile = typeof fileSyncSchema.schemas.LocalFileStateSchema.Type
 export type LocalFilesState = typeof fileSyncSchema.schemas.LocalFilesStateSchema.Type

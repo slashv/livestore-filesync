@@ -6,13 +6,13 @@
  * @module
  */
 
-import type { Layer } from "effect"
-import { FileSystem } from "@effect/platform/FileSystem"
+import type { FileSystem } from "@effect/platform/FileSystem"
 import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
+import type { Layer } from "effect"
+import type { SyncSchema } from "../livestore/types.js"
 import { createFileSyncSchema } from "../schema/index.js"
 import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
-import type { SyncSchema } from "../livestore/types.js"
 
 const DEFAULT_SIGNER_BASE_URL = "/api"
 const REQUIRED_TABLES = ["files", "localFileState"] as const
@@ -75,7 +75,7 @@ const validateDefaultSchema = (store: Store<any>) => {
       .join("; ")
     throw new Error(
       `FileSync schema missing from store (${details}). ` +
-      "Ensure createFileSyncSchema is merged into your LiveStore schema or pass schema to initFileSync."
+        "Ensure createFileSyncSchema is merged into your LiveStore schema or pass schema to initFileSync."
     )
   }
 }
@@ -100,30 +100,30 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): SyncSchema =
 
 /**
  * Initialize and start file sync.
- * 
+ *
  * Creates a FileSync instance, and by default starts syncing immediately.
  * Returns a dispose function to clean up resources.
- * 
+ *
  * @example
  * ```typescript
  * import { initFileSync } from '@livestore-filesync/core'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
- * 
+ *
  * const dispose = initFileSync(store, {
  *   fileSystem: opfsLayer(),
  *   remote: { signerBaseUrl: '/api' }
  * })
- * 
+ *
  * // Later, to clean up:
  * await dispose()
  * ```
- * 
+ *
  * @returns Dispose function that stops sync and cleans up resources
  */
 export const initFileSync = (
-  store: Store<any>, 
+  store: Store<any>,
   config: InitFileSyncConfig
-): (() => Promise<void>) => {
+): () => Promise<void> => {
   if (singleton) {
     return async () => {
       await singleton?.dispose()
@@ -201,11 +201,11 @@ const eventListeners: Set<(event: import("../types/index.js").FileSyncEvent) => 
 /**
  * Subscribe to file sync events.
  * Returns an unsubscribe function.
- * 
+ *
  * @example
  * ```typescript
  * import { onFileSyncEvent, createActiveTransferProgress, updateActiveTransfers } from '@livestore-filesync/core'
- * 
+ *
  * let transfers = {}
  * const unsub = onFileSyncEvent((event) => {
  *   if (event.type === 'upload:progress') {
@@ -220,7 +220,7 @@ const eventListeners: Set<(event: import("../types/index.js").FileSyncEvent) => 
  */
 export const onFileSyncEvent = (
   callback: (event: import("../types/index.js").FileSyncEvent) => void
-): (() => void) => {
+): () => void => {
   eventListeners.add(callback)
   return () => {
     eventListeners.delete(callback)

@@ -11,39 +11,39 @@ export {
   createFileSync,
   type CreateFileSyncConfig,
   type FileSyncInstance,
-  type SyncStore,
-  type SyncSchema,
   type SyncEvent,
   type SyncFileOperationResult,
   type SyncFileRecord,
-  type SyncLocalFileState,
   type SyncLocalFilesState,
+  type SyncLocalFileState,
+  type SyncSchema,
+  type SyncStore,
   type SyncTransferStatus
 } from "./createFileSync.js"
 
 // Singleton helpers
 export {
+  deleteFile,
+  getFileUrl,
   initFileSync,
+  type InitFileSyncConfig,
+  isOnline,
+  onFileSyncEvent,
+  prioritizeDownload,
+  readFile,
+  resolveFileUrl,
+  saveFile,
   startFileSync,
   stopFileSync,
-  saveFile,
-  updateFile,
-  deleteFile,
-  readFile,
-  getFileUrl,
-  resolveFileUrl,
-  prioritizeDownload,
-  isOnline,
   triggerSync,
-  onFileSyncEvent,
-  type InitFileSyncConfig
+  updateFile
 } from "./singleton.js"
 
 // Sync status utilities
 export {
-  getSyncStatus,
+  computeTotalProgress,
   createActiveTransferProgress,
-  updateActiveTransfers,
+  getSyncStatus,
   removeActiveTransfer,
-  computeTotalProgress
+  updateActiveTransfers
 } from "./sync-status.js"

@@ -11,17 +11,10 @@ export { createS3SignerHandler } from "./handler.js"
 export type {
   S3SignerEnv,
   S3SignerHandlerConfig,
-  SignUploadRequest,
-  SignUploadResponse,
   SignDownloadRequest,
-  SignDownloadResponse
+  SignDownloadResponse,
+  SignUploadRequest,
+  SignUploadResponse
 } from "./types.js"
 
-export {
-  handleCorsPreflightRequest,
-  addCorsHeaders,
-  jsonResponse,
-  errorResponse
-} from "./cors.js"
-
-
+export { addCorsHeaders, errorResponse, handleCorsPreflightRequest, jsonResponse } from "./cors.js"

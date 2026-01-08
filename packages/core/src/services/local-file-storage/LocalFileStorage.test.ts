@@ -1,22 +1,20 @@
+import { SystemError } from "@effect/platform/Error"
+import { FileSystem, Size } from "@effect/platform/FileSystem"
+import type * as FS from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { FileNotFoundError } from "../../errors/index.js"
-import { FileSystem, Size } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
-import { SystemError } from "@effect/platform/Error"
-import { LocalFileStorage, LocalFileStorageLive, LocalFileStorageMemory } from "./index.js"
 import { joinPath, makeStoreRoot } from "../../utils/index.js"
+import { LocalFileStorage, LocalFileStorageLive, LocalFileStorageMemory } from "./index.js"
 
 describe("LocalFileStorage", () => {
   const runWithStorage = <A, E>(
     effect: Effect.Effect<A, E, LocalFileStorage>
-  ): Promise<A> =>
-    Effect.runPromise(Effect.provide(effect, LocalFileStorageMemory))
+  ): Promise<A> => Effect.runPromise(Effect.provide(effect, LocalFileStorageMemory))
 
   const runWithStorageExit = <A, E>(
     effect: Effect.Effect<A, E, LocalFileStorage>
-  ): Promise<Exit.Exit<A, E>> =>
-    Effect.runPromiseExit(Effect.provide(effect, LocalFileStorageMemory))
+  ): Promise<Exit.Exit<A, E>> => Effect.runPromiseExit(Effect.provide(effect, LocalFileStorageMemory))
 
   const makeFileInfo = (type: FS.File.Type, size = 0): FS.File.Info => ({
     type,
@@ -59,7 +57,7 @@ describe("LocalFileStorage", () => {
       }
     }
 
-    const listDirectEntries = (directory: string): string[] => {
+    const listDirectEntries = (directory: string): Array<string> => {
       const normalized = normalize(directory)
       const prefix = normalized === "" ? "" : `${normalized}/`
       const entries = new Set<string>()
@@ -90,7 +88,10 @@ describe("LocalFileStorage", () => {
       })
 
     // Create a partial FileSystem that has the methods used by LocalFileStorage
-    const service: Pick<FS.FileSystem, "readFile" | "writeFile" | "readDirectory" | "makeDirectory" | "remove" | "exists" | "stat"> = {
+    const service: Pick<
+      FS.FileSystem,
+      "readFile" | "writeFile" | "readDirectory" | "makeDirectory" | "remove" | "exists" | "stat"
+    > = {
       readFile: (path) =>
         Effect.try({
           try: () => {
@@ -133,8 +134,7 @@ describe("LocalFileStorage", () => {
               return
             }
             const prefix = normalized === "" ? "" : `${normalized}/`
-            const hasChildren =
-              Array.from(files.keys()).some((entry) => entry.startsWith(prefix)) ||
+            const hasChildren = Array.from(files.keys()).some((entry) => entry.startsWith(prefix)) ||
               Array.from(directories).some(
                 (entry) => entry !== normalized && entry.startsWith(prefix)
               )
@@ -278,7 +278,7 @@ describe("LocalFileStorage", () => {
       const result = await runWithStorage(
         Effect.gen(function*() {
           const storage = yield* LocalFileStorage
-          const data = new TextEncoder().encode('{"key": "value"}')
+          const data = new TextEncoder().encode("{\"key\": \"value\"}")
 
           yield* storage.writeBytes("data.json", data, "application/json")
           const file = yield* storage.readFile("data.json")
@@ -441,7 +441,7 @@ describe("LocalFileStorage", () => {
     })
 
     it("should filter metadata files from listFiles", async () => {
-      const { service, files } = createMemoryFileSystem()
+      const { files, service } = createMemoryFileSystem()
       const result = await runWithLiveStorage(
         Effect.gen(function*() {
           const storage = yield* LocalFileStorage
@@ -457,7 +457,7 @@ describe("LocalFileStorage", () => {
     })
 
     it("should remove metadata when deleting a file", async () => {
-      const { service, files } = createMemoryFileSystem()
+      const { files, service } = createMemoryFileSystem()
       await runWithLiveStorage(
         Effect.gen(function*() {
           const storage = yield* LocalFileStorage

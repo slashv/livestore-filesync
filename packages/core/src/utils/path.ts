@@ -7,8 +7,7 @@
 /**
  * Join path segments
  */
-export const joinPath = (...segments: string[]): string =>
-  segments.filter((s) => s.length > 0).join("/")
+export const joinPath = (...segments: Array<string>): string => segments.filter((s) => s.length > 0).join("/")
 
 /**
  * Base directory for file storage
@@ -23,14 +22,12 @@ export const FILES_DIRECTORY = FILES_ROOT
 /**
  * Sanitize storeId for filesystem-safe usage
  */
-export const sanitizeStoreId = (storeId: string): string =>
-  storeId.replace(/[^A-Za-z0-9._-]/g, "_")
+export const sanitizeStoreId = (storeId: string): string => storeId.replace(/[^A-Za-z0-9._-]/g, "_")
 
 /**
  * Build the store-scoped root path
  */
-export const makeStoreRoot = (storeId: string): string =>
-  joinPath(FILES_ROOT, sanitizeStoreId(storeId))
+export const makeStoreRoot = (storeId: string): string => joinPath(FILES_ROOT, sanitizeStoreId(storeId))
 
 /**
  * Generate a storage path from a content hash
@@ -43,8 +40,7 @@ export const makeStoreRoot = (storeId: string): string =>
  * makeStoredPath("store-1", "abc123...") // => "livestore-filesync-files/store-1/abc123..."
  * ```
  */
-export const makeStoredPath = (storeId: string, hash: string): string =>
-  joinPath(makeStoreRoot(storeId), hash)
+export const makeStoredPath = (storeId: string, hash: string): string => joinPath(makeStoreRoot(storeId), hash)
 
 /**
  * Strip the files root prefix from a stored path for remote storage keys.

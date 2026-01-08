@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
-import { FileStorage, FileStorageLive } from "./index.js"
 import { FileSyncLive } from "../file-sync/index.js"
-import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import { LocalFileStateManagerLive } from "../local-file-state/index.js"
+import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import { RemoteStorageMemory } from "../remote-file-storage/index.js"
+import { FileStorage, FileStorageLive } from "./index.js"
 
 const createRuntime = (deps: Parameters<typeof FileSyncLive>[0]) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
@@ -33,7 +33,7 @@ const createRuntime = (deps: Parameters<typeof FileSyncLive>[0]) => {
 
 describe("FileStorage", () => {
   it("saves files and records metadata", async () => {
-    const { deps, store, tables, shutdown } = await createTestStore()
+    const { deps, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
     const fileStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileStorage
@@ -63,7 +63,7 @@ describe("FileStorage", () => {
   })
 
   it("updates files and cleans up old paths", async () => {
-    const { deps, store, tables, shutdown } = await createTestStore()
+    const { deps, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
     const fileStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileStorage
@@ -99,7 +99,7 @@ describe("FileStorage", () => {
   })
 
   it("deletes files and marks records deleted", async () => {
-    const { deps, store, tables, events, shutdown } = await createTestStore()
+    const { deps, events, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
     const fileStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileStorage
@@ -140,7 +140,7 @@ describe("FileStorage", () => {
   })
 
   it("prefers local file URLs and falls back to remote URLs", async () => {
-    const { deps, store, tables, events, shutdown } = await createTestStore()
+    const { deps, events, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)
     const fileStorage = await runtime.runPromise(Effect.gen(function*() {
       return yield* FileStorage

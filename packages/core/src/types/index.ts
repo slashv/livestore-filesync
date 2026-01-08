@@ -11,15 +11,14 @@
  */
 
 import { Schema } from "@livestore/livestore"
-import {
-  TransferStatusSchema,
-  LocalFileStateSchema,
-  LocalFilesStateSchema,
+import type {
   FileCreatedPayloadSchema,
-  FileUpdatedPayloadSchema,
   FileDeletedPayloadSchema,
-  type FileSyncTables
+  FileUpdatedPayloadSchema,
+  TransferStatusSchema,
+  TransferStatusSchema
 } from "../schema/index.js"
+import { LocalFilesStateSchema, LocalFileStateSchema } from "../schema/index.js"
 
 // ============================================
 // Types derived from Effect Schema
@@ -175,19 +174,19 @@ export interface SyncStatus {
   readonly hasPending: boolean
 
   /** File IDs currently uploading */
-  readonly uploadingFileIds: readonly string[]
+  readonly uploadingFileIds: ReadonlyArray<string>
   /** File IDs currently downloading */
-  readonly downloadingFileIds: readonly string[]
+  readonly downloadingFileIds: ReadonlyArray<string>
   /** File IDs queued for upload */
-  readonly queuedUploadFileIds: readonly string[]
+  readonly queuedUploadFileIds: ReadonlyArray<string>
   /** File IDs queued for download */
-  readonly queuedDownloadFileIds: readonly string[]
+  readonly queuedDownloadFileIds: ReadonlyArray<string>
   /** File IDs pending upload (waiting to be queued) */
-  readonly pendingUploadFileIds: readonly string[]
+  readonly pendingUploadFileIds: ReadonlyArray<string>
   /** File IDs pending download (waiting to be queued) */
-  readonly pendingDownloadFileIds: readonly string[]
+  readonly pendingDownloadFileIds: ReadonlyArray<string>
   /** Files with sync errors and their error messages */
-  readonly errors: readonly SyncError[]
+  readonly errors: ReadonlyArray<SyncError>
 }
 
 // ============================================
@@ -279,11 +278,9 @@ export function getFileDisplayState(
   // This ensures we have the correct version of the file locally
   const hasLocalCopy = !!localState?.localHash && localState.localHash === file.contentHash
   const isUploaded = file.remoteKey !== ""
-  const isUploading =
-    localState?.uploadStatus === "inProgress" ||
+  const isUploading = localState?.uploadStatus === "inProgress" ||
     localState?.uploadStatus === "queued"
-  const isDownloading =
-    localState?.downloadStatus === "inProgress" ||
+  const isDownloading = localState?.downloadStatus === "inProgress" ||
     localState?.downloadStatus === "queued"
 
   return {

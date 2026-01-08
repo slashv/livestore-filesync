@@ -1,40 +1,41 @@
-import React from "react";
-import { queryDb } from "@livestore/livestore";
-import { useStore } from "@livestore/react";
-import { isOnline, saveFile } from "@livestore-filesync/core";
-import { tables } from "../livestore/schema.ts";
-import { ImageCard } from "./ImageCard.tsx";
-import { reactStoreOptions } from "../App.tsx";
+import { isOnline, saveFile } from "@livestore-filesync/core"
+import { queryDb } from "@livestore/livestore"
+import { useStore } from "@livestore/react"
+import React from "react"
+import { reactStoreOptions } from "../App.tsx"
+import { tables } from "../livestore/schema.ts"
+import { ImageCard } from "./ImageCard.tsx"
+
 export const Gallery: React.FC = () => {
-  const store = useStore(reactStoreOptions);
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const store = useStore(reactStoreOptions)
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
 
   const files = store.useQuery(
     queryDb(tables.files.where({ deletedAt: null }))
-  );
+  )
 
   const handleUploadClick = () => {
-    inputRef.current?.click();
-  };
+    inputRef.current?.click()
+  }
 
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const selectedFiles = event.target.files;
-    if (!selectedFiles || selectedFiles.length === 0) return;
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) return
 
     try {
-      const savePromises = Array.from(selectedFiles).map((file) => saveFile(file));
-      const results = await Promise.all(savePromises);
-      console.log("Files saved:", results);
+      const savePromises = Array.from(selectedFiles).map((file) => saveFile(file))
+      const results = await Promise.all(savePromises)
+      console.log("Files saved:", results)
     } catch (error) {
-      console.error("Failed to save files:", error);
+      console.error("Failed to save files:", error)
     }
 
     if (inputRef.current) {
-      inputRef.current.value = "";
+      inputRef.current.value = ""
     }
-  };
+  }
 
   return (
     <div className="container" data-testid="gallery">
@@ -63,17 +64,17 @@ export const Gallery: React.FC = () => {
         </div>
       </div>
 
-      {!files || files.length === 0 ? (
-        <div className="empty" data-testid="empty-state">
-          <p>No images yet. Upload one to get started!</p>
-        </div>
-      ) : (
-        <div className="layout">
-          {files.map((file) => (
-            <ImageCard key={file.id} file={file} />
-          ))}
-        </div>
-      )}
+      {!files || files.length === 0 ?
+        (
+          <div className="empty" data-testid="empty-state">
+            <p>No images yet. Upload one to get started!</p>
+          </div>
+        ) :
+        (
+          <div className="layout">
+            {files.map((file) => <ImageCard key={file.id} file={file} />)}
+          </div>
+        )}
     </div>
-  );
-};
+  )
+}

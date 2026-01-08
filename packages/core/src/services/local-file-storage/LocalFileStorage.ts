@@ -8,14 +8,10 @@
  * @module
  */
 
-import { Context, Effect, Layer } from "effect"
 import { FileSystem } from "@effect/platform/FileSystem"
 import type * as FS from "@effect/platform/FileSystem"
-import {
-  DirectoryNotFoundError,
-  FileNotFoundError,
-  StorageError
-} from "../../errors/index.js"
+import { Context, Effect, Layer } from "effect"
+import { DirectoryNotFoundError, FileNotFoundError, StorageError } from "../../errors/index.js"
 import { joinPath, parsePath } from "../../utils/path.js"
 
 interface FileMetadata {
@@ -72,7 +68,7 @@ export interface LocalFileStorageService {
   /**
    * List all files in a directory
    */
-  readonly listFiles: (directory: string) => Effect.Effect<string[], DirectoryNotFoundError | StorageError>
+  readonly listFiles: (directory: string) => Effect.Effect<Array<string>, DirectoryNotFoundError | StorageError>
 }
 
 /**
@@ -83,8 +79,7 @@ export class LocalFileStorage extends Context.Tag("LocalFileStorage")<
   LocalFileStorageService
 >() {}
 
-const encodeMetadata = (metadata: FileMetadata): Uint8Array =>
-  new TextEncoder().encode(JSON.stringify(metadata))
+const encodeMetadata = (metadata: FileMetadata): Uint8Array => new TextEncoder().encode(JSON.stringify(metadata))
 
 const decodeMetadata = (data: Uint8Array): FileMetadata => {
   try {
@@ -324,7 +319,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
 
     const listFiles = (
       directory: string
-    ): Effect.Effect<string[], DirectoryNotFoundError | StorageError> =>
+    ): Effect.Effect<Array<string>, DirectoryNotFoundError | StorageError> =>
       Effect.gen(function*() {
         const shouldCheckExists = directory !== "" && directory !== "."
         const exists = shouldCheckExists
@@ -345,7 +340,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
         return files.filter((path) => !path.endsWith(META_SUFFIX))
       })
 
-    const listFilesRecursive = (directory: string): Effect.Effect<string[], StorageError> =>
+    const listFilesRecursive = (directory: string): Effect.Effect<Array<string>, StorageError> =>
       Effect.gen(function*() {
         const entries = yield* fs.readDirectory(directory).pipe(
           Effect.mapError(
@@ -357,7 +352,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
           )
         )
 
-        const files: string[] = []
+        const files: Array<string> = []
         for (const entry of entries) {
           const entryPath = joinPath(directory, entry)
           const stat = yield* fs.stat(entryPath).pipe(

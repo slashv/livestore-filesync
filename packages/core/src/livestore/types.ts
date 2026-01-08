@@ -6,8 +6,8 @@
  * @module
  */
 
-import { queryDb, StoreInternalsSymbol } from "@livestore/livestore"
-import type { Store, ClientSession } from "@livestore/livestore"
+import { StoreInternalsSymbol } from "@livestore/livestore"
+import type { ClientSession, queryDb, Store } from "@livestore/livestore"
 import type { createFileSyncSchema } from "../schema/index.js"
 
 export type FileSyncSchema = ReturnType<typeof createFileSyncSchema>

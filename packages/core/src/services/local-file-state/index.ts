@@ -7,6 +7,6 @@
 export {
   LocalFileStateManager,
   LocalFileStateManagerLive,
-  makeLocalFileStateManager,
-  type LocalFileStateManagerService
+  type LocalFileStateManagerService,
+  makeLocalFileStateManager
 } from "./LocalFileStateManager.js"

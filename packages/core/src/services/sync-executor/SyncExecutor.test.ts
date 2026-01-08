@@ -1,9 +1,7 @@
-import { Deferred, Effect, Ref, Scope } from "effect"
+import type { Scope } from "effect"
+import { Deferred, Effect, Ref } from "effect"
 import { describe, expect, it } from "vitest"
-import {
-  makeSyncExecutor,
-  type SyncExecutorConfig
-} from "./index.js"
+import { makeSyncExecutor, type SyncExecutorConfig } from "./index.js"
 
 describe("SyncExecutor", () => {
   const testConfig: SyncExecutorConfig = {
@@ -17,12 +15,11 @@ describe("SyncExecutor", () => {
 
   const runScoped = <A, E>(
     effect: Effect.Effect<A, E, Scope.Scope>
-  ): Promise<A> =>
-    Effect.runPromise(Effect.scoped(effect))
+  ): Promise<A> => Effect.runPromise(Effect.scoped(effect))
 
   describe("enqueue and process", () => {
     it("should process enqueued downloads", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       const result = await runScoped(
         Effect.gen(function*() {
@@ -48,7 +45,7 @@ describe("SyncExecutor", () => {
     })
 
     it("should process enqueued uploads", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       const result = await runScoped(
         Effect.gen(function*() {
@@ -74,7 +71,7 @@ describe("SyncExecutor", () => {
     })
 
     it("should handle mixed downloads and uploads", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       const result = await runScoped(
         Effect.gen(function*() {
@@ -112,8 +109,7 @@ describe("SyncExecutor", () => {
           const countRef = yield* Ref.make(0)
 
           const executor = yield* makeSyncExecutor(
-            (_kind, _fileId) =>
-              Ref.update(countRef, (n) => n + 1),
+            (_kind, _fileId) => Ref.update(countRef, (n) => n + 1),
             testConfig
           )
 
@@ -133,7 +129,7 @@ describe("SyncExecutor", () => {
 
   describe("pause and resume", () => {
     it("should pause and resume processing", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       await runScoped(
         Effect.gen(function*() {
@@ -170,7 +166,7 @@ describe("SyncExecutor", () => {
 
   describe("retry on failure", () => {
     it("should retry failed tasks", async () => {
-      const attempts: number[] = []
+      const attempts: Array<number> = []
 
       await runScoped(
         Effect.gen(function*() {
@@ -199,7 +195,7 @@ describe("SyncExecutor", () => {
     })
 
     it("should give up after max retries", async () => {
-      const attempts: number[] = []
+      const attempts: Array<number> = []
 
       await runScoped(
         Effect.gen(function*() {
@@ -373,7 +369,7 @@ describe("SyncExecutor", () => {
 
   describe("prioritizeDownload", () => {
     it("should process prioritized downloads before normal queue", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       await runScoped(
         Effect.gen(function*() {
@@ -465,7 +461,7 @@ describe("SyncExecutor", () => {
     })
 
     it("should be a no-op if file is already prioritized", async () => {
-      const processed: string[] = []
+      const processed: Array<string> = []
 
       await runScoped(
         Effect.gen(function*() {

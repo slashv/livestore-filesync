@@ -145,8 +145,7 @@ describe("LocalFileStateManager", () => {
             downloadStatus: "done",
             lastSyncError: ""
           })
-        )
-      )
+        ))
 
       // Run all updates concurrently (this is what caused the race condition)
       await Promise.all(updates)
@@ -175,8 +174,20 @@ describe("LocalFileStateManager", () => {
       // First add some files
       await Effect.runPromise(
         manager.mergeFiles({
-          "file-1": { path: "/p/1", localHash: "h1", uploadStatus: "queued", downloadStatus: "done", lastSyncError: "" },
-          "file-2": { path: "/p/2", localHash: "h2", uploadStatus: "queued", downloadStatus: "done", lastSyncError: "" },
+          "file-1": {
+            path: "/p/1",
+            localHash: "h1",
+            uploadStatus: "queued",
+            downloadStatus: "done",
+            lastSyncError: ""
+          },
+          "file-2": {
+            path: "/p/2",
+            localHash: "h2",
+            uploadStatus: "queued",
+            downloadStatus: "done",
+            lastSyncError: ""
+          },
           "file-3": { path: "/p/3", localHash: "h3", uploadStatus: "queued", downloadStatus: "done", lastSyncError: "" }
         })
       )

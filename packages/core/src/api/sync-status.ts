@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncStatus, SyncError } from "../types/index.js"
+import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncError, SyncStatus } from "../types/index.js"
 
 /**
  * Compute aggregate sync status from local files state
@@ -41,13 +41,13 @@ import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncStat
  * @returns Aggregate sync status with counts and file ID lists
  */
 export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
-  const uploadingFileIds: string[] = []
-  const downloadingFileIds: string[] = []
-  const queuedUploadFileIds: string[] = []
-  const queuedDownloadFileIds: string[] = []
-  const pendingUploadFileIds: string[] = []
-  const pendingDownloadFileIds: string[] = []
-  const errors: SyncError[] = []
+  const uploadingFileIds: Array<string> = []
+  const downloadingFileIds: Array<string> = []
+  const queuedUploadFileIds: Array<string> = []
+  const queuedDownloadFileIds: Array<string> = []
+  const pendingUploadFileIds: Array<string> = []
+  const pendingDownloadFileIds: Array<string> = []
+  const errors: Array<SyncError> = []
   const seenErrorFileIds = new Set<string>()
 
   for (const [fileId, state] of Object.entries(localFilesState)) {
@@ -107,8 +107,7 @@ export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
     pendingDownloadCount,
     errorCount: errors.length,
     isSyncing: uploadingCount > 0 || downloadingCount > 0,
-    hasPending:
-      queuedUploadCount > 0 ||
+    hasPending: queuedUploadCount > 0 ||
       queuedDownloadCount > 0 ||
       pendingUploadCount > 0 ||
       pendingDownloadCount > 0,
@@ -124,7 +123,7 @@ export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
 
 /**
  * Create an ActiveTransferProgress object from progress values
- * 
+ *
  * @param fileId - The file ID being transferred
  * @param kind - Whether this is an upload or download
  * @param loaded - Bytes transferred so far
@@ -143,7 +142,7 @@ export function createActiveTransferProgress(
 
 /**
  * Update an ActiveTransfers map with new progress
- * 
+ *
  * @param transfers - Current active transfers map
  * @param progress - New progress to merge
  * @returns Updated active transfers map
@@ -157,7 +156,7 @@ export function updateActiveTransfers(
 
 /**
  * Remove a file from the active transfers map
- * 
+ *
  * @param transfers - Current active transfers map
  * @param fileId - File ID to remove
  * @returns Updated active transfers map
@@ -172,7 +171,7 @@ export function removeActiveTransfer(
 
 /**
  * Compute total progress across all active transfers
- * 
+ *
  * @param transfers - Active transfers map
  * @returns Object with totalLoaded, totalSize, and overall percent
  */

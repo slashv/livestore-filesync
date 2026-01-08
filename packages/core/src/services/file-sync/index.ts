@@ -7,8 +7,8 @@
 export {
   defaultFileSyncConfig,
   FileSync,
-  FileSyncLive,
-  makeFileSync,
   type FileSyncConfig,
-  type FileSyncService
+  FileSyncLive,
+  type FileSyncService,
+  makeFileSync
 } from "./FileSync.js"

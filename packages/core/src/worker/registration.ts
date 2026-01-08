@@ -8,7 +8,7 @@
 
 /**
  * Options for initializing the file sync service worker.
- * 
+ *
  * The service worker intercepts GET requests to /livestore-filesync-files/*
  * and serves files from OPFS when available, falling back to remote storage.
  */
@@ -101,13 +101,13 @@ export async function registerFileSyncServiceWorker(
   options: RegisterOptions = {}
 ): Promise<ServiceWorkerRegistration | null> {
   const {
-    scriptUrl = "/file-sync-sw.js",
-    scope = "/",
-    updateViaCache = "imports",
-    type,
-    onSuccess,
     onError,
-    onUpdate
+    onSuccess,
+    onUpdate,
+    scope = "/",
+    scriptUrl = "/file-sync-sw.js",
+    type,
+    updateViaCache = "imports"
   } = options
 
   if (!isServiceWorkerSupported()) {
@@ -197,7 +197,7 @@ export async function clearServiceWorkerCache(): Promise<void> {
 /**
  * Request the service worker to prefetch files
  */
-export async function prefetchFiles(paths: string[]): Promise<void> {
+export async function prefetchFiles(paths: Array<string>): Promise<void> {
   await sendMessageToServiceWorker({ type: "PREFETCH", payload: { paths } })
 }
 
@@ -207,24 +207,24 @@ export async function prefetchFiles(paths: string[]): Promise<void> {
 
 /**
  * Initialize and register the file sync service worker.
- * 
+ *
  * This function handles:
  * - Building the SW URL with configuration parameters
  * - Registering the service worker
  * - Waiting for the SW to be ready
- * 
+ *
  * Call this before rendering any components that use file URLs.
  * The service worker must be ready before it can intercept requests.
- * 
+ *
  * **Setup required:** Copy the bundled SW to your public folder:
  * ```bash
  * cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js
  * ```
- * 
+ *
  * @example
  * ```typescript
  * import { initServiceWorker } from '@livestore-filesync/core/worker'
- * 
+ *
  * // Before rendering (this must complete before file URLs will work)
  * await initServiceWorker({ authToken: 'my-token' })
  * ```
@@ -235,7 +235,7 @@ export async function initServiceWorker(options: ServiceWorkerOptions = {}): Pro
   }
 
   const filesBaseUrl = options.filesBaseUrl ?? (typeof window !== "undefined" ? window.location.origin : "")
-  
+
   const swUrl = new URL(options.scriptUrl ?? "/file-sync-sw.js", filesBaseUrl)
   swUrl.searchParams.set("filesBaseUrl", filesBaseUrl)
   if (options.authToken) {
@@ -245,6 +245,6 @@ export async function initServiceWorker(options: ServiceWorkerOptions = {}): Pro
   await registerFileSyncServiceWorker({
     scriptUrl: swUrl.toString()
   })
-  
+
   await navigator.serviceWorker.ready
 }

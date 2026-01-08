@@ -135,7 +135,7 @@ export interface RemoteStorageService extends RemoteStorageAdapter {
 export class RemoteStorage extends Context.Tag("RemoteStorage")<
   RemoteStorage,
   RemoteStorageService
->() { }
+>() {}
 
 /**
  * Create a signer-backed S3-compatible remote storage implementation.
@@ -228,7 +228,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     file: File,
     options: UploadOptions
   ): Effect.Effect<RemoteUploadResult, UploadError> =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const signed = yield* signUpload({
         key: options.key,
         ...(file.type ? { contentType: file.type } : {}),
@@ -291,9 +291,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
             xhr.open(signed.method, signed.url)
             if (signed.headers) {
-              Object.entries(signed.headers).forEach(([k, v]) =>
-                xhr.setRequestHeader(k, v)
-              )
+              Object.entries(signed.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
             }
             xhr.send(file)
           }),
@@ -308,7 +306,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     })
 
   const download = (key: string, options?: DownloadOptions): Effect.Effect<File, DownloadError> =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const signed = yield* signDownload(key)
       const response = yield* Effect.tryPromise({
         try: async () => {
@@ -355,7 +353,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
       }
 
       // Stream download with progress tracking
-      const chunks: Uint8Array[] = []
+      const chunks: Array<Uint8Array> = []
       let loaded = 0
 
       while (true) {
@@ -376,7 +374,9 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         options.onProgress({ loaded, total: contentLength })
       }
 
-      const blob = new Blob(chunks as BlobPart[], { type: response.headers.get("Content-Type") || "application/octet-stream" })
+      const blob = new Blob(chunks as Array<BlobPart>, {
+        type: response.headers.get("Content-Type") || "application/octet-stream"
+      })
       const filename = key.split("/").pop() || "file"
       return new File([blob], filename, { type: blob.type })
     })
@@ -437,8 +437,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
  */
 export const makeRemoteStorageLive = (
   config: RemoteStorageConfig
-): Layer.Layer<RemoteStorage> =>
-  Layer.succeed(RemoteStorage, makeS3SignerRemoteStorage(config))
+): Layer.Layer<RemoteStorage> => Layer.succeed(RemoteStorage, makeS3SignerRemoteStorage(config))
 
 /**
  * RemoteStorageConfig service tag for dependency injection
@@ -446,16 +445,15 @@ export const makeRemoteStorageLive = (
 export class RemoteStorageConfigTag extends Context.Tag("RemoteStorageConfig")<
   RemoteStorageConfigTag,
   RemoteStorageConfig
->() { }
+>() {}
 
 /**
  * Layer that reads config from RemoteStorageConfig service
  */
-export const RemoteStorageLive: Layer.Layer<RemoteStorage, never, RemoteStorageConfigTag> =
-  Layer.effect(
-    RemoteStorage,
-    Effect.gen(function* () {
-      const config = yield* RemoteStorageConfigTag
-      return makeS3SignerRemoteStorage(config)
-    })
-  )
+export const RemoteStorageLive: Layer.Layer<RemoteStorage, never, RemoteStorageConfigTag> = Layer.effect(
+  RemoteStorage,
+  Effect.gen(function*() {
+    const config = yield* RemoteStorageConfigTag
+    return makeS3SignerRemoteStorage(config)
+  })
+)

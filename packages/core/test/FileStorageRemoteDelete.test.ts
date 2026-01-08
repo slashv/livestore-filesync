@@ -1,26 +1,26 @@
-import { Deferred, Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
-import { describe, expect, it } from "vitest"
 import { makeAdapter } from "@livestore/adapter-node"
 import { createStorePromise, makeSchema, queryDb, State } from "@livestore/livestore"
+import { Deferred, Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
+import { describe, expect, it } from "vitest"
+import type { LiveStoreDeps } from "../src/livestore/types.js"
 import { createFileSyncSchema } from "../src/schema/index.js"
 import {
   FileStorage,
   FileStorageLive,
   FileSync,
   FileSyncLive,
-  LocalFileStorageMemory,
   LocalFileStateManagerLive,
+  LocalFileStorageMemory,
   makeRemoteStorageMemoryWithRefs,
   RemoteStorage
 } from "../src/services/index.js"
 import { sanitizeStoreId } from "../src/utils/index.js"
-import type { LiveStoreDeps } from "../src/livestore/types.js"
 
 describe("FileStorage remote delete", () => {
   it("deletes the remote file if the file is deleted during an in-flight upload", async () => {
     const adapter = makeAdapter({ storage: { type: "in-memory" } })
     const fileSyncSchema = createFileSyncSchema()
-    const { tables, events, createMaterializers } = fileSyncSchema
+    const { createMaterializers, events, tables } = fileSyncSchema
     const materializers = State.SQLite.materializers(events, createMaterializers(tables))
     const state = State.SQLite.makeState({ tables, materializers })
     const schema = makeSchema({ events, state })
@@ -32,8 +32,7 @@ describe("FileStorage remote delete", () => {
       storeId: sanitizeStoreId(store.storeId)
     }
 
-    const { service: remoteService, storeRef } =
-      await Effect.runPromise(makeRemoteStorageMemoryWithRefs)
+    const { service: remoteService, storeRef } = await Effect.runPromise(makeRemoteStorageMemoryWithRefs)
     const uploadStarted = await Effect.runPromise(Deferred.make<void>())
     const allowUpload = await Effect.runPromise(Deferred.make<void>())
 
@@ -49,7 +48,12 @@ describe("FileStorage remote delete", () => {
 
     const RemoteStorageLayer = Layer.succeed(RemoteStorage, remoteWithDelay)
     const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
-    const BaseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, LocalFileStateManagerLayer, RemoteStorageLayer)
+    const BaseLayer = Layer.mergeAll(
+      Layer.scope,
+      LocalFileStorageMemory,
+      LocalFileStateManagerLayer,
+      RemoteStorageLayer
+    )
     const FileSyncLayer = Layer.provide(BaseLayer)(
       FileSyncLive(deps, {
         executorConfig: {
