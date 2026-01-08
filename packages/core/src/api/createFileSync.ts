@@ -10,12 +10,11 @@
  * @module
  */
 
-import { FileSystem } from "@effect/platform/FileSystem"
+import type { FileSystem } from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
-import type type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
+import type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
 import type { FileStorageService } from "../services/file-storage/index.js"
-import type { FileSyncService } from "../services/file-sync/index.js"
-import type { FileSyncConfig } from "../services/file-sync/index.js"
+import type { FileSyncConfig, FileSyncService } from "../services/file-sync/index.js"
 import {
   FileStorage,
   FileStorageLive,

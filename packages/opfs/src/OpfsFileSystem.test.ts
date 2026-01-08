@@ -39,23 +39,24 @@ class MockFileHandle {
     return new File([buffer], this.name, { type: entry.mimeType })
   }
 
-  async createWritable(options?: { keepExistingData?: boolean }): Promise<{
+  async createWritable(_options?: { keepExistingData?: boolean }): Promise<{
     write: (data: Blob) => Promise<void>
     truncate: (length: number) => Promise<void>
     close: () => Promise<void>
   }> {
-    const fileHandle = this
+    const directory = this.directory
+    const name = this.name
     return {
       write: async (data: Blob) => {
         const buffer = await data.arrayBuffer()
-        fileHandle.directory.entries.set(fileHandle.name, {
+        directory.entries.set(name, {
           type: "file",
           data: new Uint8Array(buffer),
           mimeType: data.type || "application/octet-stream"
         })
       },
       truncate: async (length: number) => {
-        const entry = fileHandle.directory.entries.get(fileHandle.name)
+        const entry = directory.entries.get(name)
         if (entry && entry.type === "file") {
           entry.data = entry.data.slice(0, length)
         }

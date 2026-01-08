@@ -12,6 +12,7 @@ import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
 import type { SyncSchema } from "../livestore/types.js"
 import { createFileSyncSchema } from "../schema/index.js"
+import type { FileSyncEvent } from "../types/index.js"
 import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
 
 const DEFAULT_SIGNER_BASE_URL = "/api"
@@ -196,7 +197,7 @@ export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
 
 // Event subscription storage
-const eventListeners: Set<(event: import("../types/index.js").FileSyncEvent) => void> = new Set()
+const eventListeners: Set<(event: FileSyncEvent) => void> = new Set()
 
 /**
  * Subscribe to file sync events.
@@ -219,7 +220,7 @@ const eventListeners: Set<(event: import("../types/index.js").FileSyncEvent) => 
  * ```
  */
 export const onFileSyncEvent = (
-  callback: (event: import("../types/index.js").FileSyncEvent) => void
+  callback: (event: FileSyncEvent) => void
 ): () => void => {
   eventListeners.add(callback)
   return () => {
@@ -229,7 +230,7 @@ export const onFileSyncEvent = (
 
 // Internal function to broadcast events to all listeners
 // This is wired up during initFileSync
-export const _broadcastEvent = (event: import("../types/index.js").FileSyncEvent): void => {
+export const _broadcastEvent = (event: FileSyncEvent): void => {
   for (const listener of eventListeners) {
     listener(event)
   }

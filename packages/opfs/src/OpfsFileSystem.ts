@@ -333,7 +333,9 @@ export const makeOpfsFileSystem = (
         result.push(entry.name)
         if (options?.recursive && entry.kind === "directory") {
           const subEntries = yield* readDirectory(joinPath(path, entry.name), options)
-          result.push(...subEntries.map((e) => joinPath(entry.name, e)))
+          for (const subEntry of subEntries) {
+            result.push(joinPath(entry.name, subEntry))
+          }
         }
       }
 

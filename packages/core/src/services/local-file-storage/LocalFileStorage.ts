@@ -368,7 +368,9 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
             files.push(entryPath)
           } else {
             const subFiles = yield* listFilesRecursive(entryPath)
-            files.push(...subFiles)
+            for (const subFile of subFiles) {
+              files.push(subFile)
+            }
           }
         }
         return files

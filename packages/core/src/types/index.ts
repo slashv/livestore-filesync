@@ -10,15 +10,16 @@
  * @module
  */
 
-import { Schema } from "@livestore/livestore"
+import type { Schema } from "@livestore/livestore"
 import type {
   FileCreatedPayloadSchema,
   FileDeletedPayloadSchema,
+  FileSyncTables,
   FileUpdatedPayloadSchema,
-  TransferStatusSchema,
+  LocalFilesStateSchema,
+  LocalFileStateSchema,
   TransferStatusSchema
 } from "../schema/index.js"
-import { LocalFilesStateSchema, LocalFileStateSchema } from "../schema/index.js"
 
 // ============================================
 // Types derived from Effect Schema
@@ -37,8 +38,7 @@ export type LocalFileState = typeof LocalFileStateSchema.Type
 /**
  * Local file state - mutable variant for internal sync operations
  */
-const LocalFileStateMutableSchema = Schema.mutable(LocalFileStateSchema)
-export type LocalFileStateMutable = typeof LocalFileStateMutableSchema.Type
+export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFileStateSchema>>>
 
 /**
  * Map of file IDs to local file states (readonly)
@@ -48,8 +48,7 @@ export type LocalFilesState = typeof LocalFilesStateSchema.Type
 /**
  * Map of file IDs to local file states - mutable variant for internal sync operations
  */
-const LocalFilesStateMutableSchema = Schema.mutable(LocalFilesStateSchema)
-export type LocalFilesStateMutable = typeof LocalFilesStateMutableSchema.Type
+export type LocalFilesStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFilesStateSchema>>>
 
 /**
  * File record stored in the files table (synced across clients)

@@ -9,20 +9,26 @@ The services are wired together as Effect layers inside `createFileSync` and the
   interface. Users must provide a compatible implementation:
   - For browsers: use `@livestore-filesync/opfs` which provides an OPFS-backed implementation
   - For Node.js: use `@effect/platform-node` (`NodeFileSystem.layer`)
+
 - `LocalFileStorage`: wraps `FileSystem` with file-centric helpers (read/write bytes, object URLs,
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
+
 - `LocalFileStateManager`: centralized manager for all `localFilesState` mutations. Uses an internal
   lock to ensure atomic read-modify-write operations, preventing race conditions when multiple
   concurrent operations try to update the state. All state changes go through this service.
+
 - `RemoteStorage`: remote storage abstraction for upload/download/delete/health checks.
   The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
   API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
   short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
+
 - `SyncExecutor`: manages upload/download queues with concurrency limits and retry/backoff logic.
+
 - `FileSync`: orchestration service. Tracks online state, reconciles LiveStore file records with
   local state, schedules transfers through `SyncExecutor`, updates remote URLs, and runs GC/health
   checks. Uses `LocalFileStateManager` for all state mutations.
+
 - `FileStorage`: high-level API used by `saveFile`, `updateFile`, `deleteFile`, and `getFileUrl`.
   It hashes content, writes to local storage, updates LiveStore records, and triggers `FileSync`.
 
@@ -61,6 +67,7 @@ createFileSync({
 
 Text diagram (arrows show the main direction of calls):
 
+```text
 [App API]
    |
    v
@@ -72,6 +79,7 @@ Text diagram (arrows show the main direction of calls):
    |      |
    |      v
    +--> [LocalFileStorage] ----> [FileSystem (OPFS/Node/custom)]
+```
 
 Notes:
 - `FileStorage` is the primary entry point for CRUD; it always writes locally first.
@@ -83,6 +91,7 @@ Notes:
 
 This mirrors the Effect layer wiring in `createFileSync`:
 
+```text
 [FileSystemLive (user-provided)] -----------+
                                             |
                                             v
@@ -95,7 +104,7 @@ This mirrors the Effect layer wiring in `createFileSync`:
 [RemoteStorageLive] -----------------------+
                                             |
                                             v
-[BaseLayer] = mergeAll(Layer.scope, FileSystemLive, LocalFileStorageLayer, 
+[BaseLayer] = mergeAll(Layer.scope, FileSystemLive, LocalFileStorageLayer,
                        LocalFileStateManagerLayer, RemoteStorageLive)
                                             |
                                             v
@@ -106,6 +115,7 @@ This mirrors the Effect layer wiring in `createFileSync`:
                                             |
                                             v
 [MainLayer] = mergeAll(BaseLayer, FileSyncLayer, FileStorageLayer)
+```
 
 ## API Usage: Singleton vs Instance
 
@@ -422,7 +432,7 @@ const unsubscribe = store.subscribe(
   queryDb(tables.localFileState.get()),
   (state) => {
     const status = getSyncStatus(state.localFiles)
-    document.getElementById('sync-status').textContent = 
+    document.getElementById('sync-status').textContent =
       status.isSyncing ? `Syncing ${status.uploadingCount + status.downloadingCount} files...` : 'Synced'
   }
 )
