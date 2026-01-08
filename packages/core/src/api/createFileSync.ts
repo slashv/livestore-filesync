@@ -17,13 +17,13 @@ import type { FileSyncConfig, FileSyncService } from "../services/file-sync/inde
 import {
   FileSync,
   FileSyncLive,
-  LocalFileStateManagerLive,
   LocalFileStorage,
   LocalFileStorageLive,
   makeS3SignerRemoteStorage,
   RemoteStorage,
   type RemoteStorageConfig
 } from "../services/index.js"
+import { LocalFileStateManagerLive } from "../services/local-file-state/index.js"
 import { defaultConfig as defaultExecutorConfig } from "../services/sync-executor/index.js"
 import type {
   FileOperationResult,

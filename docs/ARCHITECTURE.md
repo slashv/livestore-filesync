@@ -14,7 +14,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
 
-- `LocalFileStateManager`: centralized manager for all `localFilesState` mutations. Uses an internal
+- `LocalFileStateManager` (internal): centralized manager for all `localFilesState` mutations. Uses an internal
   lock to ensure atomic read-modify-write operations, preventing race conditions when multiple
   concurrent operations try to update the state. All state changes go through this service.
 
@@ -23,7 +23,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
   API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
   short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
 
-- `SyncExecutor`: manages upload/download queues with concurrency limits and retry/backoff logic.
+- `SyncExecutor` (internal): manages upload/download queues with concurrency limits and retry/backoff logic.
 
 - `FileSync`: orchestration service and primary CRUD API. Tracks online state, reconciles LiveStore
   file records with local state, schedules transfers through `SyncExecutor`, updates remote URLs,

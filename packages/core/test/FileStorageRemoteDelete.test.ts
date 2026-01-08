@@ -7,11 +7,11 @@ import { createFileSyncSchema } from "../src/schema/index.js"
 import {
   FileSync,
   FileSyncLive,
-  LocalFileStateManagerLive,
   LocalFileStorageMemory,
   makeRemoteStorageMemoryWithRefs,
   RemoteStorage
 } from "../src/services/index.js"
+import { LocalFileStateManagerLive } from "../src/services/local-file-state/index.js"
 import { sanitizeStoreId } from "../src/utils/index.js"
 
 describe("FileSync remote delete", () => {

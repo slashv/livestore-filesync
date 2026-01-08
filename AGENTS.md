@@ -13,7 +13,7 @@ Use the tasks/ folder for persistent implementation plans. Documents in this fol
 
 Use the docs/ folder for up to date documentation. If we change any aspects relating to documents in this folder make sure to keep the docs updated.
 
-After completed a task always:
+ made thAfter completed a task always:
 - Make sure docs are updated to reflect and relevant changes (README.md and docs/ files)
 - Ensure tests pass (pnpm test)
 - Ensure types are correct (pnpm check)
