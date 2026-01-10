@@ -103,7 +103,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
             </tr>
             <tr>
               <td className="label">Local File: Download</td>
-              <td data-testid="file-status">{localFile?.downloadStatus}</td>
+              <td data-testid="file-download-status">{localFile?.downloadStatus}</td>
             </tr>
             <tr>
               <td className="label">Local File: Upload</td>
