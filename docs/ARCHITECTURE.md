@@ -567,6 +567,100 @@ For most use cases, this implementation detail is transparent. However, be aware
 - XHR uploads may behave slightly differently in edge cases (e.g., timeout handling)
 - Streaming downloads accumulate chunks in memory before creating the final Blob
 
+## Error Handling and Recovery
+
+FileSync includes robust error handling and self-healing mechanisms for production reliability.
+
+### Stream Recovery
+
+The LiveStore event stream automatically recovers from transient errors using exponential backoff:
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    maxStreamRecoveryAttempts: 5,    // Default: 5
+    streamRecoveryBaseDelayMs: 1000, // Default: 1000 (1 second)
+    streamRecoveryMaxDelayMs: 60000  // Default: 60000 (1 minute)
+  }
+})
+```
+
+When the event stream encounters an error:
+1. A `sync:stream-error` event is emitted with the error and attempt number
+2. The stream waits using exponential backoff (1s, 2s, 4s, 8s, 16s, ...)
+3. On successful recovery, a `sync:recovery` event is emitted
+4. If max attempts are reached, `sync:stream-exhausted` is emitted
+
+### Error State Auto-Retry
+
+On startup, files stuck in `error` state are automatically re-queued for retry:
+
+- Files with `uploadStatus: "error"` are reset to `queued`
+- Files with `downloadStatus: "error"` are reset to `queued`
+- `lastSyncError` is cleared when retrying
+- A `sync:error-retry-start` event is emitted with the file IDs being retried
+
+This handles cases where a page was closed during a failed transfer.
+
+### Manual Error Retry
+
+Applications can manually retry files in error state:
+
+```typescript
+import { retryErrors } from '@livestore-filesync/core'
+
+// Retry all files currently in error state
+const retriedFileIds = await retryErrors()
+console.log(`Retrying ${retriedFileIds.length} files`)
+```
+
+Or with the instance API:
+
+```typescript
+const retriedFileIds = await fileSync.retryErrors()
+```
+
+### Sync Events for Error Visibility
+
+Subscribe to error events for monitoring and UI feedback:
+
+```typescript
+import { onFileSyncEvent } from '@livestore-filesync/core'
+
+onFileSyncEvent((event) => {
+  switch (event.type) {
+    case 'sync:error':
+      console.error('Sync error:', event.error, 'context:', event.context)
+      break
+    case 'sync:stream-error':
+      console.warn(`Stream error (attempt ${event.attempt}):`, event.error)
+      break
+    case 'sync:stream-exhausted':
+      console.error(`Stream gave up after ${event.attempts} attempts`)
+      // Maybe show a "reconnect" button to user
+      break
+    case 'sync:recovery':
+      console.log(`Recovered from ${event.from}`)
+      break
+    case 'sync:error-retry-start':
+      console.log(`Retrying ${event.fileIds.length} files`)
+      break
+  }
+})
+```
+
+### Error Events Reference
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `sync:error` | `error`, `context?` | General sync error (batch processing, bootstrap, etc.) |
+| `sync:stream-error` | `error`, `attempt?` | Event stream error with retry attempt number |
+| `sync:stream-exhausted` | `error`, `attempts` | Max recovery attempts reached |
+| `sync:recovery` | `from` | Successful recovery ("stream-error" or "error-retry") |
+| `sync:error-retry-start` | `fileIds` | Files being retried from error state |
+
 ## Download Prioritization
 
 When syncing files from remote storage, the default behavior downloads all files in FIFO order.

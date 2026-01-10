@@ -98,6 +98,11 @@ export interface TransferProgress {
 export type FileSyncEvent =
   | { readonly type: "sync:start" }
   | { readonly type: "sync:complete" }
+  | { readonly type: "sync:error"; readonly error: unknown; readonly context?: string }
+  | { readonly type: "sync:stream-error"; readonly error: unknown; readonly attempt?: number }
+  | { readonly type: "sync:stream-exhausted"; readonly error: unknown; readonly attempts: number }
+  | { readonly type: "sync:recovery"; readonly from: "stream-error" | "error-retry" }
+  | { readonly type: "sync:error-retry-start"; readonly fileIds: ReadonlyArray<string> }
   | { readonly type: "download:start"; readonly fileId: string }
   | { readonly type: "download:progress"; readonly fileId: string; readonly progress: TransferProgress }
   | { readonly type: "download:complete"; readonly fileId: string }

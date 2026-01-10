@@ -145,6 +145,13 @@ export interface FileSyncInstance {
   /** Manually restart the event stream from the stored cursor */
   triggerSync: () => void
 
+  /**
+   * Retry all files currently in error state.
+   * Re-queues uploads and downloads for files with error status.
+   * @returns Promise resolving to array of file IDs that were re-queued
+   */
+  retryErrors: () => Promise<ReadonlyArray<string>>
+
   /** Dispose resources */
   dispose: () => Promise<void>
 }
@@ -388,6 +395,11 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     })()
   }
 
+  const retryErrors = async (): Promise<ReadonlyArray<string>> => {
+    const fileSync = await getFileSyncService()
+    return runEffect(fileSync.retryErrors())
+  }
+
   const dispose = async () => {
     if (disposed) return
     disposed = true
@@ -407,6 +419,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     prioritizeDownload,
     isOnline: () => online,
     triggerSync,
+    retryErrors,
     dispose
   }
 }

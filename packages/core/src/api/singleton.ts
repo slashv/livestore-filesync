@@ -196,6 +196,13 @@ export const prioritizeDownload = (fileId: string) => requireFileSync().prioriti
 export const isOnline = () => requireFileSync().isOnline()
 export const triggerSync = () => requireFileSync().triggerSync()
 
+/**
+ * Retry all files currently in error state.
+ * Re-queues uploads and downloads for files with error status.
+ * @returns Promise resolving to array of file IDs that were re-queued
+ */
+export const retryErrors = () => requireFileSync().retryErrors()
+
 // Event subscription storage
 const eventListeners: Set<(event: FileSyncEvent) => void> = new Set()
 

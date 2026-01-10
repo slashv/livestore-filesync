@@ -13,7 +13,7 @@
 
 import { EventSequenceNumber } from "@livestore/livestore"
 import type { LiveStoreEvent } from "@livestore/livestore"
-import { Chunk, Context, Effect, Fiber, Layer, Ref, Stream, SubscriptionRef } from "effect"
+import { Chunk, Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Stream, SubscriptionRef } from "effect"
 import type { Scope } from "effect"
 import { StorageError } from "../../errors/index.js"
 import type { FileNotFoundError, HashError } from "../../errors/index.js"
@@ -120,6 +120,13 @@ export interface FileSyncService {
    * Get the current local files state
    */
   readonly getLocalFilesState: () => Effect.Effect<LocalFilesState>
+
+  /**
+   * Retry all files currently in error state.
+   * Re-queues uploads and downloads for files with error status.
+   * @returns Array of file IDs that were re-queued
+   */
+  readonly retryErrors: () => Effect.Effect<ReadonlyArray<string>>
 }
 
 /**
@@ -167,6 +174,24 @@ export interface FileSyncConfig {
    * @default true
    */
   readonly autoPrioritizeOnResolve?: boolean
+
+  /**
+   * Maximum stream recovery attempts before giving up.
+   * @default 5
+   */
+  readonly maxStreamRecoveryAttempts?: number
+
+  /**
+   * Base delay for stream recovery backoff in ms.
+   * @default 1000
+   */
+  readonly streamRecoveryBaseDelayMs?: number
+
+  /**
+   * Maximum delay for stream recovery backoff in ms.
+   * @default 60000
+   */
+  readonly streamRecoveryMaxDelayMs?: number
 }
 
 /**
@@ -174,7 +199,10 @@ export interface FileSyncConfig {
  */
 export const defaultFileSyncConfig: FileSyncConfig = {
   healthCheckIntervalMs: 10000,
-  autoPrioritizeOnResolve: true
+  autoPrioritizeOnResolve: true,
+  maxStreamRecoveryAttempts: 5,
+  streamRecoveryBaseDelayMs: 1000,
+  streamRecoveryMaxDelayMs: 60000
 }
 
 /**
@@ -659,7 +687,14 @@ export const makeFileSync = (
             updatedAt: file.updatedAt
           })
         }
-      }).pipe(Effect.catchAll(() => Effect.void))
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function*() {
+            yield* Effect.logError("[FileSync] Bootstrap from tables failed", { error })
+            yield* emit({ type: "sync:error", error, context: "bootstrap" })
+          })
+        )
+      )
 
     const handleEventBatch = (
       eventsBatch: ReadonlyArray<LiveStoreEvent.Client.Decoded>
@@ -689,37 +724,72 @@ export const makeFileSync = (
         yield* persistCursor(nextCursor)
 
         yield* emit({ type: "sync:complete" })
-      }).pipe(Effect.catchAll(() => Effect.void))
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function*() {
+            yield* Effect.logError("[FileSync] Event batch processing failed", { error })
+            yield* emit({ type: "sync:error", error, context: "event-batch" })
+          })
+        )
+      )
 
-    // Recovery: Reset stale "inProgress" statuses to "queued"
-    // This handles the case where a page refresh interrupted an in-flight transfer.
+    // Recovery: Reset stale "inProgress" and "error" statuses to "queued"
+    // This handles the case where a page refresh interrupted an in-flight transfer
+    // or where a previous transfer failed with an error.
     // On a fresh page load, no transfer can actually be in progress, so any
     // "inProgress" status is stale and should be reset to allow retry.
+    // Files in "error" state are also reset to give them another chance.
     const recoverStaleTransfers = (): Effect.Effect<void> =>
-      stateManager.atomicUpdate((currentState) => {
-        let hasChanges = false
-        const nextState = { ...currentState }
+      Effect.gen(function*() {
+        const retriedFileIds: Array<string> = []
 
-        for (const [fileId, localFile] of Object.entries(nextState)) {
-          let updated = false
-          const updatedFile = { ...localFile }
+        yield* stateManager.atomicUpdate((currentState) => {
+          let hasChanges = false
+          const nextState = { ...currentState }
 
-          if (localFile.uploadStatus === "inProgress") {
-            updatedFile.uploadStatus = "queued"
-            updated = true
-          }
-          if (localFile.downloadStatus === "inProgress") {
-            updatedFile.downloadStatus = "queued"
-            updated = true
+          for (const [fileId, localFile] of Object.entries(nextState)) {
+            let updated = false
+            const updatedFile = { ...localFile }
+
+            // Reset "inProgress" to "queued" (existing logic)
+            if (localFile.uploadStatus === "inProgress") {
+              updatedFile.uploadStatus = "queued"
+              updated = true
+            }
+            if (localFile.downloadStatus === "inProgress") {
+              updatedFile.downloadStatus = "queued"
+              updated = true
+            }
+
+            // Reset "error" to "queued" for auto-retry
+            if (localFile.uploadStatus === "error") {
+              updatedFile.uploadStatus = "queued"
+              updatedFile.lastSyncError = ""
+              updated = true
+              retriedFileIds.push(fileId)
+            }
+            if (localFile.downloadStatus === "error") {
+              updatedFile.downloadStatus = "queued"
+              updatedFile.lastSyncError = ""
+              updated = true
+              if (!retriedFileIds.includes(fileId)) {
+                retriedFileIds.push(fileId)
+              }
+            }
+
+            if (updated) {
+              nextState[fileId] = updatedFile
+              hasChanges = true
+            }
           }
 
-          if (updated) {
-            nextState[fileId] = updatedFile
-            hasChanges = true
-          }
+          return hasChanges ? nextState : currentState
+        })
+
+        if (retriedFileIds.length > 0) {
+          yield* Effect.logInfo(`[FileSync] Auto-retrying ${retriedFileIds.length} files from error state`)
+          yield* emit({ type: "sync:error-retry-start", fileIds: retriedFileIds })
         }
-
-        return hasChanges ? nextState : currentState
       })
 
     const startEventStream = (): Effect.Effect<void> =>
@@ -734,13 +804,53 @@ export const makeFileSync = (
         const storedCursor = yield* readCursor()
         yield* Ref.set(cursorRef, storedCursor)
 
+        // Stream recovery configuration
+        const maxAttempts = config.maxStreamRecoveryAttempts ?? 5
+        const baseDelayMs = config.streamRecoveryBaseDelayMs ?? 1000
+        const maxDelayMs = config.streamRecoveryMaxDelayMs ?? 60000
+
+        // Create retry schedule with exponential backoff
+        const retrySchedule = Schedule.exponential(Duration.millis(baseDelayMs)).pipe(
+          Schedule.jittered,
+          Schedule.either(Schedule.spaced(Duration.millis(maxDelayMs))),
+          Schedule.upTo(Duration.millis(maxDelayMs * 2)),
+          Schedule.intersect(Schedule.recurs(maxAttempts - 1))
+        )
+
+        // Track recovery attempts for logging
+        const attemptRef = yield* Ref.make(0)
+
         const stream = store.eventsStream({
           since: resolveCursor(storedCursor),
           filter: ["v1.FileCreated", "v1.FileUpdated", "v1.FileDeleted"] as const,
           includeClientOnly: true
         } as any).pipe(
-          Stream.tapError((error) => Effect.logError("[FileSync] Event stream error", error)),
-          Stream.catchAll(() => Stream.empty)
+          Stream.tapError((error) =>
+            Effect.gen(function*() {
+              const attempt = yield* Ref.updateAndGet(attemptRef, (n) => n + 1)
+              yield* Effect.logError("[FileSync] Event stream error", { error, attempt })
+              yield* emit({ type: "sync:stream-error", error, attempt })
+            })
+          ),
+          Stream.retry(retrySchedule),
+          Stream.tap(() =>
+            Effect.gen(function*() {
+              const attempt = yield* Ref.get(attemptRef)
+              if (attempt > 0) {
+                yield* Effect.logInfo("[FileSync] Stream recovered after error")
+                yield* emit({ type: "sync:recovery", from: "stream-error" })
+                yield* Ref.set(attemptRef, 0)
+              }
+            })
+          ),
+          Stream.catchAll((error) =>
+            Effect.gen(function*() {
+              const attempts = yield* Ref.get(attemptRef)
+              yield* Effect.logError("[FileSync] Stream recovery exhausted", { error, attempts })
+              yield* emit({ type: "sync:stream-exhausted", error, attempts })
+              return Stream.empty
+            }).pipe(Stream.unwrap)
+          )
         )
 
         const fiber = yield* stream.pipe(
@@ -749,7 +859,14 @@ export const makeFileSync = (
         )
 
         yield* Ref.set(eventStreamFiberRef, fiber)
-      }).pipe(Effect.catchAll(() => Effect.void))
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.gen(function*() {
+            yield* Effect.logError("[FileSync] Failed to start event stream", { error })
+            yield* emit({ type: "sync:error", error, context: "stream-start" })
+          })
+        )
+      )
 
     const stopEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -1012,6 +1129,34 @@ export const makeFileSync = (
 
     const prioritizeDownload = (fileId: string): Effect.Effect<void> => executor.prioritizeDownload(fileId)
 
+    const retryErrors = (): Effect.Effect<ReadonlyArray<string>> =>
+      Effect.gen(function*() {
+        const retriedFileIds: Array<string> = []
+        const currentState = yield* stateManager.getState()
+
+        for (const [fileId, localFile] of Object.entries(currentState)) {
+          if (localFile.uploadStatus === "error") {
+            yield* stateManager.setTransferStatus(fileId, "upload", "queued")
+            yield* executor.enqueueUpload(fileId)
+            retriedFileIds.push(fileId)
+          }
+          if (localFile.downloadStatus === "error") {
+            yield* stateManager.setTransferStatus(fileId, "download", "queued")
+            yield* executor.enqueueDownload(fileId)
+            if (!retriedFileIds.includes(fileId)) {
+              retriedFileIds.push(fileId)
+            }
+          }
+        }
+
+        if (retriedFileIds.length > 0) {
+          yield* Effect.logInfo(`[FileSync] Manually retrying ${retriedFileIds.length} files from error state`)
+          yield* emit({ type: "sync:recovery", from: "error-retry" })
+        }
+
+        return retriedFileIds
+      })
+
     return {
       start,
       stop,
@@ -1025,7 +1170,8 @@ export const makeFileSync = (
       setOnline,
       isOnline,
       onEvent,
-      getLocalFilesState
+      getLocalFilesState,
+      retryErrors
     }
   })
 
