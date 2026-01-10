@@ -153,6 +153,45 @@
   font-size: 12px;
 }
 
+.sync-status .controls-section {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ccc;
+}
+
+.sync-status .control-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sync-status .control-row span {
+  font-weight: 500;
+}
+
+.sync-status .control-row button {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid #000;
+  cursor: pointer;
+  min-width: 70px;
+}
+
+.sync-status .control-row button.active {
+  background-color: #4caf50;
+  color: white;
+}
+
+.sync-status .control-row button.inactive {
+  background-color: #f44336;
+  color: white;
+}
+
+.sync-status .control-row button:hover {
+  opacity: 0.8;
+}
+
 .sync-status table {
   width: 100%;
   border-collapse: collapse;

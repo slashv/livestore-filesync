@@ -1,6 +1,6 @@
 import { getSyncStatus } from "@livestore-filesync/core"
 import { useStore } from "@livestore/react"
-import React from "react"
+import React, { useCallback, useEffect, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 
@@ -9,14 +9,97 @@ export const SyncStatus: React.FC = () => {
   const [localFileState] = store.useClientDocument(tables.localFileState)
   const syncStatus = getSyncStatus(localFileState?.localFiles ?? {})
 
+  // Network status (browser's navigator.onLine)
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  )
+
+  // LiveStore sync status (controlled via _dev API)
+  const [isSyncEnabled, setIsSyncEnabled] = useState(true)
+
+  // Listen to browser online/offline events
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
+
+  // Toggle LiveStore sync via _dev API
+  const toggleLiveStoreSync = useCallback(() => {
+    // LiveStore exposes the store as __debugLiveStore._ (first store) or __debugLiveStore[storeId]
+    const debugStore = (window as unknown as {
+      __debugLiveStore?: { _?: { _dev?: { overrideNetworkStatus: (status: string) => void } } }
+    }).__debugLiveStore?._
+    if (debugStore?._dev?.overrideNetworkStatus) {
+      const newStatus = isSyncEnabled ? "offline" : "online"
+      debugStore._dev.overrideNetworkStatus(newStatus)
+      setIsSyncEnabled(!isSyncEnabled)
+      console.log(`[SyncStatus] LiveStore sync ${!isSyncEnabled ? "enabled" : "disabled"}`)
+    } else {
+      console.warn("[SyncStatus] LiveStore _dev API not available")
+    }
+  }, [isSyncEnabled])
+
+  // Simulate browser offline (dispatches offline event)
+  const toggleBrowserOnline = useCallback(() => {
+    if (isOnline) {
+      // Go offline
+      window.dispatchEvent(new Event("offline"))
+      setIsOnline(false)
+    } else {
+      // Go online
+      window.dispatchEvent(new Event("online"))
+      setIsOnline(true)
+    }
+    console.log(`[SyncStatus] Browser online status: ${!isOnline}`)
+  }, [isOnline])
+
   return (
     <div className="sync-status" data-testid="sync-status-panel">
       <h3>Sync Status</h3>
 
+      {/* Network & Sync Controls */}
+      <div className="controls-section">
+        <h4>Controls</h4>
+        <div className="control-row">
+          <span>Browser Online:</span>
+          <button
+            onClick={toggleBrowserOnline}
+            className={isOnline ? "active" : "inactive"}
+            data-testid="toggle-browser-online"
+          >
+            {isOnline ? "Online" : "Offline"}
+          </button>
+        </div>
+        <div className="control-row">
+          <span>LiveStore Sync:</span>
+          <button
+            onClick={toggleLiveStoreSync}
+            className={isSyncEnabled ? "active" : "inactive"}
+            data-testid="toggle-livestore-sync"
+          >
+            {isSyncEnabled ? "Enabled" : "Disabled"}
+          </button>
+        </div>
+      </div>
+
       <table>
         <tbody>
           <tr>
-            <td>Syncing</td>
+            <td>Browser Online</td>
+            <td data-testid="sync-browser-online">{isOnline ? "Yes" : "No"}</td>
+          </tr>
+          <tr>
+            <td>LiveStore Sync</td>
+            <td data-testid="sync-livestore-enabled">{isSyncEnabled ? "Enabled" : "Disabled"}</td>
+          </tr>
+          <tr>
+            <td>File Syncing</td>
             <td data-testid="sync-is-syncing">{syncStatus.isSyncing ? "Yes" : "No"}</td>
           </tr>
           <tr>

@@ -850,4 +850,87 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     await context1.close()
     await context2.close()
   })
+
+  test('should sync files uploaded by another browser while offline', async ({ browser }) => {
+    // Test scenario:
+    // 1. Browser 1 & 2 start online and syncing
+    // 2. Browser 1 goes offline
+    // 3. Browser 2 uploads a file
+    // 4. Verify file does NOT sync to Browser 1 (it's offline)
+    // 5. Browser 1 goes back online
+    // 6. Verify file syncs to Browser 1 and displays correctly
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // Create two separate browser contexts (simulates two different users/browsers)
+    const context1 = await browser.newContext()
+    const context2 = await browser.newContext()
+
+    const page1 = await context1.newPage()
+    const page2 = await context2.newPage()
+
+    // Navigate both to the app with the same storeId
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStoreAndSync(page1)
+    await waitForLiveStoreAndSync(page2)
+
+    // Verify both start with empty state
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page2.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Browser 1 goes offline
+    await setOffline(page1)
+
+    // Wait for offline state to fully take effect
+    await page1.waitForTimeout(1000)
+
+    // Browser 2 uploads a file (while Browser 1 is offline)
+    const testImage = createTestImage('blue')
+    await page2.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for file to appear and upload to complete in Browser 2
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+    await expect(page2.locator('[data-testid="file-upload-status"]')).toHaveText('done', {
+      timeout: 15000,
+    })
+    await waitForImageLoaded(page2.locator('[data-testid="file-image"]'), 10000)
+
+    // Verify file is uploaded to remote
+    const remoteKey = await getRemoteKey(page2)
+    expect(remoteKey).not.toBe('')
+
+    // Wait a moment and verify file has NOT synced to Browser 1 (it's offline)
+    await page1.waitForTimeout(2000)
+    const fileCardsWhileOffline = await page1.locator('[data-testid="file-card"]').count()
+    expect(fileCardsWhileOffline).toBe(0)
+
+    // Also verify empty state is still visible (no file card, no image)
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page1.locator('[data-testid="file-image"]')).not.toBeVisible()
+
+    // Browser 1 goes back online
+    await setOnline(page1)
+
+    // Verify file syncs to Browser 1
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 15000,
+    })
+
+    // Verify canDisplay is true (file can be displayed from remote or after download)
+    await expect(page1.locator('[data-testid="file-can-display"]')).toHaveText('true', {
+      timeout: 15000,
+    })
+
+    // Verify image is visible and loaded in Browser 1
+    await waitForImageLoaded(page1.locator('[data-testid="file-image"]'), 15000)
+
+    // Cleanup
+    await context1.close()
+    await context2.close()
+  })
 })

@@ -22,10 +22,22 @@ const syncStatus = computed(() => {
 // Track active transfer progress
 const activeTransfers = ref<ActiveTransfers>({})
 
+// Network status (browser's navigator.onLine)
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+// LiveStore sync status (controlled via _dev API)
+const isSyncEnabled = ref(true)
+
 // Subscribe to file sync events for progress tracking
 let unsubscribe: (() => void) | null = null
 
 onMounted(() => {
+  // Listen to browser online/offline events
+  const handleOnline = () => { isOnline.value = true }
+  const handleOffline = () => { isOnline.value = false }
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
+
   unsubscribe = onFileSyncEvent((event) => {
     if (event.type === 'upload:progress' || event.type === 'download:progress') {
       const progress = createActiveTransferProgress(
@@ -55,16 +67,77 @@ const totalProgress = computed(() => computeTotalProgress(activeTransfers.value)
 
 // List of active transfers for display
 const activeTransfersList = computed(() => Object.values(activeTransfers.value))
+
+// Toggle LiveStore sync via _dev API
+function toggleLiveStoreSync() {
+  // LiveStore exposes the store as __debugLiveStore._ (first store) or __debugLiveStore[storeId]
+  const debugStore = (window as any).__debugLiveStore?._
+  if (debugStore?._dev?.overrideNetworkStatus) {
+    const newStatus = isSyncEnabled.value ? 'offline' : 'online'
+    debugStore._dev.overrideNetworkStatus(newStatus)
+    isSyncEnabled.value = !isSyncEnabled.value
+    console.log(`[SyncStatus] LiveStore sync ${isSyncEnabled.value ? 'enabled' : 'disabled'}`)
+  } else {
+    console.warn('[SyncStatus] LiveStore _dev API not available. __debugLiveStore:', (window as any).__debugLiveStore)
+  }
+}
+
+// Simulate browser offline (dispatches offline event)
+function toggleBrowserOnline() {
+  if (isOnline.value) {
+    // Go offline
+    window.dispatchEvent(new Event('offline'))
+    isOnline.value = false
+  } else {
+    // Go online
+    window.dispatchEvent(new Event('online'))
+    isOnline.value = true
+  }
+  console.log(`[SyncStatus] Browser online status: ${isOnline.value}`)
+}
 </script>
 
 <template>
   <div class="sync-status" data-testid="sync-status-panel">
     <h3>Sync Status</h3>
+
+    <!-- Network & Sync Controls -->
+    <div class="controls-section">
+      <h4>Controls</h4>
+      <div class="control-row">
+        <span>Browser Online:</span>
+        <button 
+          @click="toggleBrowserOnline" 
+          :class="{ active: isOnline, inactive: !isOnline }"
+          data-testid="toggle-browser-online"
+        >
+          {{ isOnline ? 'Online' : 'Offline' }}
+        </button>
+      </div>
+      <div class="control-row">
+        <span>LiveStore Sync:</span>
+        <button 
+          @click="toggleLiveStoreSync" 
+          :class="{ active: isSyncEnabled, inactive: !isSyncEnabled }"
+          data-testid="toggle-livestore-sync"
+        >
+          {{ isSyncEnabled ? 'Enabled' : 'Disabled' }}
+        </button>
+      </div>
+    </div>
     
     <table>
       <tbody>
         <tr>
-          <td>Syncing</td>
+          <td>Browser Online</td>
+          <td data-testid="sync-browser-online">{{ isOnline ? 'Yes' : 'No' }}</td>
+        </tr>
+        <tr>
+          <td>LiveStore Sync</td>
+          <td data-testid="sync-livestore-enabled">{{ isSyncEnabled ? 'Enabled' : 'Disabled' }}</td>
+        </tr>
+        <tr>
+          <td>File Syncing</td>
           <td data-testid="sync-is-syncing">{{ syncStatus.isSyncing ? 'Yes' : 'No' }}</td>
         </tr>
         <tr>
@@ -195,6 +268,45 @@ h3 {
 h4 {
   margin: 12px 0 6px 0;
   font-size: 12px;
+}
+
+.controls-section {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ccc;
+}
+
+.control-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.control-row span {
+  font-weight: 500;
+}
+
+.control-row button {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid #000;
+  cursor: pointer;
+  min-width: 70px;
+}
+
+.control-row button.active {
+  background-color: #4caf50;
+  color: white;
+}
+
+.control-row button.inactive {
+  background-color: #f44336;
+  color: white;
+}
+
+.control-row button:hover {
+  opacity: 0.8;
 }
 
 table {

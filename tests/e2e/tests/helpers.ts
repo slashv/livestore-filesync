@@ -208,43 +208,55 @@ export function getTotalDownloadingCount(status: SyncStatusCounts): number {
 
 /**
  * Set the page to offline mode.
- * This sets both:
- * - Playwright's context offline (blocks network requests)
- * - LiveStore's internal sync latch (stops LiveStore sync)
+ * This uses the UI buttons in the Sync Status panel to:
+ * - Toggle browser online status (dispatches offline event, pauses FileSync)
+ * - Toggle LiveStore sync (sets sync latch to stop LiveStore sync)
+ * Also sets Playwright's context offline to block network requests.
  */
 export async function setOffline(page: Page): Promise<void> {
-  // First, set LiveStore to offline mode via _dev API
-  await page.evaluate(() => {
-    const store = (window as any).__debugLiveStore?.default
-    if (store?._dev?.overrideNetworkStatus) {
-      store._dev.overrideNetworkStatus('offline')
-    }
-  })
+  // Click the Browser Online button to go offline (if currently online)
+  const browserOnlineButton = page.locator('[data-testid="toggle-browser-online"]')
+  const browserOnlineText = await browserOnlineButton.textContent()
+  if (browserOnlineText?.trim() === 'Online') {
+    await browserOnlineButton.click()
+  }
 
-  // Then set Playwright context offline
+  // Click the LiveStore Sync button to disable sync (if currently enabled)
+  const liveStoreSyncButton = page.locator('[data-testid="toggle-livestore-sync"]')
+  const liveStoreSyncText = await liveStoreSyncButton.textContent()
+  if (liveStoreSyncText?.trim() === 'Enabled') {
+    await liveStoreSyncButton.click()
+  }
+
+  // Also set Playwright context offline to block actual network requests
   const context = page.context()
   await context.setOffline(true)
 }
 
 /**
  * Set the page to online mode.
- * This sets both:
- * - Playwright's context online (allows network requests)
- * - LiveStore's internal sync latch (resumes LiveStore sync)
- * Also dispatches browser online event to trigger FileSync recovery.
+ * This uses the UI buttons in the Sync Status panel to:
+ * - Toggle browser online status (dispatches online event, resumes FileSync)
+ * - Toggle LiveStore sync (sets sync latch to resume LiveStore sync)
+ * Also sets Playwright's context online to allow network requests.
  */
 export async function setOnline(page: Page): Promise<void> {
-  // First, set Playwright context online
+  // First, set Playwright context online to allow network requests
   const context = page.context()
   await context.setOffline(false)
 
-  // Then set LiveStore to online mode via _dev API
-  await page.evaluate(() => {
-    const store = (window as any).__debugLiveStore?.default
-    if (store?._dev?.overrideNetworkStatus) {
-      store._dev.overrideNetworkStatus('online')
-    }
-    // Also dispatch online event to trigger FileSync recovery
-    window.dispatchEvent(new Event('online'))
-  })
+  // Click the LiveStore Sync button to enable sync (if currently disabled)
+  const liveStoreSyncButton = page.locator('[data-testid="toggle-livestore-sync"]')
+  const liveStoreSyncText = await liveStoreSyncButton.textContent()
+  if (liveStoreSyncText?.trim() === 'Disabled') {
+    await liveStoreSyncButton.click()
+  }
+
+  // Click the Browser Online button to go online (if currently offline)
+  // This also dispatches the 'online' event which triggers FileSync recovery
+  const browserOnlineButton = page.locator('[data-testid="toggle-browser-online"]')
+  const browserOnlineText = await browserOnlineButton.textContent()
+  if (browserOnlineText?.trim() === 'Offline') {
+    await browserOnlineButton.click()
+  }
 }
