@@ -50,8 +50,7 @@ const createRuntimeWithConfig = async (
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
       executorConfig,
-      healthCheckIntervalMs: options.fileSyncConfig?.healthCheckIntervalMs ?? 50,
-      gcDelayMs: options.fileSyncConfig?.gcDelayMs ?? 10
+      healthCheckIntervalMs: options.fileSyncConfig?.healthCheckIntervalMs ?? 50
     })
   )
 
@@ -97,6 +96,7 @@ describe("FileSync", () => {
     try {
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
       expect(state[fileId]?.downloadStatus).toBe("queued")
@@ -137,6 +137,7 @@ describe("FileSync", () => {
       await runtime.runPromise(localStorage.writeFile(path, new File(["local"], "local.txt")))
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
       expect(state[fileId]?.uploadStatus).toBe("queued")
@@ -186,9 +187,54 @@ describe("FileSync", () => {
       await runtime.runPromise(localStorage.writeFile(path, new File(["local"], "local.txt")))
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
       expect(state[fileId]?.downloadStatus).toBe("queued")
+    } finally {
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("persists the event cursor after batches", async () => {
+    const { deps, events, shutdown, store, tables } = await createTestStore()
+    const { runtime } = await createRuntime(deps, { offline: true })
+    const fileId = crypto.randomUUID()
+    const path = makeStoredPath(deps.storeId, "cursor-hash")
+
+    store.commit(
+      events.fileCreated({
+        id: fileId,
+        path,
+        contentHash: "cursor-hash",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+    )
+    store.commit(
+      events.fileUpdated({
+        id: fileId,
+        path,
+        remoteKey: stripFilesRoot(path),
+        contentHash: "cursor-hash",
+        updatedAt: new Date()
+      })
+    )
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      const cursorDoc = store.query(deps.schema.queryDb(tables.fileSyncCursor.get()))
+      expect(cursorDoc.lastEventSequence).not.toBe("")
     } finally {
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))
@@ -211,6 +257,7 @@ describe("FileSync", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(fileSync.setOnline(true))
 
@@ -261,6 +308,7 @@ describe("FileSync - Transfer Progress Events", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Save a file
       const files = generateTestFiles(1)
@@ -367,6 +415,7 @@ describe("FileSync - Transfer Progress Events", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Wait for download to complete
       await delay(500)
@@ -431,6 +480,7 @@ describe("FileSync - Transfer Progress Events", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       const files = generateTestFiles(1)
       const result = await runtime.runPromise(fileSync.saveFile(files[0]))
@@ -470,6 +520,7 @@ describe("FileSync - Multi-file upload sync status", () => {
     try {
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Save 5 files concurrently (like Gallery.vue does with Promise.all)
       const files = generateTestFiles(5)
@@ -519,6 +570,7 @@ describe("FileSync - Multi-file upload sync status", () => {
     try {
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       const fileCount = 5
       const files = generateTestFiles(fileCount)
@@ -568,6 +620,7 @@ describe("FileSync - Multi-file upload sync status", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Save 3 files concurrently
       const files = generateTestFiles(3)
@@ -630,6 +683,7 @@ describe("FileSync - Multi-file upload sync status", () => {
     try {
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Add 10 files as fast as possible
       const files = generateTestFiles(10)
@@ -685,6 +739,7 @@ describe("FileSync - Multi-file upload sync status", () => {
 
     try {
       await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
 
       // Save 5 files
       const files = generateTestFiles(5)

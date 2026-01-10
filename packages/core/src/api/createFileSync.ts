@@ -94,7 +94,6 @@ export interface CreateFileSyncConfig {
     maxConcurrentDownloads?: number
     maxConcurrentUploads?: number
     healthCheckIntervalMs?: number
-    gcDelayMs?: number
     onEvent?: (event: SyncEvent) => void
     /**
      * Automatically prioritize downloads when resolving file URLs.
@@ -143,7 +142,7 @@ export interface FileSyncInstance {
   /** Check if currently online */
   isOnline: () => boolean
 
-  /** Manually trigger a sync check */
+  /** Manually restart the event stream from the stored cursor */
   triggerSync: () => void
 
   /** Dispose resources */
@@ -230,7 +229,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.healthCheckIntervalMs !== undefined
       ? { healthCheckIntervalMs: options.healthCheckIntervalMs }
       : {}),
-    ...(options.gcDelayMs !== undefined ? { gcDelayMs: options.gcDelayMs } : {}),
     ...(options.autoPrioritizeOnResolve !== undefined
       ? { autoPrioritizeOnResolve: options.autoPrioritizeOnResolve }
       : {})

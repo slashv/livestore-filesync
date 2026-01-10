@@ -39,7 +39,7 @@
  * @module
  */
 
-import { Events, Schema, SessionIdSymbol, State } from "@livestore/livestore"
+import { Events, EventSequenceNumber, Schema, SessionIdSymbol, State } from "@livestore/livestore"
 
 // ============================================
 // Schema Definitions (Source of Truth)
@@ -67,6 +67,14 @@ export const LocalFileStateSchema = Schema.Struct({
 export const LocalFilesStateSchema = Schema.Record({
   key: Schema.String,
   value: LocalFileStateSchema
+})
+
+/**
+ * File sync cursor schema - tracks last processed event sequence
+ */
+export const FileSyncCursorSchema = Schema.Struct({
+  lastEventSequence: Schema.String,
+  updatedAt: Schema.Date
 })
 
 // ============================================
@@ -148,6 +156,17 @@ export function createFileSyncSchema() {
           localFiles: {}
         }
       }
+    }),
+    fileSyncCursor: State.SQLite.clientDocument({
+      name: "fileSyncCursor",
+      schema: FileSyncCursorSchema,
+      default: {
+        id: "global",
+        value: {
+          lastEventSequence: EventSequenceNumber.Client.toString(EventSequenceNumber.Client.ROOT),
+          updatedAt: new Date(0)
+        }
+      }
     })
   }
 
@@ -165,7 +184,8 @@ export function createFileSyncSchema() {
       name: "v1.FileDeleted",
       schema: FileDeletedPayloadSchema
     }),
-    localFileStateSet: tables.localFileState.set
+    localFileStateSet: tables.localFileState.set,
+    fileSyncCursorSet: tables.fileSyncCursor.set
   }
 
   // Create materializers function
@@ -195,6 +215,7 @@ export function createFileSyncSchema() {
       TransferStatusSchema,
       LocalFileStateSchema,
       LocalFilesStateSchema,
+      FileSyncCursorSchema,
       FileCreatedPayloadSchema,
       FileUpdatedPayloadSchema,
       FileDeletedPayloadSchema

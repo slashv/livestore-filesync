@@ -6,6 +6,8 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 - **Content-Addressable Storage (CAS)**: Files are named by their hash which avoids duplicated content and allows for automatic change detection.
 
+- **Event-stream sync**: File transfers react to LiveStore file events with a shared cursor stored in `fileSyncCursor`.
+
 - **Effect Platform Filesystem**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem.
 
 - **R2 and S3 remote storage**: Built in support for Cloudflare R2 and any S3 compatible remote storage service.

@@ -25,10 +25,10 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 - `SyncExecutor` (internal): manages upload/download queues with concurrency limits and retry/backoff logic.
 
-- `FileSync`: orchestration service and primary CRUD API. Tracks online state, reconciles LiveStore
-  file records with local state, schedules transfers through `SyncExecutor`, updates remote URLs,
-  and runs GC/health checks. It also handles `saveFile`, `updateFile`, `deleteFile`, and
-  `resolveFileUrl`, always writing locally first.
+- `FileSync`: orchestration service and primary CRUD API. Tracks online state, consumes the
+  LiveStore event stream for file events, updates local state incrementally, schedules transfers
+  through `SyncExecutor`, updates remote URLs, and runs health checks. It also handles `saveFile`,
+  `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first.
 
 ## FileSystem requirement
 
@@ -286,8 +286,8 @@ In browser environments, multiple tabs may be open to the same LiveStore store. 
 SharedWorker and Web Locks API to elect a single "leader" tab that runs the SQLite database.
 Non-leader tabs proxy their operations through the SharedWorker.
 
-**FileSync follows this same pattern**: only the leader tab runs the sync loop. This prevents
-race conditions where multiple tabs try to reconcile state, enqueue transfers, and update
+**FileSync follows this same pattern**: only the leader tab runs the event stream processor.
+This prevents race conditions where multiple tabs try to enqueue transfers and mutate
 `localFileState` simultaneously.
 
 ### How It Works
@@ -295,14 +295,17 @@ race conditions where multiple tabs try to reconcile state, enqueue transfers, a
 1. **Leader Election**: LiveStore's `ClientSession` exposes a `lockStatus` SubscriptionRef that
    indicates whether the current tab holds the leader lock (`'has-lock'` or `'no-lock'`).
 
-2. **Leader-Only Sync Loop**: The `FileSync` service subscribes to `lockStatus.changes`:
-   - When a tab becomes leader, it starts the sync loop (subscribes to file changes, reconciles
-     state, enqueues transfers)
-   - When a tab loses leadership, it stops the sync loop
+2. **Leader-Only Event Stream**: The `FileSync` service subscribes to `lockStatus.changes`:
+   - When a tab becomes leader, it starts the LiveStore file-event stream and processes batches
+     of `v1.FileCreated`, `v1.FileUpdated`, and `v1.FileDeleted` events
+   - When a tab loses leadership, it stops the stream and pauses transfers
 
-3. **All Tabs Can Still Operate**: Non-leader tabs can still call `saveFile`, `updateFile`, and
+3. **Shared Cursor**: A shared client document (`fileSyncCursor`) stores the last processed
+   event sequence so new leaders resume from the right point.
+
+4. **All Tabs Can Still Operate**: Non-leader tabs can still call `saveFile`, `updateFile`, and
    `deleteFile`. These operations commit events to LiveStore, which syncs them to the leader tab
-   via the SharedWorker. The leader's sync loop then handles the actual upload/download.
+   via the SharedWorker. The leader stream then handles upload/download work.
 
 ### Implementation Details
 

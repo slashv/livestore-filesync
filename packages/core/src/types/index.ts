@@ -14,6 +14,7 @@ import type { Schema } from "@livestore/livestore"
 import type {
   FileCreatedPayloadSchema,
   FileDeletedPayloadSchema,
+  FileSyncCursorSchema,
   FileSyncTables,
   FileUpdatedPayloadSchema,
   LocalFilesStateSchema,
@@ -44,6 +45,11 @@ export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.
  * Map of file IDs to local file states (readonly)
  */
 export type LocalFilesState = typeof LocalFilesStateSchema.Type
+
+/**
+ * File sync cursor document (readonly)
+ */
+export type FileSyncCursor = typeof FileSyncCursorSchema.Type
 
 /**
  * Map of file IDs to local file states - mutable variant for internal sync operations
