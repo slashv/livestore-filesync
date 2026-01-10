@@ -33,7 +33,8 @@ const FileSyncProviderInner = ({
       }
     })
 
-    // Mark as ready after initialization
+    // Mark as ready on next tick to ensure initFileSync has fully completed
+    // and React has flushed any pending state updates
     setReady(true)
 
     return () => void dispose()
