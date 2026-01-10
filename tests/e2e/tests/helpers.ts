@@ -201,3 +201,50 @@ export function getTotalUploadingCount(status: SyncStatusCounts): number {
 export function getTotalDownloadingCount(status: SyncStatusCounts): number {
   return status.downloading + status.queuedDownload + status.pendingDownload
 }
+
+// ============================================
+// Offline/Online Simulation Helpers
+// ============================================
+
+/**
+ * Set the page to offline mode.
+ * This sets both:
+ * - Playwright's context offline (blocks network requests)
+ * - LiveStore's internal sync latch (stops LiveStore sync)
+ */
+export async function setOffline(page: Page): Promise<void> {
+  // First, set LiveStore to offline mode via _dev API
+  await page.evaluate(() => {
+    const store = (window as any).__debugLiveStore?.default
+    if (store?._dev?.overrideNetworkStatus) {
+      store._dev.overrideNetworkStatus('offline')
+    }
+  })
+
+  // Then set Playwright context offline
+  const context = page.context()
+  await context.setOffline(true)
+}
+
+/**
+ * Set the page to online mode.
+ * This sets both:
+ * - Playwright's context online (allows network requests)
+ * - LiveStore's internal sync latch (resumes LiveStore sync)
+ * Also dispatches browser online event to trigger FileSync recovery.
+ */
+export async function setOnline(page: Page): Promise<void> {
+  // First, set Playwright context online
+  const context = page.context()
+  await context.setOffline(false)
+
+  // Then set LiveStore to online mode via _dev API
+  await page.evaluate(() => {
+    const store = (window as any).__debugLiveStore?.default
+    if (store?._dev?.overrideNetworkStatus) {
+      store._dev.overrideNetworkStatus('online')
+    }
+    // Also dispatch online event to trigger FileSync recovery
+    window.dispatchEvent(new Event('online'))
+  })
+}

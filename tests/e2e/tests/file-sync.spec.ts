@@ -9,6 +9,8 @@ import {
   toRemoteUrl,
   waitForRemoteStatus,
   generateStoreId,
+  setOffline,
+  setOnline,
 } from './helpers'
 
 test.describe('File Sync', () => {
@@ -708,6 +710,141 @@ test.describe('File Sync', () => {
     ]
 
     expect(criticalErrors).toHaveLength(0)
+
+    // Cleanup
+    await context1.close()
+    await context2.close()
+  })
+})
+
+test.describe('File Sync - Offline/Online Recovery', () => {
+  test('should resume uploads when going from offline to online', async ({ browser }) => {
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // Create a new context so we can control offline state
+    const context = await browser.newContext()
+    const page = await context.newPage()
+
+    await page.goto(url)
+    await waitForLiveStoreAndSync(page)
+
+    // Verify we start with empty state
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Go offline BEFORE uploading (sets both Playwright context and LiveStore sync latch)
+    await setOffline(page)
+
+    // Upload a file - it should be queued but NOT uploaded
+    const testImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for file card to appear (local state is updated)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+
+    // Wait for image to load (from local OPFS storage)
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+
+    // Wait a moment to ensure upload attempt would have been made
+    await page.waitForTimeout(1000)
+
+    // Verify the upload is pending (queued or has error from network failure)
+    const uploadStatus = page.locator('[data-testid="file-upload-status"]')
+    const statusText = await uploadStatus.textContent()
+    // Upload could be queued, inProgress (stuck), or error (network failed)
+    expect(['queued', 'inProgress', 'error']).toContain(statusText?.trim())
+
+    // Remote key should be empty (not uploaded yet)
+    const remoteKeyLocator = page.locator('[data-testid="file-remote-key"]')
+    const remoteKeyBefore = await remoteKeyLocator.textContent()
+    expect(remoteKeyBefore?.trim()).toBe('')
+
+    // Go back online (sets both Playwright context and LiveStore sync latch, triggers online event)
+    await setOnline(page)
+
+    // Wait for upload to complete - upload status should become 'done'
+    await expect(uploadStatus).toHaveText('done', { timeout: 30000 })
+
+    // Verify the file now has a remote key
+    await expect.poll(
+      async () => (await remoteKeyLocator.textContent())?.trim() || '',
+      { timeout: 15000 }
+    ).not.toBe('')
+
+    // Verify the file is accessible on remote storage
+    const remoteKey = await getRemoteKey(page)
+    const fileUrl = toRemoteUrl(page.url(), remoteKey)
+    await waitForRemoteStatus(page, fileUrl, 200)
+
+    // Cleanup
+    await context.close()
+  })
+
+  test('should resume downloads when going from offline to online', async ({ browser }) => {
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // First, upload a file with context1 (online)
+    const context1 = await browser.newContext()
+    const page1 = await context1.newPage()
+
+    await page1.goto(url)
+    await waitForLiveStoreAndSync(page1)
+
+    // Upload a file
+    const testImage = createTestImage('red')
+    await page1.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for upload to complete
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await expect(page1.locator('[data-testid="file-upload-status"]')).toHaveText('done', {
+      timeout: 15000,
+    })
+
+    // Get the remote key to verify file is uploaded
+    const remoteKey = await getRemoteKey(page1)
+    expect(remoteKey).not.toBe('')
+
+    // Create context2 - we'll navigate online first, then go offline
+    const context2 = await browser.newContext()
+    const page2 = await context2.newPage()
+
+    await page2.goto(url)
+    await waitForLiveStoreAndSync(page2)
+
+    // File metadata should sync via LiveStore
+    // The file card should appear
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 15000 })
+
+    // Now go offline to interrupt any pending download
+    await setOffline(page2)
+
+    // Wait a moment for download attempt to be blocked/fail
+    await page2.waitForTimeout(1000)
+
+    // Download status could be in various states depending on timing
+    const downloadStatus = page2.locator('[data-testid="file-download-status"]')
+    const downloadStatusText = await downloadStatus.textContent()
+    
+    // If download already completed before we went offline, skip the recovery test part
+    if (downloadStatusText?.trim() !== 'done') {
+      // Verify download is blocked (queued, inProgress stuck, or error)
+      expect(['queued', 'inProgress', 'error']).toContain(downloadStatusText?.trim())
+
+      // Go back online (sets both Playwright context and LiveStore sync latch, triggers online event)
+      await setOnline(page2)
+
+      // Wait for download to complete
+      await expect(downloadStatus).toHaveText('done', { timeout: 30000 })
+    }
+
+    // Verify canDisplay is true (either from download completing or from remote URL)
+    await expect(page2.locator('[data-testid="file-can-display"]')).toHaveText('true', {
+      timeout: 10000,
+    })
+
+    // Verify image is visible and loaded
+    await waitForImageLoaded(page2.locator('[data-testid="file-image"]'), 15000)
 
     // Cleanup
     await context1.close()
