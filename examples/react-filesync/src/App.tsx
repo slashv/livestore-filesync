@@ -41,7 +41,7 @@ export const reactStoreOptions = storeOptions({
 
 export const App = () => (
   <StoreRegistryProvider storeRegistry={storeRegistry}>
-    <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken} serviceWorker>
+    <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken}>
       <div className="app-layout">
         <div className="main">
           <Gallery />

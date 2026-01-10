@@ -16,7 +16,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 
 | Package | Description |
 |---------|-------------|
-| `@livestore-filesync/core` | Framework-agnostic API, schema helpers, service worker utilities |
+| `@livestore-filesync/core` | Framework-agnostic API and schema helpers |
 | `@livestore-filesync/opfs` | OPFS filesystem adapter for browsers |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
@@ -73,8 +73,8 @@ const url = await resolveFileUrl(result.fileId)
 ```
 
 See `examples/` for complete implementations:
-- `examples/react-filesync` — React with service worker for file URL resolution
-- `examples/vue-filesync` — Vue using `resolveFileUrl()` (no service worker)
+- `examples/react-filesync` — React example using `resolveFileUrl()`
+- `examples/vue-filesync` — Vue example using `resolveFileUrl()`
 - `examples/node-filesync` — Node.js usage
 
 ## Filesystem Adapters
@@ -151,49 +151,7 @@ Requires S3 credentials (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SEC
 
 ## File URL Resolution
 
-There are two ways to resolve file URLs in the browser, each with different trade-offs:
-
-| | Service Worker | resolveFileUrl() |
-|---|---|---|
-| **Component code** | Simpler (`<img src={file.path}>`) | Requires async URL resolution |
-| **Download prioritization** | No (on-demand fetching) | Yes (auto-prioritizes visible files) |
-| **Setup complexity** | Requires SW registration | No extra setup |
-| **Best for** | Simple apps, fewer files | Galleries, lazy-loaded content |
-
-### Option 1: Service Worker (simpler component code)
-
-The service worker intercepts requests to `/livestore-filesync-files/*` and serves files from OPFS, falling back to remote storage. This lets you use `file.path` directly as an image src.
-
-**Note:** The service worker fetches files on-demand when requested, bypassing the download queue. This means download prioritization is not available with this approach — files are fetched immediately when the browser requests them.
-
-**Setup:**
-
-1. Copy the bundled service worker to your public folder (add to `package.json`):
-```json
-{
-  "scripts": {
-    "postinstall": "cp node_modules/@livestore-filesync/core/dist/file-sync-sw.iife.js public/file-sync-sw.js"
-  }
-}
-```
-
-2. Initialize the service worker before rendering (must complete before file URLs work):
-```typescript
-import { initServiceWorker } from '@livestore-filesync/core/worker'
-
-await initServiceWorker({ authToken })
-```
-
-3. Use the file path directly:
-```tsx
-<img src={`/${file.path}`} />
-```
-
-The bundled service worker works in all browsers including Firefox. See `examples/react-filesync` for a complete implementation.
-
-### Option 2: resolveFileUrl() (with download prioritization)
-
-Use `resolveFileUrl()` to get a URL for each file. This approach integrates with the download queue and automatically prioritizes files that are being displayed.
+Use `resolveFileUrl()` to get a displayable URL for each file. This approach integrates with the download queue and automatically prioritizes files that are being displayed.
 
 ```typescript
 import { resolveFileUrl } from '@livestore-filesync/core'
@@ -204,7 +162,7 @@ const url = await resolveFileUrl(file.id)
 
 **Automatic prioritization:** When `resolveFileUrl()` is called for a file that's queued for download, that file is automatically moved to the front of the queue. This ensures visible files are downloaded before background files.
 
-See `examples/vue-filesync` for this approach.
+See `examples/react-filesync` or `examples/vue-filesync` for complete implementations.
 
 ## Handling Upload State
 
@@ -221,8 +179,10 @@ const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.lo
 // - The file exists locally (originating client can display immediately)
 // - OR the file has been uploaded (remoteKey is set, other clients can download)
 
-return canDisplay
-  ? <img src={`/${file.path}`} />
+const url = await resolveFileUrl(file.id)
+
+return canDisplay && url
+  ? <img src={url} />
   : <div>{isUploading ? 'Uploading...' : 'Waiting for file...'}</div>
 ```
 
@@ -230,8 +190,6 @@ This ensures a good user experience:
 - The originating client displays files immediately from local storage
 - Other clients show a placeholder until the upload completes
 - After edits, the correct version is displayed (based on content hash matching)
-
-Pattern suitable both when using service worker (see React example) and without (see Vue example).
 
 ## Multi-Tab Support
 

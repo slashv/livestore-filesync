@@ -667,11 +667,7 @@ When syncing files from remote storage, the default behavior downloads all files
 However, applications often need to prioritize visible/needed files over background downloads.
 FileSync provides automatic and manual prioritization mechanisms.
 
-**Important:** Download prioritization only works with the `resolveFileUrl()` approach, not with
-the service worker approach. The service worker operates independently and fetches files on-demand
-when the browser requests them, bypassing the download queue entirely.
-
-### Automatic Prioritization (resolveFileUrl only)
+### Automatic Prioritization
 
 By default, when `resolveFileUrl(fileId)` is called for a file that's queued for download,
 that file is automatically moved to the front of the download queue. This means files that
@@ -718,21 +714,6 @@ const preloadNextPage = (fileIds: string[]) => {
   }
 }
 ```
-
-### Service Worker vs resolveFileUrl
-
-The two URL resolution approaches have different download behaviors:
-
-| Aspect | Service Worker | resolveFileUrl() |
-|--------|----------------|------------------|
-| **Download trigger** | On-demand when browser requests file | Background sync loop |
-| **Prioritization** | N/A (immediate fetch) | Yes (queue-based) |
-| **Queue integration** | None (bypasses queue) | Full integration |
-| **Best for** | Simple apps, immediate display | Large galleries, controlled loading |
-
-If you need download prioritization (e.g., for a photo gallery where visible images should
-load first), use `resolveFileUrl()`. If you prefer simpler component code and don't need
-queue control, use the service worker.
 
 ### Implementation Details
 

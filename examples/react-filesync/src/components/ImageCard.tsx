@@ -1,6 +1,6 @@
-import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
+import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
 import { useStore } from "@livestore/react"
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 import type { FileType } from "../types"
@@ -15,7 +15,14 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   )
   const { canDisplay, isUploading, localState: localFile } = displayState
 
-  const src = `/${file.path.replace(/^\/+/, "")}`
+  const [src, setSrc] = useState<string | null>(null)
+
+  // Resolve file URL on mount and when file updates
+  useEffect(() => {
+    resolveFileUrl(file.id).then((url) => {
+      if (url) setSrc(url)
+    })
+  }, [file.id, file.updatedAt])
 
   const handleDelete = async () => {
     try {
@@ -38,7 +45,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   return (
     <div className="card" data-testid="file-card">
       <div className="image-container">
-        {canDisplay ?
+        {canDisplay && src ?
           (
             <img
               src={src}

@@ -1,5 +1,4 @@
 import { initFileSync } from "@livestore-filesync/core"
-import { initServiceWorker, type ServiceWorkerOptions } from "@livestore-filesync/core/worker"
 import { layer as opfsLayer } from "@livestore-filesync/opfs"
 import { useStore } from "@livestore/react"
 import { type ReactNode, Suspense, useEffect, useState } from "react"
@@ -10,7 +9,6 @@ type FileSyncProviderProps = {
   headers?: Record<string, string>
   authHeaders?: () => Record<string, string>
   authToken?: string
-  serviceWorker?: boolean | ServiceWorkerOptions
   children?: ReactNode
 }
 
@@ -19,18 +17,12 @@ const FileSyncProviderInner = ({
   authToken,
   children,
   headers,
-  serviceWorker,
   signerBaseUrl = "/api"
 }: FileSyncProviderProps) => {
   const store = useStore(reactStoreOptions)
-  const [ready, setReady] = useState(!serviceWorker)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    if (serviceWorker) {
-      const swOptions = typeof serviceWorker === "object" ? serviceWorker : {}
-      initServiceWorker({ authToken, ...swOptions }).then(() => setReady(true))
-    }
-
     const resolvedHeaders = headers ?? authHeaders?.()
     const dispose = initFileSync(store, {
       fileSystem: opfsLayer(),
@@ -41,8 +33,11 @@ const FileSyncProviderInner = ({
       }
     })
 
+    // Mark as ready after initialization
+    setReady(true)
+
     return () => void dispose()
-  }, [store, signerBaseUrl, headers, authHeaders, authToken, serviceWorker])
+  }, [store, signerBaseUrl, headers, authHeaders, authToken])
 
   return ready ? <>{children}</> : null
 }
