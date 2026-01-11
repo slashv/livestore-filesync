@@ -16,23 +16,18 @@ const isKeySafe = (key: string): boolean => {
   return true
 }
 
-const parseAllowedPrefixes = (env: S3SignerEnv): ReadonlyArray<string> => {
-  const raw = env.ALLOWED_KEY_PREFIXES
-  if (!raw) return []
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-}
-
-const isKeyAllowed = (key: string, prefixes: ReadonlyArray<string>): boolean => {
-  if (prefixes.length === 0) return true
-  for (const prefixRaw of prefixes) {
-    const prefix = prefixRaw.replace(/^\/+/, "")
-    const normalizedPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`
-    if (key === prefix || key.startsWith(normalizedPrefix)) return true
-  }
-  return false
+/**
+ * Check if a key is allowed by the given prefixes.
+ *
+ * @param key - The key to check
+ * @param allowedPrefixes - Array of allowed prefixes. Empty array means all keys are allowed.
+ * @returns true if the key is allowed
+ */
+const isKeyAllowed = (key: string, allowedPrefixes: ReadonlyArray<string>): boolean => {
+  // Empty array means no restrictions
+  if (allowedPrefixes.length === 0) return true
+  // Check if key starts with any allowed prefix
+  return allowedPrefixes.some((prefix) => key.startsWith(prefix))
 }
 
 const expirySecondsToIso = (seconds: number): string => new Date(Date.now() + seconds * 1000).toISOString()
@@ -139,14 +134,4 @@ export async function handleDelete(
   } catch {
     return errorResponse("Delete failed", 500)
   }
-}
-
-export const resolveAllowedPrefixes = (
-  env: S3SignerEnv,
-  request: Request,
-  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => ReadonlyArray<string> | undefined
-): ReadonlyArray<string> => {
-  const custom = getAllowedKeyPrefixes?.(env, request)
-  if (custom) return custom
-  return parseAllowedPrefixes(env)
 }

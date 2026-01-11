@@ -54,9 +54,14 @@ export class SyncBackendDO extends SyncBackend.makeDurableObject({
 // =============================================================================
 
 // S3 signer handler (signs URLs for direct-to-R2 uploads)
-const s3SignerHandler = createS3SignerHandler({
+const s3SignerHandler = createS3SignerHandler<Env>({
   basePath: "/api",
-  getAuthToken: (env) => env.WORKER_AUTH_TOKEN
+  validateAuth: async (request, env) => {
+    const token = request.headers.get("Authorization")?.replace("Bearer ", "") ||
+      request.headers.get("X-Worker-Auth")
+    if (!token || token !== env.WORKER_AUTH_TOKEN) return null
+    return [] // Allow all keys
+  }
 })
 
 // =============================================================================

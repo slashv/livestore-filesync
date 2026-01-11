@@ -18,45 +18,63 @@ export interface S3SignerEnv {
    *   {protocol}//{bucket}.{host}/{key}
    */
   S3_FORCE_PATH_STYLE?: string
-
-  /**
-   * Optional auth token used to protect signer endpoints.
-   */
-  WORKER_AUTH_TOKEN?: string
-
-  /**
-   * Optional comma-separated list of key prefixes allowed for this deployment.
-   * Example: "store-1/,store-2/"
-   */
-  ALLOWED_KEY_PREFIXES?: string
 }
 
-export interface S3SignerHandlerConfig {
+/**
+ * Result of async auth validation.
+ *
+ * - `null`: Access denied (returns 401 Unauthorized)
+ * - `[]` (empty array): No restrictions, allow access to all keys
+ * - `["prefix/"]`: Only allow access to keys starting with any of the specified prefixes
+ */
+export type ValidateAuthResult = ReadonlyArray<string> | null
+
+export interface S3SignerHandlerConfig<Env extends S3SignerEnv = S3SignerEnv> {
   /**
    * Base path for signer routes (default: '/api')
    *
    * Example:
    * - basePath '/api' => routes at '/api/health', '/api/v1/sign/upload', ...
    */
-  basePath?: string
-
-  /**
-   * Custom token lookup.
-   * If not provided, defaults to env.WORKER_AUTH_TOKEN.
-   */
-  getAuthToken?: (env: S3SignerEnv) => string | undefined
-
-  /**
-   * Allowed key prefixes for authorization.
-   * If not provided, defaults to parsing env.ALLOWED_KEY_PREFIXES.
-   * Return empty/undefined to allow all keys.
-   */
-  getAllowedKeyPrefixes?: (env: S3SignerEnv, request: Request) => ReadonlyArray<string> | undefined
+  readonly basePath?: string
 
   /**
    * Maximum expiry in seconds for presigned URLs (default: 900).
    */
-  maxExpirySeconds?: number
+  readonly maxExpirySeconds?: number
+
+  /**
+   * Async auth validation callback.
+   *
+   * Called for every request that requires authentication (sign endpoints and delete).
+   * Return allowed key prefixes or null to deny access.
+   *
+   * @param request - The incoming request (check Authorization header, cookies, etc.)
+   * @param env - Worker environment
+   * @returns Allowed key prefixes, or null to deny access
+   *   - `null`: Access denied (401 Unauthorized)
+   *   - `[]` (empty array): No key restrictions (allow all keys)
+   *   - `["user123/"]`: Only allow keys starting with "user123/"
+   *
+   * @example
+   * ```typescript
+   * validateAuth: async (request, env) => {
+   *   const token = request.headers.get("Authorization")?.replace("Bearer ", "")
+   *   if (!token) return null
+   *
+   *   const response = await fetch(env.AUTH_VALIDATE_URL, {
+   *     method: "POST",
+   *     headers: { "Content-Type": "application/json" },
+   *     body: JSON.stringify({ sessionToken: token })
+   *   })
+   *
+   *   if (!response.ok) return null
+   *   const { userId } = await response.json()
+   *   return userId ? [`${userId}/`] : null
+   * }
+   * ```
+   */
+  readonly validateAuth?: (request: Request, env: Env) => Promise<ValidateAuthResult>
 }
 
 export type SignUploadRequest = {

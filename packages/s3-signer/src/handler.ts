@@ -1,25 +1,38 @@
 import { errorResponse, handleCorsPreflightRequest } from "./cors.js"
-import { handleDelete, handleHealth, handleSignDownload, handleSignUpload, resolveAllowedPrefixes } from "./routes.js"
+import { handleDelete, handleHealth, handleSignDownload, handleSignUpload } from "./routes.js"
 import type { S3SignerEnv, S3SignerHandlerConfig } from "./types.js"
 
-const getProvidedToken = (request: Request): string | null => {
-  const authHeader = request.headers.get("Authorization")
-  const workerAuthHeader = request.headers.get("X-Worker-Auth")
-  return authHeader?.replace("Bearer ", "") || workerAuthHeader
-}
+/**
+ * Creates a Cloudflare Worker handler that implements the filesync signer API
+ * for S3-compatible storage backends.
+ *
+ * This handler:
+ * - Exposes signer endpoints at `{basePath}/v1/sign/upload`, `{basePath}/v1/sign/download`, `{basePath}/v1/delete`
+ * - Generates presigned URLs for direct-to-S3 uploads/downloads
+ * - Uses async `validateAuth` callback for authentication and key prefix authorization
+ *
+ * @example
+ * ```typescript
+ * import { createS3SignerHandler } from '@livestore-filesync/s3-signer'
+ *
+ * export default {
+ *   fetch: createS3SignerHandler({
+ *     basePath: '/api',
+ *     validateAuth: async (request, env) => {
+ *       const token = request.headers.get("Authorization")?.replace("Bearer ", "")
+ *       if (!token || token !== env.WORKER_AUTH_TOKEN) return null
+ *       return [] // Allow all keys
+ *     }
+ *   })
+ * }
+ * ```
+ */
+export function createS3SignerHandler<Env extends S3SignerEnv = S3SignerEnv>(
+  config: S3SignerHandlerConfig<Env> = {}
+) {
+  const { basePath = "/api", maxExpirySeconds = 900, validateAuth } = config
 
-export function createS3SignerHandler(config: S3SignerHandlerConfig = {}) {
-  const {
-    basePath = "/api",
-    getAllowedKeyPrefixes,
-    getAuthToken,
-    maxExpirySeconds = 900
-  } = config
-
-  return async function handleS3SignerRequest(
-    request: Request,
-    env: S3SignerEnv
-  ): Promise<Response | null> {
+  return async function handleS3SignerRequest(request: Request, env: Env): Promise<Response | null> {
     const url = new URL(request.url)
     const { pathname } = url
     const method = request.method
@@ -32,17 +45,20 @@ export function createS3SignerHandler(config: S3SignerHandlerConfig = {}) {
 
     const relativePath = pathname.slice(normalizedBasePath.length) || "/"
 
-    // Auth (optional)
-    const expectedToken = getAuthToken ? getAuthToken(env) : env.WORKER_AUTH_TOKEN
-    if (expectedToken) {
-      const provided = getProvidedToken(request)
-      if (provided !== expectedToken) return errorResponse("Unauthorized", 401)
-    }
-
-    const allowedPrefixes = resolveAllowedPrefixes(env, request, getAllowedKeyPrefixes)
-
+    // Health check - no auth required
     if (method === "GET" && relativePath === "/health") {
       return handleHealth(env)
+    }
+
+    // All other endpoints require auth validation
+    let allowedPrefixes: ReadonlyArray<string> = []
+
+    if (validateAuth) {
+      const authResult = await validateAuth(request, env)
+      if (authResult === null) {
+        return errorResponse("Unauthorized", 401)
+      }
+      allowedPrefixes = authResult
     }
 
     if (method === "POST" && relativePath === "/v1/sign/upload") {

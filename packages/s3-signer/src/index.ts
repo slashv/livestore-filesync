@@ -14,7 +14,8 @@ export type {
   SignDownloadRequest,
   SignDownloadResponse,
   SignUploadRequest,
-  SignUploadResponse
+  SignUploadResponse,
+  ValidateAuthResult
 } from "./types.js"
 
 export { addCorsHeaders, errorResponse, handleCorsPreflightRequest, jsonResponse } from "./cors.js"
