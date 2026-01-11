@@ -19,6 +19,15 @@ type R2BucketLike = {
 }
 
 /**
+ * Result of async auth validation.
+ *
+ * - `null`: Access denied (returns 401 Unauthorized)
+ * - `[]` (empty array): No restrictions, allow access to all keys
+ * - `["prefix/"]`: Only allow access to keys starting with any of the specified prefixes
+ */
+export type ValidateAuthResult = ReadonlyArray<string> | null
+
+/**
  * Configuration for the R2 storage handler.
  *
  * This handler implements the filesync signer API contract and serves files directly
@@ -31,12 +40,75 @@ type R2BucketLike = {
  *
  * For high-traffic production deployments, consider using `@livestore-filesync/s3-signer`
  * which generates AWS S3-compatible presigned URLs for direct-to-storage access.
+ *
+ * ## Authentication
+ *
+ * Use `validateAuth` + `getSigningSecret` for per-user authentication with key prefix restrictions:
+ * - `validateAuth`: Async callback to authenticate requests and return allowed key prefixes
+ * - `getSigningSecret`: Static secret for HMAC-signing presigned URLs
+ *
+ * @example
+ * ```typescript
+ * createR2Handler({
+ *   bucket: (env) => env.FILE_BUCKET,
+ *   getSigningSecret: (env) => env.FILE_SIGNING_SECRET,
+ *   validateAuth: async (request, env) => {
+ *     const token = request.headers.get("Authorization")?.replace("Bearer ", "")
+ *     if (!token) return null // Deny
+ *
+ *     const user = await validateSessionToken(token, env)
+ *     if (!user) return null // Deny
+ *
+ *     return [`${user.id}/`] // Allow only this user's files
+ *   }
+ * })
+ * ```
  */
 export type R2HandlerConfig<Env> = {
   /** Function to get the R2 bucket binding from the Worker environment */
   readonly bucket: (env: Env) => R2BucketLike
-  /** Function to get the auth token from the Worker environment */
-  readonly getAuthToken: (env: Env) => string | undefined
+
+  /**
+   * Secret used to HMAC-sign presigned URLs.
+   *
+   * Should be a stable secret known only to the server.
+   * If not provided, URLs are not signed (not recommended for production).
+   */
+  readonly getSigningSecret?: (env: Env) => string | undefined
+
+  /**
+   * Async auth validation callback.
+   *
+   * Called for every request that requires authentication (sign endpoints and direct file access).
+   * Return allowed key prefixes or null to deny access.
+   *
+   * @param request - The incoming request (check Authorization header, cookies, etc.)
+   * @param env - Worker environment
+   * @returns Allowed key prefixes, or null to deny access
+   *   - `null`: Access denied (401 Unauthorized)
+   *   - `[]` (empty array): No key restrictions (allow all keys)
+   *   - `["user123/"]`: Only allow keys starting with "user123/"
+   *
+   * @example
+   * ```typescript
+   * validateAuth: async (request, env) => {
+   *   const token = request.headers.get("Authorization")?.replace("Bearer ", "")
+   *   if (!token) return null
+   *
+   *   const response = await fetch(env.AUTH_VALIDATE_URL, {
+   *     method: "POST",
+   *     headers: { "Content-Type": "application/json" },
+   *     body: JSON.stringify({ sessionToken: token })
+   *   })
+   *
+   *   if (!response.ok) return null
+   *   const { userId } = await response.json()
+   *   return userId ? [`${userId}/`] : null
+   * }
+   * ```
+   */
+  readonly validateAuth?: (request: Request, env: Env) => Promise<ValidateAuthResult>
+
   /** Base path for the signer API (default: '/api') */
   readonly basePath?: string
   /** Base path for serving files (default: '/livestore-filesync-files') */
@@ -90,26 +162,9 @@ const hmacSha256Base64Url = async (secret: string, message: string): Promise<str
   return base64UrlEncode(sig)
 }
 
-const getAuthTokenFromRequest = (request: Request): string | null => {
-  const authHeader = request.headers.get("Authorization")
-  if (authHeader) {
-    const trimmed = authHeader.trim()
-    const prefix = "Bearer "
-    if (trimmed.startsWith(prefix)) {
-      const token = trimmed.slice(prefix.length).trim()
-      return token.length > 0 ? token : null
-    }
-  }
-  const workerAuthHeader = request.headers.get("X-Worker-Auth")
-  return workerAuthHeader && workerAuthHeader.trim().length > 0 ? workerAuthHeader.trim() : null
-}
-
-const isAuthorizedHeader = (request: Request, expectedToken: string): boolean =>
-  getAuthTokenFromRequest(request) === expectedToken
-
 const verifySignedQuery = async (
   request: Request,
-  expectedToken: string,
+  signingSecret: string,
   method: string,
   key: string
 ): Promise<boolean> => {
@@ -124,7 +179,7 @@ const verifySignedQuery = async (
   const now = Math.floor(Date.now() / 1000)
   if (expNum < now) return false
 
-  const expectedSig = await hmacSha256Base64Url(expectedToken, `${method}\n${key}\n${expNum}`)
+  const expectedSig = await hmacSha256Base64Url(signingSecret, `${method}\n${key}\n${expNum}`)
   return sig === expectedSig
 }
 
@@ -151,6 +206,20 @@ const getFileKeyFromPath = (pathname: string, filesBasePath: string): string | n
 }
 
 /**
+ * Check if a key is allowed by the given prefixes.
+ *
+ * @param key - The key to check
+ * @param allowedPrefixes - Array of allowed prefixes. Empty array means all keys are allowed.
+ * @returns true if the key is allowed
+ */
+const isKeyAllowed = (key: string, allowedPrefixes: ReadonlyArray<string>): boolean => {
+  // Empty array means no restrictions
+  if (allowedPrefixes.length === 0) return true
+  // Check if key starts with any allowed prefix
+  return allowedPrefixes.some((prefix) => key.startsWith(prefix))
+}
+
+/**
  * Creates a Cloudflare Worker handler that implements the filesync signer API
  * and serves files directly from R2.
  *
@@ -165,12 +234,17 @@ const getFileKeyFromPath = (pathname: string, filesBasePath: string): string | n
  *
  * interface Env {
  *   FILE_BUCKET: R2Bucket
- *   WORKER_AUTH_TOKEN: string
+ *   FILE_SIGNING_SECRET: string
  * }
  *
  * const fileRoutes = createR2Handler<Request, Env, ExecutionContext>({
  *   bucket: (env) => env.FILE_BUCKET,
- *   getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+ *   getSigningSecret: (env) => env.FILE_SIGNING_SECRET,
+ *   validateAuth: async (request, env) => {
+ *     // Validate session and return allowed key prefixes
+ *     const userId = await validateSession(request)
+ *     return userId ? [`${userId}/`] : null
+ *   }
  * })
  *
  * export default {
@@ -200,7 +274,9 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
     }
 
     const bucket = config.bucket(env)
+    const signingSecret = config.getSigningSecret?.(env)
 
+    // Health check - no auth required
     if (pathname === `${basePath}/health` && method === "GET") {
       try {
         await bucket.list({ limit: 1 })
@@ -210,18 +286,44 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
       }
     }
 
+    // Sign upload endpoint
     if (pathname === `${basePath}/v1/sign/upload` && method === "POST") {
-      const expectedToken = config.getAuthToken(env)
-      if (expectedToken && !isAuthorizedHeader(req, expectedToken)) {
-        return error("Unauthorized", 401)
+      // Validate auth if configured
+      if (config.validateAuth) {
+        const allowedPrefixes = await config.validateAuth(req, env)
+        if (allowedPrefixes === null) {
+          return error("Unauthorized", 401)
+        }
+
+        const body = (await req.json().catch(() => null)) as { key?: unknown } | null
+        if (!body || typeof body.key !== "string") return error("Invalid request", 400)
+        const key = body.key.replace(/^\/+/, "")
+
+        // Check key prefix restriction
+        if (!isKeyAllowed(key, allowedPrefixes)) {
+          return error("Forbidden", 403)
+        }
+
+        const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+        const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `PUT\n${key}\n${exp}`) : null
+        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+        fileUrl.searchParams.set("exp", String(exp))
+        if (sig) fileUrl.searchParams.set("sig", sig)
+
+        return json({
+          method: "PUT",
+          url: fileUrl.toString(),
+          expiresAt: new Date(exp * 1000).toISOString()
+        })
       }
 
+      // No auth configured - allow all
       const body = (await req.json().catch(() => null)) as { key?: unknown } | null
       if (!body || typeof body.key !== "string") return error("Invalid request", 400)
       const key = body.key.replace(/^\/+/, "")
 
       const exp = Math.floor(Date.now() / 1000) + ttlSeconds
-      const sig = expectedToken ? await hmacSha256Base64Url(expectedToken, `PUT\n${key}\n${exp}`) : null
+      const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `PUT\n${key}\n${exp}`) : null
       const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
       fileUrl.searchParams.set("exp", String(exp))
       if (sig) fileUrl.searchParams.set("sig", sig)
@@ -233,18 +335,43 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
       })
     }
 
+    // Sign download endpoint
     if (pathname === `${basePath}/v1/sign/download` && method === "POST") {
-      const expectedToken = config.getAuthToken(env)
-      if (expectedToken && !isAuthorizedHeader(req, expectedToken)) {
-        return error("Unauthorized", 401)
+      // Validate auth if configured
+      if (config.validateAuth) {
+        const allowedPrefixes = await config.validateAuth(req, env)
+        if (allowedPrefixes === null) {
+          return error("Unauthorized", 401)
+        }
+
+        const body = (await req.json().catch(() => null)) as { key?: unknown } | null
+        if (!body || typeof body.key !== "string") return error("Invalid request", 400)
+        const key = body.key.replace(/^\/+/, "")
+
+        // Check key prefix restriction
+        if (!isKeyAllowed(key, allowedPrefixes)) {
+          return error("Forbidden", 403)
+        }
+
+        const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+        const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `GET\n${key}\n${exp}`) : null
+        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+        fileUrl.searchParams.set("exp", String(exp))
+        if (sig) fileUrl.searchParams.set("sig", sig)
+
+        return json({
+          url: fileUrl.toString(),
+          expiresAt: new Date(exp * 1000).toISOString()
+        })
       }
 
+      // No auth configured - allow all
       const body = (await req.json().catch(() => null)) as { key?: unknown } | null
       if (!body || typeof body.key !== "string") return error("Invalid request", 400)
       const key = body.key.replace(/^\/+/, "")
 
       const exp = Math.floor(Date.now() / 1000) + ttlSeconds
-      const sig = expectedToken ? await hmacSha256Base64Url(expectedToken, `GET\n${key}\n${exp}`) : null
+      const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `GET\n${key}\n${exp}`) : null
       const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
       fileUrl.searchParams.set("exp", String(exp))
       if (sig) fileUrl.searchParams.set("sig", sig)
@@ -255,12 +382,29 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
       })
     }
 
+    // Delete endpoint
     if (pathname === `${basePath}/v1/delete` && method === "POST") {
-      const expectedToken = config.getAuthToken(env)
-      if (expectedToken && !isAuthorizedHeader(req, expectedToken)) {
-        return error("Unauthorized", 401)
+      // Validate auth if configured
+      if (config.validateAuth) {
+        const allowedPrefixes = await config.validateAuth(req, env)
+        if (allowedPrefixes === null) {
+          return error("Unauthorized", 401)
+        }
+
+        const body = (await req.json().catch(() => null)) as { key?: unknown } | null
+        if (!body || typeof body.key !== "string") return error("Invalid request", 400)
+        const key = body.key.replace(/^\/+/, "")
+
+        // Check key prefix restriction
+        if (!isKeyAllowed(key, allowedPrefixes)) {
+          return error("Forbidden", 403)
+        }
+
+        await bucket.delete(key)
+        return addCors(new Response(null, { status: 204 }))
       }
 
+      // No auth configured - allow all
       const body = (await req.json().catch(() => null)) as { key?: unknown } | null
       if (!body || typeof body.key !== "string") return error("Invalid request", 400)
       const key = body.key.replace(/^\/+/, "")
@@ -269,39 +413,90 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
       return addCors(new Response(null, { status: 204 }))
     }
 
+    // File access (PUT/GET)
     const fileKey = getFileKeyFromPath(pathname, filesBasePath)
     if (!fileKey) return null
 
     if (method === "PUT") {
-      const expectedToken = config.getAuthToken(env)
-      if (expectedToken) {
-        const ok = isAuthorizedHeader(req, expectedToken) ||
-          (await verifySignedQuery(req, expectedToken, "PUT", fileKey))
-        if (!ok) return error("Unauthorized", 401)
+      // For file uploads, first try signed URL verification
+      if (signingSecret) {
+        const sigOk = await verifySignedQuery(req, signingSecret, "PUT", fileKey)
+        if (sigOk) {
+          // Valid signature - allow upload
+          const contentType = req.headers.get("Content-Type") ?? "application/octet-stream"
+          const arrayBuffer = await req.arrayBuffer()
+          await bucket.put(fileKey, arrayBuffer, { httpMetadata: { contentType } })
+          return addCors(new Response(null, { status: 200 }))
+        }
       }
 
-      const contentType = req.headers.get("Content-Type") ?? "application/octet-stream"
-      const arrayBuffer = await req.arrayBuffer()
-      await bucket.put(fileKey, arrayBuffer, { httpMetadata: { contentType } })
-      return addCors(new Response(null, { status: 200 }))
+      // Fall back to validateAuth for direct auth header access
+      if (config.validateAuth) {
+        const allowedPrefixes = await config.validateAuth(req, env)
+        if (allowedPrefixes !== null && isKeyAllowed(fileKey, allowedPrefixes)) {
+          const contentType = req.headers.get("Content-Type") ?? "application/octet-stream"
+          const arrayBuffer = await req.arrayBuffer()
+          await bucket.put(fileKey, arrayBuffer, { httpMetadata: { contentType } })
+          return addCors(new Response(null, { status: 200 }))
+        }
+      }
+
+      // No signing secret and no validateAuth - allow all (not recommended)
+      if (!signingSecret && !config.validateAuth) {
+        const contentType = req.headers.get("Content-Type") ?? "application/octet-stream"
+        const arrayBuffer = await req.arrayBuffer()
+        await bucket.put(fileKey, arrayBuffer, { httpMetadata: { contentType } })
+        return addCors(new Response(null, { status: 200 }))
+      }
+
+      return error("Unauthorized", 401)
     }
 
     if (method === "GET") {
-      const expectedToken = config.getAuthToken(env)
-      if (expectedToken) {
-        const ok = isAuthorizedHeader(req, expectedToken) ||
-          (await verifySignedQuery(req, expectedToken, "GET", fileKey))
-        if (!ok) return error("Unauthorized", 401)
+      // For file downloads, first try signed URL verification
+      if (signingSecret) {
+        const sigOk = await verifySignedQuery(req, signingSecret, "GET", fileKey)
+        if (sigOk) {
+          // Valid signature - allow download
+          const object = await bucket.get(fileKey)
+          if (!object) return error("File not found", 404)
+          const headers = new Headers()
+          headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream")
+          headers.set("Content-Length", object.size.toString())
+          headers.set("ETag", object.etag)
+          headers.set("Cache-Control", "public, max-age=31536000, immutable")
+          return addCors(new Response(object.body, { headers }))
+        }
       }
 
-      const object = await bucket.get(fileKey)
-      if (!object) return error("File not found", 404)
-      const headers = new Headers()
-      headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream")
-      headers.set("Content-Length", object.size.toString())
-      headers.set("ETag", object.etag)
-      headers.set("Cache-Control", "public, max-age=31536000, immutable")
-      return addCors(new Response(object.body, { headers }))
+      // Fall back to validateAuth for direct auth header access
+      if (config.validateAuth) {
+        const allowedPrefixes = await config.validateAuth(req, env)
+        if (allowedPrefixes !== null && isKeyAllowed(fileKey, allowedPrefixes)) {
+          const object = await bucket.get(fileKey)
+          if (!object) return error("File not found", 404)
+          const headers = new Headers()
+          headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream")
+          headers.set("Content-Length", object.size.toString())
+          headers.set("ETag", object.etag)
+          headers.set("Cache-Control", "public, max-age=31536000, immutable")
+          return addCors(new Response(object.body, { headers }))
+        }
+      }
+
+      // No signing secret and no validateAuth - allow all (not recommended)
+      if (!signingSecret && !config.validateAuth) {
+        const object = await bucket.get(fileKey)
+        if (!object) return error("File not found", 404)
+        const headers = new Headers()
+        headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream")
+        headers.set("Content-Length", object.size.toString())
+        headers.set("ETag", object.etag)
+        headers.set("Cache-Control", "public, max-age=31536000, immutable")
+        return addCors(new Response(object.body, { headers }))
+      }
+
+      return error("Unauthorized", 401)
     }
 
     return null

@@ -117,7 +117,14 @@ export default {
   fetch: composeFetchHandlers(
     createR2Handler({
       bucket: (env) => env.FILE_BUCKET,
-      getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
+      // Secret for HMAC-signing presigned URLs
+      getSigningSecret: (env) => env.FILE_SIGNING_SECRET,
+      // Async auth validation with optional key prefix restrictions
+      validateAuth: async (request, env) => {
+        const token = request.headers.get("Authorization")?.replace("Bearer ", "")
+        if (!token || token !== env.WORKER_AUTH_TOKEN) return null // Deny
+        return [] // Allow all keys (or return ["user123/"] to restrict)
+      }
     })
   )
 }

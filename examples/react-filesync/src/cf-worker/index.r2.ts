@@ -65,9 +65,24 @@ type SyncSearchParams = Exclude<ReturnType<typeof SyncBackend.matchSyncRequest>,
 // Signed URLs point back to this Worker which proxies the file data.
 const fileRoutes = createR2Handler<CfTypes.Request, Env, CfTypes.ExecutionContext>({
   bucket: (env) => env.FILE_BUCKET,
-  getAuthToken: (env) => env.WORKER_AUTH_TOKEN,
   basePath: "/api",
-  filesBasePath: "/livestore-filesync-files"
+  filesBasePath: "/livestore-filesync-files",
+
+  // Static secret for HMAC-signing presigned URLs
+  getSigningSecret: (env) => env.WORKER_AUTH_TOKEN,
+
+  // Async auth validation - validates the auth token from headers
+  // Returns empty array to allow all keys (no prefix restrictions)
+  validateAuth: async (request, env) => {
+    const authHeader = request.headers.get("Authorization")
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null
+
+    if (!token || token !== env.WORKER_AUTH_TOKEN) {
+      return null // Deny access
+    }
+
+    return [] // Allow all keys (no prefix restrictions)
+  }
 })
 
 // Option 2: S3 signer (alternative - higher performance, direct-to-storage)
