@@ -125,6 +125,8 @@ const addCors = (response: Response): Response => {
   headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Worker-Auth")
   headers.set("Access-Control-Max-Age", "86400")
+  // Required for cross-origin resource loading (images, fonts, etc.)
+  headers.set("Cross-Origin-Resource-Policy", "cross-origin")
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
