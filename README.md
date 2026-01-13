@@ -20,6 +20,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 | `@livestore-filesync/opfs` | OPFS filesystem adapter for browsers |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
+| `@livestore-filesync/image-thumbnails` | Optional: Client-side image thumbnail generation using wasm-vips |
 
 ## Install
 
@@ -75,6 +76,7 @@ const url = await resolveFileUrl(result.fileId)
 See `examples/` for complete implementations:
 - `examples/react-filesync` — React example using `resolveFileUrl()`
 - `examples/vue-filesync` — Vue example using `resolveFileUrl()`
+- `examples/vue-thumbnail` — Vue example with image thumbnail generation
 - `examples/node-filesync` — Node.js usage
 
 ## Filesystem Adapters
@@ -213,10 +215,54 @@ FileSync is designed to work correctly when multiple browser tabs are open to th
 
 No configuration required — this works automatically.
 
+## Image Thumbnails (Optional)
+
+The `@livestore-filesync/image-thumbnails` package provides client-side thumbnail generation using wasm-vips in a dedicated web worker.
+
+### Features
+
+- **Client-side generation**: Thumbnails are generated in the browser using wasm-vips
+- **Multiple sizes**: Configure named sizes (e.g., small: 128, medium: 256, large: 512)
+- **Local storage**: Thumbnails stored in OPFS (not synced between clients)
+- **Automatic generation**: Watches for new image files and generates thumbnails automatically
+- **Leader-only**: Only the leader tab generates thumbnails to avoid duplicated work
+
+### Quick Start
+
+```typescript
+import { createFileSyncSchema } from '@livestore-filesync/core/schema'
+import { createThumbnailSchema } from '@livestore-filesync/image-thumbnails/schema'
+import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image-thumbnails'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+// 1. Merge schemas
+const fileSyncSchema = createFileSyncSchema()
+const thumbnailSchema = createThumbnailSchema()
+
+const tables = { ...fileSyncSchema.tables, ...thumbnailSchema.tables }
+
+// 2. Initialize (after FileSync is initialized)
+const dispose = initThumbnails(store, {
+  sizes: { small: 128, medium: 256, large: 512 },
+  format: 'webp',
+  fileSystem: opfsLayer(),
+  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+})
+
+// 3. Create your worker file (thumbnail.worker.ts)
+// import '@livestore-filesync/image-thumbnails/worker'
+
+// 4. Get thumbnail URLs
+const url = await resolveThumbnailUrl(fileId, 'small')
+```
+
+See `examples/vue-thumbnail` for a complete implementation.
+
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)
 - Effect 3.x, @effect/platform 0.92+
+- For image-thumbnails: wasm-vips ^0.0.16, SharedArrayBuffer support (requires COOP/COEP headers)
 
 ## License
 

@@ -732,3 +732,97 @@ When prioritizing a file:
   (the normal queue entry is skipped later via deduplication)
 
 This approach provides O(1) prioritization without rebuilding the queue.
+
+## Image Thumbnails Package (Optional)
+
+The `@livestore-filesync/image-thumbnails` package provides client-side thumbnail generation as an
+optional enhancement to FileSync. It uses wasm-vips in a dedicated web worker for high-quality
+image resizing.
+
+### Key Design Decisions
+
+1. **Thumbnails are not synced**: Each client generates its own thumbnails locally. This avoids
+   network traffic and allows different clients to have different size configurations.
+
+2. **Leader-only generation**: Like FileSync, only the leader tab runs the thumbnail generation
+   worker. This prevents duplicate work when multiple tabs are open.
+
+3. **Content-hash based storage**: Thumbnails are stored at `thumbnails/{contentHash}/{sizeName}.{format}`.
+   This means if two files have identical content, they share the same thumbnails.
+
+4. **State in client document**: Thumbnail generation state is stored in a `thumbnailState` client
+   document. This persists across page refreshes and allows the UI to show generation progress.
+
+### Services
+
+- `ThumbnailWorkerClient`: Effect-based wrapper for worker communication with request/response
+  correlation, timeouts, and cleanup.
+
+- `LocalThumbnailStorage`: Stores/retrieves thumbnails from OPFS using the same `FileSystem`
+  adapter as the core package.
+
+- `ThumbnailService`: Main orchestration service. Watches files table, queues generation jobs,
+  stores results, updates state, and handles cleanup.
+
+### Layer Dependency Graph
+
+```text
+[FileSystemLive (user-provided)] -----------+
+                                            |
+                                            v
+[ThumbnailWorkerClientLive(workerUrl)] ----+
+                                            |
+                                            v
+[LocalThumbnailStorageLive] <----- Layer.provide(FileSystemLive)
+                                            |
+                                            v
+[ThumbnailServiceLive(store, tables, config)] <--- Layer.provide(BaseLayer)
+```
+
+### API Usage
+
+Like the core package, the thumbnails package provides both singleton and instance APIs:
+
+**Singleton (recommended):**
+
+```typescript
+import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image-thumbnails'
+
+initThumbnails(store, {
+  sizes: { small: 128, medium: 256 },
+  format: 'webp',
+  fileSystem: opfsLayer(),
+  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+})
+
+const url = await resolveThumbnailUrl(fileId, 'small')
+```
+
+**Instance:**
+
+```typescript
+import { createThumbnails } from '@livestore-filesync/image-thumbnails'
+
+const thumbnails = createThumbnails({
+  store,
+  tables: thumbnailSchema.tables,
+  fileSystem: opfsLayer(),
+  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
+  sizes: { small: 128, medium: 256 }
+})
+
+thumbnails.start()
+const url = await thumbnails.resolveThumbnailUrl(fileId, 'small')
+```
+
+### Worker Setup
+
+Applications must create their own worker file that imports the package's worker entry point:
+
+```typescript
+// thumbnail.worker.ts
+import '@livestore-filesync/image-thumbnails/worker'
+```
+
+This approach allows the bundler (Vite, Webpack, etc.) to handle WASM loading and worker creation
+correctly for the target environment.

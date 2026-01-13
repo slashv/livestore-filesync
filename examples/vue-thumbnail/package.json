@@ -1,0 +1,37 @@
+{
+  "name": "livestore-filesync-vue-thumbnail-example",
+  "version": "0.3.1",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@livestore-filesync/r2": "workspace:*",
+    "@livestore-filesync/core": "workspace:*",
+    "@livestore-filesync/opfs": "workspace:*",
+    "@livestore-filesync/image-thumbnails": "workspace:*",
+    "@livestore/adapter-web": "catalog:",
+    "@livestore/devtools-vite": "catalog:",
+    "@livestore/livestore": "catalog:",
+    "@livestore/peer-deps": "catalog:",
+    "@livestore/sync-cf": "catalog:",
+    "@livestore/wa-sqlite": "catalog:",
+    "effect": "catalog:",
+    "vue": "^3.5.0",
+    "vue-livestore": "0.3.0-1",
+    "wasm-vips": "^0.0.16"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.19.0",
+    "@cloudflare/workers-types": "^4.20251118.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "^5.6.2",
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.0.0",
+    "wrangler": "^4.56.0"
+  },
+  "scripts": {
+    "dev": "vite --force",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "deploy": "pnpm run build && wrangler deploy"
+  }
+}

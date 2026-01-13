@@ -1,0 +1,71 @@
+{
+  "name": "@livestore-filesync/image-thumbnails",
+  "version": "0.3.1",
+  "type": "module",
+  "license": "MIT",
+  "description": "Image thumbnail generation for livestore-filesync applications using wasm-vips",
+  "keywords": [
+    "livestore",
+    "file-sync",
+    "thumbnails",
+    "wasm-vips",
+    "image-processing",
+    "effect"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/test"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "check": "tsc -b tsconfig.json",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@livestore-filesync/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform": "catalog:",
+    "@effect/vitest": "^0.25.1",
+    "@livestore/livestore": "catalog:",
+    "@types/node": "^22.5.2",
+    "effect": "catalog:",
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.0",
+    "wasm-vips": "^0.0.16"
+  },
+  "peerDependencies": {
+    "@effect/platform": "catalog:",
+    "@livestore/livestore": "catalog:",
+    "effect": "catalog:",
+    "wasm-vips": "^0.0.16"
+  },
+  "peerDependenciesMeta": {
+    "@livestore/livestore": {
+      "optional": true
+    },
+    "wasm-vips": {
+      "optional": false
+    }
+  }
+}
