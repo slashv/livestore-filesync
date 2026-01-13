@@ -250,7 +250,10 @@ test.describe('Image Thumbnails', () => {
 test.describe('Image Thumbnails - Cross-browser sync', () => {
   test.skip(!shouldRun, 'Thumbnail tests only run with E2E_FRAMEWORK=thumbnail')
 
-  test('thumbnail state is local only - other browser generates its own', async ({ browser }) => {
+  // This test requires a real sync backend (R2/S3) to transfer files between browser contexts.
+  // Each browser has its own OPFS, so Browser 2 needs to download the file from remote storage
+  // before it can generate thumbnails. Skip for now until we have backend integration tests.
+  test.skip('thumbnail state is local only - other browser generates its own', async ({ browser }) => {
     const storeId = generateStoreId('thumb-cross')
     const url = `/?storeId=${storeId}`
 

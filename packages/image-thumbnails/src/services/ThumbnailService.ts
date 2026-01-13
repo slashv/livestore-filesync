@@ -132,7 +132,7 @@ interface GenerationQueueItem {
 // ============================================
 
 /**
- * Get file's MIME type from its path
+ * Get file's MIME type from its path extension (fallback)
  */
 const getMimeTypeFromPath = (path: string): string | null => {
   const ext = path.split(".").pop()?.toLowerCase()
@@ -150,6 +150,74 @@ const getMimeTypeFromPath = (path: string): string | null => {
   }
 
   return mimeMap[ext] ?? null
+}
+
+/**
+ * Detect MIME type from file magic bytes (file signature)
+ * Returns null if unknown format
+ */
+const getMimeTypeFromBytes = (data: ArrayBuffer): string | null => {
+  if (data.byteLength < 12) return null
+
+  const bytes = new Uint8Array(data)
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png"
+  }
+
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg"
+  }
+
+  // GIF: 47 49 46 38 (GIF8)
+  if (
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38
+  ) {
+    return "image/gif"
+  }
+
+  // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF...WEBP)
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp"
+  }
+
+  // BMP: 42 4D (BM)
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) {
+    return "image/bmp"
+  }
+
+  // TIFF: 49 49 2A 00 (little endian) or 4D 4D 00 2A (big endian)
+  if (
+    (bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2a && bytes[3] === 0x00) ||
+    (bytes[0] === 0x4d && bytes[1] === 0x4d && bytes[2] === 0x00 && bytes[3] === 0x2a)
+  ) {
+    return "image/tiff"
+  }
+
+  return null
 }
 
 /**
@@ -375,10 +443,39 @@ export const makeThumbnailService = (
     // Queue a file for thumbnail generation
     const queueFile = (file: FileRecord): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const mimeType = getMimeTypeFromPath(file.path)
+        // Check if thumbnails already exist with matching content hash
+        const existingState = readThumbnailState().files[file.id]
+        if (existingState && existingState.contentHash === file.contentHash) {
+          // Check if all sizes are in a final or in-progress state
+          // Skip if already queued/generating/done/skipped (don't re-queue)
+          const allInProgress = Object.keys(config.sizes).every(
+            (sizeName) => {
+              const status = existingState.sizes[sizeName]?.status
+              return status === "done" || status === "skipped" || status === "queued" || status === "generating"
+            }
+          )
+          if (allInProgress) return
+        }
+
+        // Try to detect MIME type from path first (fast path for files with extensions)
+        let mimeType = getMimeTypeFromPath(file.path)
+
+        // If path detection failed (e.g., content-addressed path without extension),
+        // try to read file and detect from magic bytes
+        if (!mimeType || !isSupportedImageMimeType(mimeType)) {
+          const fileData = yield* readLocalFile(file.path)
+          if (fileData) {
+            mimeType = getMimeTypeFromBytes(fileData)
+          } else {
+            // File not available locally yet - leave as pending for next scan
+            // Don't update state at all, let it be picked up on next poll
+            return
+          }
+        }
 
         if (!mimeType || !isSupportedImageMimeType(mimeType)) {
-          // Not an image, mark as skipped
+          // File was read but it's not a supported image type - mark as skipped
+          console.log(`[ThumbnailService] queueFile: not a supported image, marking as skipped`)
           updateFileThumbnailState(file.id, () => ({
             fileId: file.id,
             contentHash: file.contentHash,
@@ -391,16 +488,6 @@ export const makeThumbnailService = (
             )
           }))
           return
-        }
-
-        // Check if thumbnails already exist with matching content hash
-        const existingState = readThumbnailState().files[file.id]
-        if (existingState && existingState.contentHash === file.contentHash) {
-          // Check if all sizes are done
-          const allDone = Object.keys(config.sizes).every(
-            (sizeName) => existingState.sizes[sizeName]?.status === "done"
-          )
-          if (allDone) return
         }
 
         // Initialize state as queued
@@ -416,7 +503,6 @@ export const makeThumbnailService = (
         }))
 
         // Add to queue
-        // Use the file's path directly - it's already the full storage path
         yield* Queue.offer(generationQueue, {
           fileId: file.id,
           contentHash: file.contentHash,
@@ -540,8 +626,8 @@ export const makeThumbnailService = (
         // Scan existing files
         yield* scanExistingFiles()
 
-        // Start the worker loop
-        const workerFiber = yield* workerLoop().pipe(Effect.fork)
+        // Start the worker loop (use forkDaemon to ensure it survives after start() returns)
+        const workerFiber = yield* workerLoop().pipe(Effect.forkDaemon)
         yield* Ref.set(processingFiberRef, workerFiber)
 
         // Start polling for new files if enabled

@@ -10,7 +10,6 @@ import {
 } from '@livestore-filesync/core'
 import {
   resolveThumbnailUrl,
-  getThumbnailState
 } from '@livestore-filesync/image-thumbnails'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
@@ -30,8 +29,9 @@ const displayState = computed(() =>
 const canDisplay = computed(() => displayState.value.canDisplay)
 const isUploading = computed(() => displayState.value.isUploading)
 
-// Thumbnail state
-const thumbnailState = computed(() => getThumbnailState(props.file.id))
+// Thumbnail state - read from LiveStore client document for reactivity
+const { files: thumbnailFiles } = store.useClientDocument(tables.thumbnailState)
+const thumbnailState = computed(() => thumbnailFiles.value[props.file.id])
 const smallThumbnailStatus = computed(() => thumbnailState.value?.sizes?.['small']?.status ?? 'pending')
 
 const handleDelete = async () => {
@@ -90,19 +90,33 @@ const invertImageFile = async (srcFile: File): Promise<File> => {
 const fullSrc = ref("")
 const thumbnailSrc = ref("")
 
-const loadUrls = async () => {
-  // Load full image URL
+const loadFullUrl = async () => {
   const url = await resolveFileUrl(props.file.id)
   if (url) fullSrc.value = url
-  
-  // Try to load thumbnail
+}
+
+const loadThumbnailUrl = async () => {
   const thumbUrl = await resolveThumbnailUrl(props.file.id, 'small')
   if (thumbUrl) thumbnailSrc.value = thumbUrl
 }
 
-onMounted(loadUrls)
+onMounted(() => {
+  loadFullUrl()
+  loadThumbnailUrl()
+})
 
-watch(() => props.file.updatedAt, loadUrls)
+// Reload full URL when file changes
+watch(() => props.file.updatedAt, loadFullUrl)
+
+// Reload thumbnail URL when thumbnail state changes to 'done'
+watch(
+  () => smallThumbnailStatus.value,
+  (newStatus) => {
+    if (newStatus === 'done') {
+      loadThumbnailUrl()
+    }
+  }
+)
 
 // Use thumbnail if available, fallback to full image
 const displaySrc = computed(() => thumbnailSrc.value || fullSrc.value)
