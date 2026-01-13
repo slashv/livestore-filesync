@@ -20,18 +20,36 @@ export const authHeaders = authToken ? { Authorization: `Bearer ${authToken}` } 
  */
 export function createTestImage(
   color: 'blue' | 'red',
-  opts: { suffix?: string } = {}
+  opts: { suffix?: string; format?: 'png' | 'jpg' } = {}
 ): string {
+  const format = opts.format ?? 'png'
   const fixturesDir = path.resolve(currentDir, '../fixtures/images')
-  const fixturePath = path.join(fixturesDir, `${color}.png`)
+  const fixturePath = path.join(fixturesDir, `${color}.${format}`)
 
   const imagePath = path.join(
     os.tmpdir(),
-    `test-${color}-${opts.suffix ?? Date.now()}-${Math.random().toString(36).slice(2)}.png`
+    `test-${color}-${opts.suffix ?? Date.now()}-${Math.random().toString(36).slice(2)}.${format}`
   )
 
   fs.copyFileSync(fixturePath, imagePath)
   return imagePath
+}
+
+/**
+ * Create a test file that is NOT an image (for testing unsupported file types).
+ * Returns the path to the temporary text file.
+ */
+export function createTestTextFile(opts: { suffix?: string } = {}): string {
+  const fixturesDir = path.resolve(currentDir, '../fixtures/images')
+  const fixturePath = path.join(fixturesDir, 'test.txt')
+
+  const filePath = path.join(
+    os.tmpdir(),
+    `test-text-${opts.suffix ?? Date.now()}-${Math.random().toString(36).slice(2)}.txt`
+  )
+
+  fs.copyFileSync(fixturePath, filePath)
+  return filePath
 }
 
 /**

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   createTestImage,
+  createTestTextFile,
   waitForLiveStore,
   waitForImageLoaded,
   generateStoreId,
@@ -244,6 +245,172 @@ test.describe('Image Thumbnails', () => {
     for (const status of statusesObserved) {
       expect(validStatuses.has(status)).toBe(true)
     }
+  })
+
+  test('should generate thumbnail for JPEG image', async ({ page }) => {
+    const storeId = generateStoreId('thumb-jpeg')
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    // Upload a JPEG image
+    const testImage = createTestImage('blue', { format: 'jpg' })
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for file card to appear
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+
+    // Wait for image to be visible
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+
+    // Wait for thumbnail to be generated
+    await expect.poll(
+      async () => {
+        const status = await page.locator('[data-testid="thumbnail-status"]').textContent()
+        return status?.trim()
+      },
+      { timeout: 30000, intervals: [500, 1000, 2000] }
+    ).toBe('done')
+
+    // Verify thumbnail URL is set
+    await expect(page.locator('[data-testid="thumbnail-url"]')).toHaveText('Generated')
+
+    // Verify thumbnail badge is visible
+    await expect(page.locator('[data-testid="thumbnail-badge"]')).toBeVisible()
+
+    // The image should be showing a blob: URL (thumbnail)
+    const imageSrc = await page.locator('[data-testid="file-image"]').getAttribute('src')
+    expect(imageSrc).toMatch(/^blob:/)
+  })
+
+  test('should mark non-image files as skipped', async ({ page }) => {
+    const storeId = generateStoreId('thumb-skip')
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    // Upload a text file (not an image)
+    const testFile = createTestTextFile()
+    await page.locator('input[type="file"]').setInputFiles(testFile)
+
+    // Wait for file card to appear
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+
+    // Wait for thumbnail status to become 'skipped' (not an image)
+    await expect.poll(
+      async () => {
+        const status = await page.locator('[data-testid="thumbnail-status"]').textContent()
+        return status?.trim()
+      },
+      { timeout: 30000, intervals: [500, 1000, 2000] }
+    ).toBe('skipped')
+
+    // Thumbnail URL should NOT be generated
+    await expect(page.locator('[data-testid="thumbnail-url"]')).toHaveText('Not generated')
+
+    // No thumbnail badge should be visible
+    await expect(page.locator('[data-testid="thumbnail-badge"]')).not.toBeVisible()
+  })
+
+  test('should handle rapid batch upload of 5 images', async ({ page }) => {
+    const storeId = generateStoreId('thumb-batch')
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    // Create 5 test images
+    const testImages = [
+      createTestImage('blue', { suffix: 'batch-1' }),
+      createTestImage('red', { suffix: 'batch-2' }),
+      createTestImage('blue', { suffix: 'batch-3' }),
+      createTestImage('red', { suffix: 'batch-4' }),
+      createTestImage('blue', { suffix: 'batch-5' }),
+    ]
+
+    // Upload all images rapidly (one after another without waiting)
+    for (const image of testImages) {
+      await page.locator('input[type="file"]').setInputFiles(image)
+    }
+
+    // Wait for all 5 file cards to appear
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(5, {
+      timeout: 30000,
+    })
+
+    // Wait for ALL thumbnails to be generated (all 5 should reach 'done')
+    await expect.poll(
+      async () => {
+        const statuses = await page.locator('[data-testid="thumbnail-status"]').allTextContents()
+        const doneCount = statuses.filter(s => s.trim() === 'done').length
+        return doneCount
+      },
+      { timeout: 90000, intervals: [1000, 2000, 3000] }
+    ).toBe(5)
+
+    // All 5 should have thumbnail badges
+    await expect(page.locator('[data-testid="thumbnail-badge"]')).toHaveCount(5)
+
+    // All 5 images should be showing blob: URLs
+    const imageSrcs = await page.locator('[data-testid="file-image"]').evaluateAll(
+      (imgs: HTMLImageElement[]) => imgs.map(img => img.src)
+    )
+    expect(imageSrcs).toHaveLength(5)
+    for (const src of imageSrcs) {
+      expect(src).toMatch(/^blob:/)
+    }
+  })
+
+  test('should handle file deletion without breaking thumbnail UI', async ({ page }) => {
+    const storeId = generateStoreId('thumb-delete')
+    await page.goto(`/?storeId=${storeId}`)
+    await waitForLiveStore(page)
+
+    // Upload two images
+    const testImage1 = createTestImage('blue', { suffix: 'del-1' })
+    await page.locator('input[type="file"]').setInputFiles(testImage1)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+
+    const testImage2 = createTestImage('red', { suffix: 'del-2' })
+    await page.locator('input[type="file"]').setInputFiles(testImage2)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(2, {
+      timeout: 10000,
+    })
+
+    // Wait for both thumbnails to be generated
+    await expect.poll(
+      async () => {
+        const statuses = await page.locator('[data-testid="thumbnail-status"]').allTextContents()
+        return statuses.every(s => s.trim() === 'done')
+      },
+      { timeout: 60000, intervals: [1000, 2000] }
+    ).toBe(true)
+
+    // Both should have thumbnail badges
+    await expect(page.locator('[data-testid="thumbnail-badge"]')).toHaveCount(2)
+
+    // Delete the first file
+    await page.locator('[data-testid="delete-button"]').first().click()
+
+    // Should now have only 1 file card
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+
+    // The remaining file should still have its thumbnail
+    await expect(page.locator('[data-testid="thumbnail-status"]')).toHaveText('done')
+    await expect(page.locator('[data-testid="thumbnail-badge"]')).toBeVisible()
+
+    // The remaining image should still show a blob URL
+    const imageSrc = await page.locator('[data-testid="file-image"]').getAttribute('src')
+    expect(imageSrc).toMatch(/^blob:/)
+
+    // No console errors should occur (check page has no uncaught exceptions)
+    // This is implicitly tested by the page not crashing
   })
 })
 
