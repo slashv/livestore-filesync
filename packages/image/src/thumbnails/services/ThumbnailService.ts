@@ -25,6 +25,7 @@ import type {
   ThumbnailEvent,
   ThumbnailFormat,
   ThumbnailGenerationStatus,
+  ThumbnailQualitySettings,
   ThumbnailSizes,
   ThumbnailSizeState,
   ThumbnailStateDocument
@@ -63,6 +64,10 @@ export interface ThumbnailServiceConfig {
    * Set to 0 to disable polling (default: 2000).
    */
   pollInterval?: number | undefined
+  /**
+   * Quality settings for thumbnail generation.
+   */
+  qualitySettings?: ThumbnailQualitySettings | undefined
   /**
    * The queryDb function from the app's schema.
    * Required for querying files.
@@ -401,7 +406,7 @@ export const makeThumbnailService = (
 
         // Generate thumbnails via worker
         const result = yield* workerClient
-          .generate(fileData, path, contentHash, config.sizes, config.format)
+          .generate(fileData, path, contentHash, config.sizes, config.format, config.qualitySettings)
           .pipe(
             Effect.catchAll((error) =>
               Effect.succeed<GeneratedThumbnails | null>(null).pipe(

@@ -15,6 +15,7 @@ import type {
   GeneratedThumbnail,
   ThumbnailFormat,
   ThumbnailGenerateRequest,
+  ThumbnailQualitySettings,
   ThumbnailSizes,
   ThumbnailWorkerResponse
 } from "../types/index.js"
@@ -42,7 +43,8 @@ export interface ThumbnailWorkerClientService {
     fileName: string,
     contentHash: string,
     sizes: ThumbnailSizes,
-    format: ThumbnailFormat
+    format: ThumbnailFormat,
+    qualitySettings?: ThumbnailQualitySettings
   ) => Effect.Effect<
     GeneratedThumbnails,
     ThumbnailGenerationError | WorkerTimeoutError | WorkerCommunicationError
@@ -201,7 +203,8 @@ const make = (
       fileName,
       contentHash,
       sizes,
-      format
+      format,
+      qualitySettings
     ) =>
       Effect.gen(function*() {
         // Generate unique request ID
@@ -248,7 +251,8 @@ const make = (
           fileName,
           contentHash,
           sizes,
-          format
+          format,
+          ...(qualitySettings !== undefined ? { qualitySettings } : {})
         }
 
         // Transfer the ArrayBuffer for performance

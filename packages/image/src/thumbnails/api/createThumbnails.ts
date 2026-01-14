@@ -25,6 +25,7 @@ import type {
   InitThumbnailsConfig,
   QueryDbFn,
   ThumbnailFormat,
+  ThumbnailQualitySettings,
   ThumbnailSizes
 } from "../types/index.js"
 import { SUPPORTED_IMAGE_MIME_TYPES } from "../types/index.js"
@@ -96,6 +97,7 @@ export interface CreateThumbnailsConfig {
   concurrency?: number | undefined
   supportedMimeTypes?: Array<string> | undefined
   onEvent?: InitThumbnailsConfig["onEvent"] | undefined
+  qualitySettings?: ThumbnailQualitySettings | undefined
   queryDb?: QueryDbFn | undefined
   filesTable?: FilesTable | undefined
 }
@@ -128,6 +130,7 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
     filesTable,
     format = "webp",
     onEvent,
+    qualitySettings,
     queryDb,
     sizes,
     store,
@@ -142,6 +145,7 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
     concurrency,
     supportedMimeTypes,
     ...(onEvent !== undefined ? { onEvent } : {}),
+    ...(qualitySettings !== undefined ? { qualitySettings } : {}),
     ...(queryDb !== undefined ? { queryDb } : {}),
     ...(filesTable !== undefined ? { filesTable } : {})
   }

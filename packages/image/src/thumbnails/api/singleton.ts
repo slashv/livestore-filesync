@@ -126,6 +126,7 @@ export const initThumbnails = (
     ...(config.concurrency !== undefined ? { concurrency: config.concurrency } : {}),
     ...(config.supportedMimeTypes !== undefined ? { supportedMimeTypes: config.supportedMimeTypes } : {}),
     ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
+    ...(config.qualitySettings !== undefined ? { qualitySettings: config.qualitySettings } : {}),
     ...(resolvedQueryDb !== undefined ? { queryDb: resolvedQueryDb } : {}),
     ...(resolvedFilesTable !== undefined ? { filesTable: resolvedFilesTable } : {})
   })

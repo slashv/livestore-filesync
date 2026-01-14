@@ -20,6 +20,7 @@ import type {
   ThumbnailErrorResponse,
   ThumbnailGenerateRequest,
   ThumbnailGenerateResponse,
+  ThumbnailQualitySettings,
   ThumbnailWorkerReady
 } from "./types/index.js"
 
@@ -53,6 +54,65 @@ const initVips = async (): Promise<Awaited<ReturnType<typeof Vips>>> => {
 }
 
 /**
+ * Default quality settings
+ */
+const DEFAULT_QUALITY_SETTINGS: Required<ThumbnailQualitySettings> = {
+  quality: 90,
+  losslessThreshold: 200,
+  keepIccProfile: true
+}
+
+/**
+ * Convert Uint8Array buffer to ArrayBuffer, handling SharedArrayBuffer
+ */
+const toArrayBuffer = (buffer: Uint8Array): ArrayBuffer => {
+  if (buffer.buffer instanceof SharedArrayBuffer) {
+    const arrayBuffer = new ArrayBuffer(buffer.byteLength)
+    new Uint8Array(arrayBuffer).set(buffer)
+    return arrayBuffer
+  }
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+}
+
+/**
+ * Write image to buffer with format-specific options
+ */
+const writeImageToBuffer = (
+  image: Awaited<ReturnType<typeof Vips>>["Image"]["prototype"],
+  format: string,
+  maxDim: number,
+  settings: Required<ThumbnailQualitySettings>
+): Uint8Array => {
+  const { keepIccProfile, losslessThreshold, quality } = settings
+  
+  // Determine if this size should be lossless
+  const useLossless = losslessThreshold > 0 && maxDim <= losslessThreshold
+  
+  // ForeignKeep flags: icc = 8, all = 31
+  const keepFlags = keepIccProfile ? 8 : 0
+
+  if (format === "webp") {
+    return image.webpsaveBuffer({
+      Q: quality,
+      lossless: useLossless,
+      keep: keepFlags
+    })
+  } else if (format === "jpeg") {
+    return image.jpegsaveBuffer({
+      Q: quality,
+      keep: keepFlags
+    })
+  } else if (format === "png") {
+    return image.pngsaveBuffer({
+      keep: keepFlags
+    })
+  }
+  
+  // Fallback to generic writeToBuffer (won't preserve ICC)
+  return image.writeToBuffer(`.${format}`)
+}
+
+/**
  * Generate thumbnails for an image
  */
 const generateThumbnails = async (
@@ -60,8 +120,14 @@ const generateThumbnails = async (
 ): Promise<Array<GeneratedThumbnail>> => {
   const v = await initVips()
 
-  const { format, imageData, sizes } = request
+  const { format, imageData, qualitySettings, sizes } = request
   const thumbnails: Array<GeneratedThumbnail> = []
+  
+  // Merge with defaults
+  const settings: Required<ThumbnailQualitySettings> = {
+    ...DEFAULT_QUALITY_SETTINGS,
+    ...qualitySettings
+  }
 
   // Load image from buffer
   const image = v.Image.newFromBuffer(new Uint8Array(imageData))
@@ -73,17 +139,11 @@ const generateThumbnails = async (
 
       // Skip if image is already smaller than requested size
       if (scale >= 1) {
-        // Still create the thumbnail at original size
-        const buffer = image.writeToBuffer(`.${format}`)
-        const arrayBuffer = buffer.buffer instanceof SharedArrayBuffer
-          ? new ArrayBuffer(buffer.byteLength)
-          : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
-        if (buffer.buffer instanceof SharedArrayBuffer) {
-          new Uint8Array(arrayBuffer).set(buffer)
-        }
+        // Still create the thumbnail at original size with quality settings
+        const buffer = writeImageToBuffer(image, format, maxDim, settings)
         thumbnails.push({
           sizeName,
-          data: arrayBuffer,
+          data: toArrayBuffer(buffer),
           width: image.width,
           height: image.height,
           mimeType: `image/${format}`
@@ -95,17 +155,11 @@ const generateThumbnails = async (
       const resized = image.resize(scale)
 
       try {
-        // Convert to output format
-        const buffer = resized.writeToBuffer(`.${format}`)
-        const resizedArrayBuffer = buffer.buffer instanceof SharedArrayBuffer
-          ? new ArrayBuffer(buffer.byteLength)
-          : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
-        if (buffer.buffer instanceof SharedArrayBuffer) {
-          new Uint8Array(resizedArrayBuffer).set(buffer)
-        }
+        // Convert to output format with quality settings
+        const buffer = writeImageToBuffer(resized, format, maxDim, settings)
         thumbnails.push({
           sizeName,
-          data: resizedArrayBuffer,
+          data: toArrayBuffer(buffer),
           width: resized.width,
           height: resized.height,
           mimeType: `image/${format}`

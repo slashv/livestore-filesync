@@ -106,6 +106,33 @@ export const isSupportedImageMimeType = (mimeType: string): mimeType is Supporte
 // ============================================
 
 /**
+ * Quality settings for thumbnail generation
+ */
+export interface ThumbnailQualitySettings {
+  /**
+   * Quality factor for lossy compression (1-100).
+   * Higher values = better quality, larger files.
+   * @default 90
+   */
+  quality?: number
+
+  /**
+   * Use lossless compression for thumbnails at or below this pixel dimension.
+   * This preserves exact colors for small thumbnails where file size is negligible.
+   * Set to 0 to disable lossless mode.
+   * @default 200
+   */
+  losslessThreshold?: number
+
+  /**
+   * Keep ICC color profile in output thumbnails.
+   * Preserves color accuracy for wide-gamut images.
+   * @default true
+   */
+  keepIccProfile?: boolean
+}
+
+/**
  * Request to generate thumbnails for an image
  */
 export interface ThumbnailGenerateRequest {
@@ -116,6 +143,10 @@ export interface ThumbnailGenerateRequest {
   contentHash: string
   sizes: ThumbnailSizes
   format: ThumbnailFormat
+  /**
+   * Quality settings for thumbnail generation
+   */
+  qualitySettings?: ThumbnailQualitySettings
 }
 
 /**
@@ -238,6 +269,12 @@ export interface InitThumbnailsConfig {
    * Callback for thumbnail events
    */
   onEvent?: (event: ThumbnailEvent) => void
+
+  /**
+   * Quality settings for thumbnail generation.
+   * Controls compression quality, lossless mode, and ICC profile preservation.
+   */
+  qualitySettings?: ThumbnailQualitySettings
 
   /**
    * The schema tables object containing the files table.

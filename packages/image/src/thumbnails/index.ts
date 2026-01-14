@@ -41,6 +41,7 @@ export type {
   ThumbnailGenerationErrorEvent,
   ThumbnailGenerationStartedEvent,
   ThumbnailGenerationStatus,
+  ThumbnailQualitySettings,
   ThumbnailSizes,
   ThumbnailSizeState,
   ThumbnailStateDocument,
