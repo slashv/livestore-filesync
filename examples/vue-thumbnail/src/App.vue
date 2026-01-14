@@ -7,7 +7,6 @@ import { schema } from './livestore/schema.ts'
 import LiveStoreWorker from './livestore.worker.ts?worker'
 import Gallery from './components/Gallery.vue'
 import FileSyncProvider from './components/FileSyncProvider.vue'
-import ThumbnailProvider from './components/ThumbnailProvider.vue'
 import SyncStatus from './components/SyncStatus.vue'
 
 // Allow storeId to be set via query param for testing isolation
@@ -29,21 +28,25 @@ const storeOptions = {
   storeId,
   syncPayload: { authToken }
 }
+
+// Thumbnail worker URL - Vite handles bundling
+const thumbnailWorkerUrl = new URL('./thumbnail.worker.ts', import.meta.url)
 </script>
 
 <template>
   <Suspense>
     <template #default>
       <LiveStoreProvider :options="storeOptions">
-        <FileSyncProvider :auth-token="authToken">
-          <ThumbnailProvider>
-            <div class="layout">
-              <div class="main">
-                <Gallery />
-              </div>
-              <SyncStatus />
+        <FileSyncProvider
+          :auth-token="authToken"
+          :thumbnails="{ workerUrl: thumbnailWorkerUrl }"
+        >
+          <div class="layout">
+            <div class="main">
+              <Gallery />
             </div>
-          </ThumbnailProvider>
+            <SyncStatus />
+          </div>
         </FileSyncProvider>
       </LiveStoreProvider>
     </template>
