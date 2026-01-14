@@ -7,6 +7,7 @@
  */
 
 import type { FileSystem } from "@effect/platform/FileSystem"
+import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
 
@@ -104,6 +105,17 @@ export const initThumbnails = (
 
   const tables = resolveSchema(store)
 
+  // Resolve filesTable and queryDb from config
+  // Priority: schema.tables > legacy filesTable/queryDb options
+  let resolvedFilesTable = config.filesTable
+  let resolvedQueryDb = config.queryDb
+
+  if (config.schema?.tables?.files) {
+    // Use the new simplified API - extract files table and use standard queryDb
+    resolvedFilesTable = config.schema.tables.files
+    resolvedQueryDb = queryDb
+  }
+
   singleton = createThumbnails({
     store,
     tables,
@@ -114,8 +126,8 @@ export const initThumbnails = (
     ...(config.concurrency !== undefined ? { concurrency: config.concurrency } : {}),
     ...(config.supportedMimeTypes !== undefined ? { supportedMimeTypes: config.supportedMimeTypes } : {}),
     ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
-    ...(config.queryDb !== undefined ? { queryDb: config.queryDb } : {}),
-    ...(config.filesTable !== undefined ? { filesTable: config.filesTable } : {})
+    ...(resolvedQueryDb !== undefined ? { queryDb: resolvedQueryDb } : {}),
+    ...(resolvedFilesTable !== undefined ? { filesTable: resolvedFilesTable } : {})
   })
 
   // Auto-start by default

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onUnmounted } from 'vue'
-import { queryDb } from '@livestore/livestore'
 import { useStore } from 'vue-livestore'
 import { initThumbnails } from '@livestore-filesync/image-thumbnails'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
@@ -11,6 +10,7 @@ const { store } = useStore()
 // Create worker URL - Vite handles bundling
 const workerUrl = new URL('../thumbnail.worker.ts', import.meta.url)
 
+// Use the simplified API - just pass tables object
 const dispose = initThumbnails(store, {
   sizes: {
     small: 128,
@@ -20,9 +20,7 @@ const dispose = initThumbnails(store, {
   format: 'webp',
   fileSystem: opfsLayer(),
   workerUrl,
-  // Provide access to files table for scanning
-  queryDb,
-  filesTable: tables.files
+  schema: { tables }
 })
 
 onUnmounted(() => {

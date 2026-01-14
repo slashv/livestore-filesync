@@ -181,6 +181,14 @@ export interface FilesTable {
 }
 
 /**
+ * Schema tables object that contains a files table.
+ * This allows passing the entire tables object from your schema.
+ */
+export type TablesWithFiles = {
+  readonly files: FilesTable
+} & Record<string, unknown>
+
+/**
  * Configuration for initThumbnails
  */
 export interface InitThumbnailsConfig {
@@ -232,14 +240,31 @@ export interface InitThumbnailsConfig {
   onEvent?: (event: ThumbnailEvent) => void
 
   /**
-   * The queryDb function from the app's schema.
-   * Required for watching file changes.
+   * The schema tables object containing the files table.
+   * Pass your app's `tables` object here. The files table will be extracted automatically.
+   * This is the recommended way to configure file scanning.
+   *
+   * @example
+   * ```typescript
+   * import { tables } from './schema'
+   *
+   * initThumbnails(store, {
+   *   schema: { tables },
+   *   // ... other config
+   * })
+   * ```
+   */
+  schema?: { tables: TablesWithFiles }
+
+  /**
+   * @deprecated Use `schema: { tables }` instead for simpler configuration.
+   * The queryDb function from livestore.
    */
   queryDb?: QueryDbFn
 
   /**
+   * @deprecated Use `schema: { tables }` instead for simpler configuration.
    * The files table from @livestore-filesync/core.
-   * Required for watching file changes.
    */
   filesTable?: FilesTable
 }
