@@ -27,9 +27,10 @@ import type {
   FileSyncEventCallback,
   FileUpdatedPayload,
   LocalFilesState,
+  PreprocessorMap,
   TransferStatus
 } from "../../types/index.js"
-import { hashFile, makeStoredPath } from "../../utils/index.js"
+import { applyPreprocessor, hashFile, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
 import { LocalFileStateManager } from "../local-file-state/index.js"
 import { LocalFileStorage } from "../local-file-storage/index.js"
@@ -192,6 +193,24 @@ export interface FileSyncConfig {
    * @default 60000
    */
   readonly streamRecoveryMaxDelayMs?: number
+
+  /**
+   * Map of MIME type patterns to preprocessor functions.
+   * Files matching a pattern are transformed before saving.
+   *
+   * Pattern matching rules:
+   * - Exact match: 'image/png' matches only 'image/png'
+   * - Wildcard subtype: 'image/*' matches 'image/png', 'image/jpeg', etc.
+   * - Universal wildcard: '*' or '*\/*' matches any MIME type
+   *
+   * @example
+   * ```typescript
+   * preprocessors: {
+   *   'image/*': async (file) => resizeImage(file, { maxDimension: 1500 })
+   * }
+   * ```
+   */
+  readonly preprocessors?: PreprocessorMap
 }
 
 /**
@@ -1003,11 +1022,14 @@ export const makeFileSync = (
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
       Effect.gen(function*() {
+        // Apply preprocessor if configured for this file type
+        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+
         const id = crypto.randomUUID()
-        const contentHash = yield* hashFile(file)
+        const contentHash = yield* hashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
-        yield* localStorage.writeFile(path, file)
+        yield* localStorage.writeFile(path, processedFile)
         yield* createFileRecord({ id, path, contentHash })
         yield* markLocalFileChanged(id, path, contentHash)
 
@@ -1024,11 +1046,14 @@ export const makeFileSync = (
           return yield* Effect.fail(new Error(`File not found: ${fileId}`))
         }
 
-        const contentHash = yield* hashFile(file)
+        // Apply preprocessor if configured for this file type
+        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+
+        const contentHash = yield* hashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
         if (contentHash !== existingFile.contentHash) {
-          yield* localStorage.writeFile(path, file)
+          yield* localStorage.writeFile(path, processedFile)
           yield* updateFileRecord({ id: fileId, path, contentHash, remoteKey: "" })
 
           if (path !== existingFile.path) {

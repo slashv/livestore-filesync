@@ -20,6 +20,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 | `@livestore-filesync/opfs` | OPFS filesystem adapter for browsers |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
+| `@livestore-filesync/image-preprocessor` | Image preprocessing (resize, format conversion) using wasm-vips |
 | `@livestore-filesync/image-thumbnails` | Optional: Client-side image thumbnail generation using wasm-vips |
 
 ## Install
@@ -94,6 +95,73 @@ initFileSync(store, { fileSystem: opfsLayer(), ... })
 import { NodeFileSystem } from '@effect/platform-node'
 createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
+
+## File Preprocessors
+
+FileSync supports preprocessing files before they are saved. This is useful for:
+- Resizing images to reduce storage and bandwidth
+- Converting images to more efficient formats (WebP, JPEG)
+- Applying transformations based on file type
+
+### Basic Usage
+
+```typescript
+import { initFileSync, type PreprocessorMap } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+const preprocessors: PreprocessorMap = {
+  // Transform all images
+  'image/*': async (file) => {
+    // Your transformation logic
+    return transformedFile
+  },
+  // Or specific types
+  'image/png': async (file) => convertPngToJpeg(file)
+}
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: { preprocessors }
+})
+```
+
+### Pattern Matching
+
+Preprocessor patterns support:
+- **Exact match**: `'image/png'` matches only PNG files
+- **Wildcard subtype**: `'image/*'` matches all image types
+- **Universal wildcard**: `'*'` or `'*/*'` matches any file
+
+Priority order: exact match > wildcard subtype > universal wildcard.
+
+### Image Preprocessing Package
+
+For image preprocessing, use the optional `@livestore-filesync/image-preprocessor` package:
+
+```bash
+pnpm add @livestore-filesync/image-preprocessor wasm-vips
+```
+
+```typescript
+import { createImagePreprocessor } from '@livestore-filesync/image-preprocessor'
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    preprocessors: {
+      'image/*': createImagePreprocessor({
+        maxDimension: 1500,  // Max width/height in pixels
+        quality: 90,         // JPEG/WebP quality (1-100)
+        format: 'jpeg'       // Output format: 'jpeg', 'webp', or 'png'
+      })
+    }
+  }
+})
+```
+
+See the [image-preprocessor README](packages/image-preprocessor/README.md) for setup instructions and full documentation.
 
 ## Backend Storage
 

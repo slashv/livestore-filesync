@@ -31,6 +31,7 @@ import type {
   FileSyncEvent,
   LocalFilesState,
   LocalFileState,
+  PreprocessorMap,
   TransferStatus
 } from "../types/index.js"
 import { sanitizeStoreId } from "../utils/index.js"
@@ -102,6 +103,23 @@ export interface CreateFileSyncConfig {
      * @default true
      */
     autoPrioritizeOnResolve?: boolean
+    /**
+     * Map of MIME type patterns to preprocessor functions.
+     * Files matching a pattern are transformed before saving.
+     *
+     * Pattern matching rules:
+     * - Exact match: 'image/png' matches only 'image/png'
+     * - Wildcard subtype: 'image/*' matches 'image/png', 'image/jpeg', etc.
+     * - Universal wildcard: '*' or '*\/*' matches any MIME type
+     *
+     * @example
+     * ```typescript
+     * preprocessors: {
+     *   'image/*': async (file) => resizeImage(file, { maxDimension: 1500 })
+     * }
+     * ```
+     */
+    preprocessors?: PreprocessorMap
   }
 }
 
@@ -238,6 +256,9 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
       : {}),
     ...(options.autoPrioritizeOnResolve !== undefined
       ? { autoPrioritizeOnResolve: options.autoPrioritizeOnResolve }
+      : {}),
+    ...(options.preprocessors !== undefined
+      ? { preprocessors: options.preprocessors }
       : {})
   }
 
