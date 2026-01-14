@@ -275,10 +275,11 @@ export const makeThumbnailService = (
         if (newFileState === undefined) {
           // Remove the file state
           const { [fileId]: _, ...rest } = state.files
-          return { files: rest }
+          return { ...state, files: rest }
         }
 
         return {
+          ...state,
           files: {
             ...state.files,
             [fileId]: newFileState
@@ -286,6 +287,53 @@ export const makeThumbnailService = (
         }
       })
     }
+
+    // Generate a hash of the current config for change detection
+    const generateConfigHash = (): string => {
+      const configStr = JSON.stringify({
+        sizes: config.sizes,
+        format: config.format
+      })
+      // Simple hash function
+      let hash = 0
+      for (let i = 0; i < configStr.length; i++) {
+        const char = configStr.charCodeAt(i)
+        hash = ((hash << 5) - hash) + char
+        hash = hash & hash // Convert to 32bit integer
+      }
+      return hash.toString(16)
+    }
+
+    // Check if config has changed and handle accordingly
+    const checkAndHandleConfigChange = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const currentHash = generateConfigHash()
+        const state = readThumbnailState()
+        const storedHash = state.config?.configHash
+
+        if (storedHash === currentHash) {
+          // Config unchanged, nothing to do
+          return
+        }
+
+        // Config changed (or first run) - wipe all thumbnails and state
+        if (storedHash !== undefined) {
+          console.log("[ThumbnailService] Config changed, clearing all thumbnails...")
+          
+          // Delete all thumbnail files from storage
+          for (const fileState of Object.values(state.files)) {
+            yield* storage.deleteThumbnails(fileState.contentHash).pipe(
+              Effect.catchAll(() => Effect.void)
+            )
+          }
+        }
+
+        // Reset state with new config hash
+        store.commit(tables.thumbnailState.set({
+          config: { configHash: currentHash },
+          files: {}
+        }))
+      })
 
     // Helper to read local file
     const readLocalFile = (path: string): Effect.Effect<ArrayBuffer | null> =>
@@ -622,6 +670,9 @@ export const makeThumbnailService = (
 
         // Wait for worker to be ready
         yield* workerClient.waitForReady().pipe(Effect.catchAll(() => Effect.void))
+
+        // Check for config changes and clear thumbnails if needed
+        yield* checkAndHandleConfigChange()
 
         // Scan existing files
         yield* scanExistingFiles()

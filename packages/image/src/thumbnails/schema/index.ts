@@ -76,9 +76,19 @@ export const ThumbnailFilesStateSchema = Schema.Record({
 })
 
 /**
+ * Stored config hash - used to detect config changes
+ */
+export const StoredConfigSchema = Schema.Struct({
+  /** Hash of the sizes config (JSON stringified and hashed) */
+  configHash: Schema.String
+})
+
+/**
  * Root thumbnail state document schema
  */
 export const ThumbnailStateDocumentSchema = Schema.Struct({
+  /** Stored config to detect changes */
+  config: Schema.optional(StoredConfigSchema),
   files: ThumbnailFilesStateSchema
 })
 
