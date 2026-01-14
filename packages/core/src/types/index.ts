@@ -226,6 +226,43 @@ export interface ActiveTransferProgress {
 export type ActiveTransfers = Readonly<Record<string, ActiveTransferProgress>>
 
 // ============================================
+// File Preprocessor Types
+// ============================================
+
+/**
+ * A file preprocessor transforms a file before it's saved.
+ * Returns the transformed file (or the original if no transformation needed).
+ *
+ * @example
+ * ```typescript
+ * const resizeImage: FilePreprocessor = async (file) => {
+ *   // Transform the file...
+ *   return transformedFile
+ * }
+ * ```
+ */
+export type FilePreprocessor = (file: File) => Promise<File>
+
+/**
+ * Map of MIME type patterns to preprocessor functions.
+ * Patterns support wildcards: 'image/*' matches 'image/png', 'image/jpeg', etc.
+ *
+ * Pattern matching rules:
+ * - Exact match: 'image/png' matches only 'image/png'
+ * - Wildcard subtype: 'image/*' matches 'image/png', 'image/jpeg', etc.
+ * - Universal wildcard: '*' or '*\/*' matches any MIME type
+ *
+ * @example
+ * ```typescript
+ * const preprocessors: PreprocessorMap = {
+ *   'image/*': async (file) => resizeImage(file, { maxDimension: 1500 }),
+ *   'video/mp4': async (file) => compressVideo(file)
+ * }
+ * ```
+ */
+export type PreprocessorMap = Record<string, FilePreprocessor>
+
+// ============================================
 // Display State Utilities
 // ============================================
 

@@ -282,6 +282,22 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
 
+  packages/image-preprocessor:
+    dependencies:
+      wasm-vips:
+        specifier: ^0.0.11
+        version: 0.0.11
+    devDependencies:
+      '@livestore-filesync/core':
+        specifier: workspace:*
+        version: link:../core
+      typescript:
+        specifier: ^5.6.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)(yaml@2.8.2)
+
   packages/opfs:
     devDependencies:
       '@effect/platform':
@@ -3536,6 +3552,10 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  wasm-vips@0.0.11:
+    resolution: {integrity: sha512-bzFU7WcimMY4WeqnZk7whKVpSXxpagISXPJwsk2VHF4lgIN9rl4uUo5sF9x6jOlACuCH6ITZUJ7QPTYmy60NCQ==}
+    engines: {node: '>=16.4.0'}
 
   which-boxed-primitive@1.1.1:
     resolution: {integrity: sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==}
@@ -7266,6 +7286,8 @@ snapshots:
       '@vue/shared': 3.5.26
     optionalDependencies:
       typescript: 5.9.3
+
+  wasm-vips@0.0.11: {}
 
   which-boxed-primitive@1.1.1:
     dependencies:

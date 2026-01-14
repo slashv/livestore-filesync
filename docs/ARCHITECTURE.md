@@ -30,6 +30,78 @@ The services are wired together as Effect layers inside `createFileSync` and the
   through `SyncExecutor`, updates remote URLs, and runs health checks. It also handles `saveFile`,
   `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first.
 
+## File Preprocessors
+
+FileSync supports file preprocessing via MIME-type based preprocessors. When a file is saved or
+updated, the system checks if a preprocessor is configured for that file's MIME type and applies
+the transformation before storing.
+
+### How Preprocessors Work
+
+```text
+[User calls saveFile(file)]
+         |
+         v
+[Match MIME type to preprocessor]
+         |
+    +-----------+
+    | Match?    |
+    +-----------+
+    |           |
+   Yes          No
+    |           |
+    v           |
+[Apply preprocessor] |
+         |           |
+         +-----+-----+
+               |
+               v
+[Hash processed file]
+               |
+               v
+[Write to local storage]
+               |
+               v
+[Create file record]
+               |
+               v
+[Queue for upload]
+```
+
+### Pattern Matching Priority
+
+When looking up a preprocessor, patterns are checked in this order:
+
+1. **Exact match**: `'image/png'` matches only `image/png`
+2. **Wildcard subtype**: `'image/*'` matches `image/png`, `image/jpeg`, etc.
+3. **Universal wildcard**: `'*'` or `'*/*'` matches any MIME type
+
+The first matching preprocessor is used.
+
+### Configuration
+
+Preprocessors are configured via the `options.preprocessors` map:
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    preprocessors: {
+      'image/*': async (file) => resizeImage(file, { maxDimension: 1500 }),
+      'video/mp4': async (file) => compressVideo(file)
+    }
+  }
+})
+```
+
+### Implementation Notes
+
+- Preprocessors run synchronously in the main thread by default
+- For heavy processing (e.g., video), consider using Web Workers
+- The preprocessed file is what gets hashed and stored (both locally and remotely)
+- Preprocessing errors will cause the `saveFile` operation to fail
+
 ## FileSystem requirement
 
 The `fileSystem` parameter is **required** when calling `initFileSync` or `createFileSync`.
