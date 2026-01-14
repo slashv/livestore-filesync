@@ -20,8 +20,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 | `@livestore-filesync/opfs` | OPFS filesystem adapter for browsers |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
-| `@livestore-filesync/image-preprocessor` | Image preprocessing (resize, format conversion) using wasm-vips |
-| `@livestore-filesync/image-thumbnails` | Optional: Client-side image thumbnail generation using wasm-vips |
+| `@livestore-filesync/image` | Image preprocessing and thumbnail generation using wasm-vips |
 
 ## Install
 
@@ -137,14 +136,14 @@ Priority order: exact match > wildcard subtype > universal wildcard.
 
 ### Image Preprocessing Package
 
-For image preprocessing, use the optional `@livestore-filesync/image-preprocessor` package:
+For image preprocessing, use the optional `@livestore-filesync/image` package:
 
 ```bash
-pnpm add @livestore-filesync/image-preprocessor wasm-vips
+pnpm add @livestore-filesync/image wasm-vips
 ```
 
 ```typescript
-import { createImagePreprocessor } from '@livestore-filesync/image-preprocessor'
+import { createImagePreprocessor } from '@livestore-filesync/image/preprocessor'
 
 initFileSync(store, {
   fileSystem: opfsLayer(),
@@ -161,7 +160,7 @@ initFileSync(store, {
 })
 ```
 
-See the [image-preprocessor README](packages/image-preprocessor/README.md) for setup instructions and full documentation.
+See the [image package README](packages/image/README.md) for setup instructions and full documentation.
 
 ## Backend Storage
 
@@ -285,7 +284,7 @@ No configuration required — this works automatically.
 
 ## Image Thumbnails (Optional)
 
-The `@livestore-filesync/image-thumbnails` package provides client-side thumbnail generation using wasm-vips in a dedicated web worker.
+The `@livestore-filesync/image` package provides client-side thumbnail generation using wasm-vips in a dedicated web worker.
 
 ### Features
 
@@ -299,8 +298,8 @@ The `@livestore-filesync/image-thumbnails` package provides client-side thumbnai
 
 ```typescript
 import { createFileSyncSchema } from '@livestore-filesync/core/schema'
-import { createThumbnailSchema } from '@livestore-filesync/image-thumbnails/schema'
-import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image-thumbnails'
+import { createThumbnailSchema } from '@livestore-filesync/image/thumbnails/schema'
+import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image/thumbnails'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
 // 1. Merge schemas
@@ -318,7 +317,7 @@ const dispose = initThumbnails(store, {
 })
 
 // 3. Create your worker file (thumbnail.worker.ts)
-// import '@livestore-filesync/image-thumbnails/worker'
+// import '@livestore-filesync/image/thumbnails/worker'
 
 // 4. Get thumbnail URLs
 const url = await resolveThumbnailUrl(fileId, 'small')

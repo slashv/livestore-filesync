@@ -1,6 +1,9 @@
 /**
  * wasm-vips initialization and lazy loading
  *
+ * Shared module for initializing wasm-vips across the image package.
+ * Used by both the preprocessor (main thread) and worker (thumbnail generation).
+ *
  * @module
  */
 

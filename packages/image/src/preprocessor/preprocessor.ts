@@ -5,7 +5,7 @@
  */
 
 import type { FilePreprocessor } from "@livestore-filesync/core"
-import { initVips, type VipsInitOptions } from "./vips.js"
+import { initVips, type VipsInitOptions } from "../vips.js"
 
 /**
  * Output format for processed images
@@ -122,7 +122,7 @@ function getVipsFormat(format: ImageFormat): string {
  *
  * @example
  * ```typescript
- * import { createImagePreprocessor } from '@livestore-filesync/image-preprocessor'
+ * import { createImagePreprocessor } from '@livestore-filesync/image/preprocessor'
  * import { initFileSync } from '@livestore-filesync/core'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  *

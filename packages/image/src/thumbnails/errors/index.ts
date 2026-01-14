@@ -1,5 +1,5 @@
 /**
- * Error types for image-thumbnails package
+ * Error types for image-thumbnails
  *
  * @module
  */

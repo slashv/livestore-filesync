@@ -2,8 +2,8 @@ import { FileSystem, Size } from "@effect/platform/FileSystem"
 import type * as FS from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { ThumbnailFileNotFoundError } from "../src/errors/index.js"
-import { LocalThumbnailStorage, LocalThumbnailStorageLive } from "../src/services/LocalThumbnailStorage.js"
+import { ThumbnailFileNotFoundError } from "../src/thumbnails/errors/index.js"
+import { LocalThumbnailStorage, LocalThumbnailStorageLive } from "../src/thumbnails/services/LocalThumbnailStorage.js"
 
 describe("LocalThumbnailStorage", () => {
   const makeFileInfo = (type: FS.File.Type, size = 0): FS.File.Info => ({

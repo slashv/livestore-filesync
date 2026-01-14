@@ -67,7 +67,7 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ThumbnailTab
  *
  * @example
  * ```typescript
- * import { initThumbnails } from '@livestore-filesync/image-thumbnails'
+ * import { initThumbnails } from '@livestore-filesync/image/thumbnails'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  *
  * const dispose = initThumbnails(store, {

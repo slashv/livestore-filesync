@@ -1,12 +1,12 @@
 /**
- * @livestore-filesync/image-thumbnails
+ * @livestore-filesync/image - Thumbnails Module
  *
  * Image thumbnail generation for livestore-filesync applications.
  * Uses wasm-vips for efficient client-side image processing.
  *
  * @example
  * ```typescript
- * import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image-thumbnails'
+ * import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image/thumbnails'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  *
  * // Initialize once

@@ -807,7 +807,7 @@ This approach provides O(1) prioritization without rebuilding the queue.
 
 ## Image Thumbnails Package (Optional)
 
-The `@livestore-filesync/image-thumbnails` package provides client-side thumbnail generation as an
+The `@livestore-filesync/image` package provides client-side thumbnail generation as an
 optional enhancement to FileSync. It uses wasm-vips in a dedicated web worker for high-quality
 image resizing.
 
@@ -858,7 +858,7 @@ Like the core package, the thumbnails package provides both singleton and instan
 **Singleton (recommended):**
 
 ```typescript
-import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image-thumbnails'
+import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image/thumbnails'
 
 initThumbnails(store, {
   sizes: { small: 128, medium: 256 },
@@ -873,7 +873,7 @@ const url = await resolveThumbnailUrl(fileId, 'small')
 **Instance:**
 
 ```typescript
-import { createThumbnails } from '@livestore-filesync/image-thumbnails'
+import { createThumbnails } from '@livestore-filesync/image/thumbnails'
 
 const thumbnails = createThumbnails({
   store,
@@ -893,7 +893,7 @@ Applications must create their own worker file that imports the package's worker
 
 ```typescript
 // thumbnail.worker.ts
-import '@livestore-filesync/image-thumbnails/worker'
+import '@livestore-filesync/image/thumbnails/worker'
 ```
 
 This approach allows the bundler (Vite, Webpack, etc.) to handle WASM loading and worker creation

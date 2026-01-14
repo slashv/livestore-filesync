@@ -10,7 +10,7 @@ import {
 } from '@livestore-filesync/core'
 import {
   resolveThumbnailUrl,
-} from '@livestore-filesync/image-thumbnails'
+} from '@livestore-filesync/image/thumbnails'
 import { useStore } from 'vue-livestore'
 import type { FileType } from '../types'
 

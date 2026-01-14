@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { createThumbnailSchema } from "../src/schema/index.js"
+import { createThumbnailSchema } from "../src/thumbnails/schema/index.js"
 
 describe("Thumbnail Schema", () => {
   describe("createThumbnailSchema", () => {

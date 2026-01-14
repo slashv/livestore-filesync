@@ -7,7 +7,7 @@
  * @example
  * ```typescript
  * import { createFileSyncSchema } from '@livestore-filesync/core/schema'
- * import { createThumbnailSchema } from '@livestore-filesync/image-thumbnails/schema'
+ * import { createThumbnailSchema } from '@livestore-filesync/image/thumbnails/schema'
  * import { makeSchema, State } from '@livestore/livestore'
  *
  * const fileSyncSchema = createFileSyncSchema()
@@ -96,7 +96,7 @@ export const ThumbnailStateDocumentSchema = Schema.Struct({
  *
  * @example
  * ```typescript
- * import { createThumbnailSchema } from '@livestore-filesync/image-thumbnails/schema'
+ * import { createThumbnailSchema } from '@livestore-filesync/image/thumbnails/schema'
  *
  * const thumbnailSchema = createThumbnailSchema()
  * const tables = { ...fileSyncSchema.tables, ...thumbnailSchema.tables }

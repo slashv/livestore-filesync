@@ -105,7 +105,7 @@ export interface CreateThumbnailsConfig {
  *
  * @example
  * ```typescript
- * import { createThumbnails } from '@livestore-filesync/image-thumbnails'
+ * import { createThumbnails } from '@livestore-filesync/image/thumbnails'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  *
  * const thumbnails = createThumbnails({

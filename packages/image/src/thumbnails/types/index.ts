@@ -1,5 +1,5 @@
 /**
- * TypeScript types for image-thumbnails package
+ * TypeScript types for image-thumbnails
  *
  * Types are derived from Effect Schema definitions to ensure
  * a single source of truth.

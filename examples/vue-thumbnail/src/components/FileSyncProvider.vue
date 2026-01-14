@@ -2,7 +2,7 @@
 import { onUnmounted } from 'vue'
 import { useStore } from 'vue-livestore'
 import { initFileSync } from '@livestore-filesync/core'
-import { initThumbnails, type ThumbnailSizes, type ThumbnailFormat } from '@livestore-filesync/image-thumbnails'
+import { initThumbnails, type ThumbnailSizes, type ThumbnailFormat } from '@livestore-filesync/image/thumbnails'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 import { tables } from '../livestore/schema.ts'
 

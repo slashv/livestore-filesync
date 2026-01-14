@@ -7,7 +7,7 @@
  * @example
  * ```typescript
  * // In your app's thumbnail.worker.ts
- * import '@livestore-filesync/image-thumbnails/worker'
+ * import '@livestore-filesync/image/thumbnails/worker'
  * ```
  *
  * @module

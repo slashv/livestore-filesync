@@ -7,5 +7,6 @@
     "types": ["node"],
     "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "references": [{ "path": "../core" }]
 }
