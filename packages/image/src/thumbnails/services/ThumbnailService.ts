@@ -333,9 +333,9 @@ export const makeThumbnailService = (
           }
         }
 
-        // Reset state with new config hash
+        // Reset state with new config hash and sizes
         store.commit(tables.thumbnailState.set({
-          config: { configHash: currentHash },
+          config: { configHash: currentHash, sizes: config.sizes },
           files: {}
         }))
       })
