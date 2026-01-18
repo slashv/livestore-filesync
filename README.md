@@ -18,6 +18,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 |---------|-------------|
 | `@livestore-filesync/core` | Framework-agnostic API and schema helpers |
 | `@livestore-filesync/opfs` | OPFS filesystem adapter for browsers |
+| `@livestore-filesync/expo` | Expo/React Native filesystem and image processing adapters |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
 | `@livestore-filesync/image` | Image preprocessing and thumbnail generation using wasm-vips |
@@ -27,6 +28,10 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 ```bash
 # Web app (React/Vue/etc)
 pnpm add @livestore-filesync/core @livestore-filesync/opfs
+
+# Expo/React Native
+pnpm add @livestore-filesync/core @livestore-filesync/expo
+npx expo install expo-file-system expo-image-manipulator
 
 # Node.js
 pnpm add @livestore-filesync/core @effect/platform-node
@@ -82,12 +87,18 @@ See `examples/` for complete implementations:
 
 ## Filesystem Adapters
 
-The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface. An OPFS adapter is provided and recommended for browsers since Effects Platform Browser does not support it yet.
+The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface.
 
 **Browser (OPFS)**: Use the provided `@livestore-filesync/opfs` package:
 ```typescript
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 initFileSync(store, { fileSystem: opfsLayer(), ... })
+```
+
+**Expo/React Native**: Use the provided `@livestore-filesync/expo` package:
+```typescript
+import { layer as expoLayer } from '@livestore-filesync/expo'
+initFileSync(store, { fileSystem: expoLayer(), ... })
 ```
 
 **Node.js**: Use `@effect/platform-node` directly:
