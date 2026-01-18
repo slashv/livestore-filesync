@@ -218,7 +218,8 @@ const make = (): Effect.Effect<LocalThumbnailStorageService, never, FileSystem> 
         const data = yield* readThumbnail(contentHash, sizeName, format)
         const mimeType = `image/${format}`
         // Convert to regular ArrayBuffer if it's a SharedArrayBuffer
-        const arrayBuffer = data.buffer instanceof SharedArrayBuffer
+        // Note: SharedArrayBuffer may not be defined in all browser contexts
+        const arrayBuffer = typeof SharedArrayBuffer !== "undefined" && data.buffer instanceof SharedArrayBuffer
           ? new Uint8Array(data).buffer
           : data.buffer
         const blob = new Blob([new Uint8Array(arrayBuffer as ArrayBuffer)], { type: mimeType })

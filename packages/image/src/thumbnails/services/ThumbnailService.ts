@@ -350,7 +350,9 @@ export const makeThumbnailService = (
         if (!data) return null
 
         // Convert to regular ArrayBuffer if it's a SharedArrayBuffer
-        if (data.buffer instanceof SharedArrayBuffer) {
+        // Note: SharedArrayBuffer may not be defined in all browser contexts
+        // (requires specific security headers), so check existence first
+        if (typeof SharedArrayBuffer !== "undefined" && data.buffer instanceof SharedArrayBuffer) {
           const arrayBuffer = new ArrayBuffer(data.byteLength)
           new Uint8Array(arrayBuffer).set(data)
           return arrayBuffer
