@@ -1,0 +1,4 @@
+
+> @livestore-filesync/opfs@0.3.1 build /Users/victornyberg/Developer/livestore-turbo-filesync/libs/livestore-filesync/packages/opfs
+> tsc -b tsconfig.build.json
+

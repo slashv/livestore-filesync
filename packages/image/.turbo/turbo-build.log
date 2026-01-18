@@ -1,0 +1,4 @@
+
+> @livestore-filesync/image@0.3.1 build /Users/victornyberg/Developer/livestore-turbo-filesync/libs/livestore-filesync/packages/image
+> tsc -b tsconfig.build.json
+

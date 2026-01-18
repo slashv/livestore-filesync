@@ -7,13 +7,14 @@ import {
   generateStoreId,
 } from './helpers'
 
-// Thumbnail tests only run against the vue-thumbnail example
-// which has wasm-vips and the image-thumbnails package configured.
-// Skip if not running with E2E_FRAMEWORK=thumbnail or no framework set.
-const shouldRun = process.env.E2E_FRAMEWORK === 'thumbnail'
+// Thumbnail tests run against the thumbnail examples (vue-thumbnail, react-thumbnail)
+// which have image-thumbnails package configured.
+// Skip if not running with E2E_FRAMEWORK=thumbnail, vue-thumbnail, or react-thumbnail.
+const thumbnailFrameworks = ['thumbnail', 'vue-thumbnail', 'react-thumbnail']
+const shouldRun = thumbnailFrameworks.includes(process.env.E2E_FRAMEWORK ?? '')
 
 test.describe('Image Thumbnails', () => {
-  test.skip(!shouldRun, 'Thumbnail tests only run with E2E_FRAMEWORK=thumbnail')
+  test.skip(!shouldRun, 'Thumbnail tests only run with E2E_FRAMEWORK=thumbnail, vue-thumbnail, or react-thumbnail')
 
   test('should generate thumbnail for uploaded image', async ({ page }) => {
     const storeId = generateStoreId('thumb')
