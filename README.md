@@ -76,7 +76,8 @@ const url = await resolveFileUrl(result.fileId)
 See `examples/` for complete implementations:
 - `examples/react-filesync` — React example using `resolveFileUrl()`
 - `examples/vue-filesync` — Vue example using `resolveFileUrl()`
-- `examples/vue-thumbnail` — Vue example with image thumbnail generation
+- `examples/vue-thumbnail` — Vue example with image thumbnail generation (wasm-vips)
+- `examples/react-thumbnail` — React example with image thumbnails using the canvas processor (no WASM)
 - `examples/node-filesync` — Node.js usage
 
 ## Filesystem Adapters
@@ -333,7 +334,7 @@ const dispose = initThumbnails(store, {
 const url = await resolveThumbnailUrl(fileId, 'small')
 ```
 
-See `examples/vue-thumbnail` for a complete implementation.
+See `examples/vue-thumbnail` (wasm-vips) and `examples/react-thumbnail` (canvas processor) for complete implementations.
 
 ## Requirements
 

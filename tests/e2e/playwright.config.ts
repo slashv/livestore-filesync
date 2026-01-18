@@ -17,11 +17,21 @@ const frameworkConfig: Record<string, { cwd: string; port: number; testMatch?: s
     port: 60005,
     testMatch: '**/thumbnail.spec.ts',
   },
+  'vue-thumbnail': {
+    cwd: '../../examples/vue-thumbnail',
+    port: 60005,
+    testMatch: '**/thumbnail.spec.ts',
+  },
+  'react-thumbnail': {
+    cwd: '../../examples/react-thumbnail',
+    port: 60006,
+    testMatch: '**/thumbnail.spec.ts',
+  },
 }
 
 const config = frameworkConfig[framework]
 if (!config) {
-  throw new Error(`Unknown framework: ${framework}. Use 'vue', 'react', or 'thumbnail'.`)
+  throw new Error(`Unknown framework: ${framework}. Use 'vue', 'react', 'thumbnail', 'vue-thumbnail', or 'react-thumbnail'.`)
 }
 
 export default defineConfig({
