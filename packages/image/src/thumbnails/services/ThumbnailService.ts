@@ -324,7 +324,7 @@ export const makeThumbnailService = (
         // Config changed (or first run) - wipe all thumbnails and state
         if (storedHash !== undefined) {
           console.log("[ThumbnailService] Config changed, clearing all thumbnails...")
-          
+
           // Delete all thumbnail files from storage
           for (const fileState of Object.values(state.files)) {
             yield* storage.deleteThumbnails(fileState.contentHash).pipe(

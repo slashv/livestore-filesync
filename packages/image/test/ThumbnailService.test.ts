@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 /**
  * Tests for ThumbnailService config change detection
- * 
+ *
  * The actual service requires a full LiveStore instance which is complex to mock.
  * These tests verify the config hashing logic in isolation.
  */

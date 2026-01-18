@@ -28,6 +28,10 @@
       "types": "./dist/preprocessor/index.d.ts",
       "import": "./dist/preprocessor/index.js"
     },
+    "./processor": {
+      "types": "./dist/processor/index.d.ts",
+      "import": "./dist/processor/index.js"
+    },
     "./thumbnails": {
       "types": "./dist/thumbnails/index.d.ts",
       "import": "./dist/thumbnails/index.js"
@@ -39,6 +43,14 @@
     "./thumbnails/worker": {
       "types": "./dist/thumbnails/worker.d.ts",
       "import": "./dist/thumbnails/worker.js"
+    },
+    "./thumbnails/workers/vips.worker": {
+      "types": "./dist/thumbnails/workers/vips.worker.d.ts",
+      "import": "./dist/thumbnails/workers/vips.worker.js"
+    },
+    "./thumbnails/workers/canvas.worker": {
+      "types": "./dist/thumbnails/workers/canvas.worker.d.ts",
+      "import": "./dist/thumbnails/workers/canvas.worker.js"
     }
   },
   "main": "./dist/index.js",
@@ -78,7 +90,7 @@
       "optional": true
     },
     "wasm-vips": {
-      "optional": false
+      "optional": true
     }
   }
 }

@@ -160,7 +160,17 @@ initFileSync(store, {
 })
 ```
 
-See the [image package README](packages/image/README.md) for setup instructions and full documentation.
+**Lightweight Canvas Alternative:** If you don't need the full power of wasm-vips (ICC profile preservation, lossless compression), you can use the canvas-based processor:
+
+```typescript
+createImagePreprocessor({
+  processor: 'canvas',  // No WASM required
+  maxDimension: 1500,
+  format: 'webp'
+})
+```
+
+See the [image package README](packages/image/README.md) and [image processing docs](docs/image-processing.md) for setup instructions and full documentation.
 
 ## Backend Storage
 

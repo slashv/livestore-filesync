@@ -45,7 +45,8 @@ export {
   createResizeOnlyPreprocessor,
   defaultImagePreprocessorOptions,
   type ImageFormat,
-  type ImagePreprocessorOptions
+  type ImagePreprocessorOptions,
+  type ImageProcessorBackend
 } from "./preprocessor.js"
 
 export { getVipsInstance, initVips, isVipsInitialized, type VipsInitOptions } from "../vips.js"

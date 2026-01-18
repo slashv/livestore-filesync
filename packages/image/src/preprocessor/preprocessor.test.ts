@@ -149,7 +149,16 @@ describe("createResizeOnlyPreprocessor", () => {
 
   it("accepts custom vipsOptions", () => {
     const preprocessor = createResizeOnlyPreprocessor(1200, {
-      locateFile: (path) => `/custom/${path}`
+      vipsOptions: {
+        locateFile: (path: string) => `/custom/${path}`
+      }
+    })
+    expect(typeof preprocessor).toBe("function")
+  })
+
+  it("accepts canvas processor option", () => {
+    const preprocessor = createResizeOnlyPreprocessor(1200, {
+      processor: "canvas"
     })
     expect(typeof preprocessor).toBe("function")
   })

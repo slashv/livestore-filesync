@@ -71,8 +71,34 @@ export {
   createResizeOnlyPreprocessor,
   defaultImagePreprocessorOptions,
   type ImageFormat,
-  type ImagePreprocessorOptions
+  type ImagePreprocessorOptions,
+  type ImageProcessorBackend
 } from "./preprocessor/index.js"
+
+// ============================================
+// Image Processor exports
+// ============================================
+
+export {
+  createCanvasProcessor,
+  createImageProcessor,
+  type CreateImageProcessorOptions,
+  createVipsProcessor,
+  isBufferProcessor,
+  isUriProcessor,
+  type VipsProcessorOptions
+} from "./processor/index.js"
+
+export type {
+  BufferImageProcessor,
+  ImageProcessor,
+  ImageProcessorCapabilities,
+  ImageProcessorType,
+  ProcessedImage,
+  ProcessedImageUri,
+  ProcessImageOptions,
+  UriImageProcessor
+} from "./processor/index.js"
 
 // ============================================
 // Shared vips exports

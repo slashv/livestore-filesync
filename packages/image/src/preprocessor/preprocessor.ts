@@ -1,16 +1,27 @@
 /**
- * Image preprocessing using wasm-vips
+ * Image preprocessing with configurable backend
+ *
+ * Supports both wasm-vips (high quality) and Canvas API (lightweight) backends.
  *
  * @module
  */
 
 import type { FilePreprocessor } from "@livestore-filesync/core"
-import { initVips, type VipsInitOptions } from "../vips.js"
+
+import { createCanvasProcessor } from "../processor/canvas.js"
+import type { BufferImageProcessor } from "../processor/types.js"
+import { createVipsProcessor } from "../processor/vips.js"
+import { type VipsInitOptions } from "../vips.js"
 
 /**
  * Output format for processed images
  */
 export type ImageFormat = "jpeg" | "webp" | "png"
+
+/**
+ * Image processor backend type
+ */
+export type ImageProcessorBackend = "vips" | "canvas"
 
 /**
  * Options for the image preprocessor
@@ -40,6 +51,7 @@ export interface ImagePreprocessorOptions {
   /**
    * Custom wasm-vips initialization options.
    * Use this to specify a custom path for the WASM file.
+   * Only used when processor is 'vips'.
    */
   vipsOptions?: VipsInitOptions
 
@@ -50,6 +62,16 @@ export interface ImagePreprocessorOptions {
    * @default 0
    */
   minSizeThreshold?: number
+
+  /**
+   * Image processor backend to use.
+   *
+   * - 'vips': wasm-vips (high quality, ~3MB WASM, preserves ICC profiles)
+   * - 'canvas': Canvas API (lightweight, no WASM, converts to sRGB)
+   *
+   * @default 'vips'
+   */
+  processor?: ImageProcessorBackend
 }
 
 /**
@@ -59,7 +81,8 @@ export const defaultImagePreprocessorOptions: Required<Omit<ImagePreprocessorOpt
   maxDimension: 1500,
   quality: 90,
   format: "jpeg",
-  minSizeThreshold: 0
+  minSizeThreshold: 0,
+  processor: "vips"
 }
 
 /**
@@ -91,22 +114,11 @@ function getMimeType(format: ImageFormat): string {
 }
 
 /**
- * Get the vips output format string
- */
-function getVipsFormat(format: ImageFormat): string {
-  switch (format) {
-    case "jpeg":
-      return ".jpg"
-    case "webp":
-      return ".webp"
-    case "png":
-      return ".png"
-  }
-}
-
-/**
  * Create an image preprocessor with the given options.
- * Uses wasm-vips for high-quality image processing.
+ *
+ * Supports two backends:
+ * - **vips** (default): wasm-vips for high-quality processing with ICC profile preservation
+ * - **canvas**: Canvas API for lightweight processing without WASM
  *
  * The preprocessor will:
  * - Resize images that exceed maxDimension (maintaining aspect ratio)
@@ -126,11 +138,12 @@ function getVipsFormat(format: ImageFormat): string {
  * import { initFileSync } from '@livestore-filesync/core'
  * import { layer as opfsLayer } from '@livestore-filesync/opfs'
  *
- * // Default settings: max 1500px, JPEG at 90% quality
+ * // Default settings: max 1500px, JPEG at 90% quality (using vips)
  * const imagePreprocessor = createImagePreprocessor()
  *
- * // Custom settings
- * const customPreprocessor = createImagePreprocessor({
+ * // Using canvas backend (lightweight, no WASM)
+ * const canvasPreprocessor = createImagePreprocessor({
+ *   processor: 'canvas',
  *   maxDimension: 1200,
  *   quality: 85,
  *   format: 'webp'
@@ -152,11 +165,17 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
     format = defaultImagePreprocessorOptions.format,
     maxDimension = defaultImagePreprocessorOptions.maxDimension,
     minSizeThreshold = defaultImagePreprocessorOptions.minSizeThreshold,
+    processor: processorType = defaultImagePreprocessorOptions.processor,
     quality = defaultImagePreprocessorOptions.quality,
     vipsOptions
   } = options
 
   const targetMimeType = getMimeType(format)
+
+  // Create the appropriate processor
+  const processor: BufferImageProcessor = processorType === "canvas"
+    ? createCanvasProcessor()
+    : createVipsProcessor(vipsOptions)
 
   return async (file: File): Promise<File> => {
     // Skip if below size threshold
@@ -172,62 +191,51 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
       return file
     }
 
-    // Initialize vips (cached after first call)
-    const vips = await initVips(vipsOptions)
-
-    // Read file into buffer
+    // Read file into buffer for dimension check
     const arrayBuffer = await file.arrayBuffer()
-    const inputBuffer = new Uint8Array(arrayBuffer)
 
-    // Load image
-    const image = vips.Image.newFromBuffer(inputBuffer)
-
-    try {
-      // Check if already processed: correct format AND within dimension bounds
-      // This prevents quality degradation from repeated re-compression
-      const withinBounds = maxDimension === 0
-        || (image.width <= maxDimension && image.height <= maxDimension)
-
-      if (isTargetFormat && withinBounds) {
-        return file
-      }
-
-      let processed = image
-
-      // Resize if image exceeds max dimension
-      if (maxDimension > 0 && (image.width > maxDimension || image.height > maxDimension)) {
-        // thumbnailImage maintains aspect ratio, fits within the given dimensions
-        processed = image.thumbnailImage(maxDimension, { height: maxDimension })
-      }
-
-      // Build write options based on format
-      const writeOptions: Record<string, unknown> = {}
-      if (format === "jpeg" || format === "webp") {
-        writeOptions.Q = quality
-      }
-
-      // Export to the specified format
-      const outputBuffer = processed.writeToBuffer(getVipsFormat(format), writeOptions)
-
-      // Clean up if we created a new image
-      if (processed !== image) {
-        processed.delete()
-      }
-
-      // Generate new filename
-      const baseName = file.name.replace(/\.[^/.]+$/, "") // Remove extension
-      const newFilename = `${baseName}.${getExtension(format)}`
-
-      // Convert to ArrayBuffer to ensure compatibility with File constructor
-      const buffer = outputBuffer.buffer.slice(
-        outputBuffer.byteOffset,
-        outputBuffer.byteOffset + outputBuffer.byteLength
-      ) as ArrayBuffer
-
-      return new File([buffer], newFilename, { type: getMimeType(format) })
-    } finally {
-      image.delete()
+    // Initialize processor if needed
+    if (!processor.isInitialized()) {
+      await processor.init()
     }
+
+    // For dimension checking, we need to decode the image
+    // Use the processor to check dimensions by attempting to process
+    // If within bounds and correct format, return original file
+    // This is handled by the processor's process method which respects maxDimension
+
+    // Check if image needs processing by getting dimensions
+    // For canvas, we can use createImageBitmap to check dimensions without full processing
+    // For vips, we'd need to load the image anyway
+    // To avoid loading twice, we'll just process and check the result
+
+    // Process the image
+    const result = await processor.process(arrayBuffer, {
+      maxDimension,
+      format,
+      quality,
+      keepIccProfile: true
+    })
+
+    // Check if the image was actually modified
+    // If dimensions match and format matches, original might have been within bounds
+    const blob = new Blob([arrayBuffer])
+    const bitmap = await createImageBitmap(blob)
+    const originalWidth = bitmap.width
+    const originalHeight = bitmap.height
+    bitmap.close()
+
+    // If already in target format and within bounds, return original
+    const withinBounds = maxDimension === 0 || (originalWidth <= maxDimension && originalHeight <= maxDimension)
+    if (isTargetFormat && withinBounds) {
+      return file
+    }
+
+    // Generate new filename
+    const baseName = file.name.replace(/\.[^/.]+$/, "") // Remove extension
+    const newFilename = `${baseName}.${getExtension(format)}`
+
+    return new File([result.data], newFilename, { type: result.mimeType })
   }
 }
 
@@ -239,58 +247,60 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
  * it must re-encode in the original format, which may not be optimal.
  *
  * @param maxDimension - Maximum dimension (width or height) in pixels
- * @param vipsOptions - Custom wasm-vips initialization options
+ * @param options - Optional configuration
  * @returns A FilePreprocessor function
  */
 export function createResizeOnlyPreprocessor(
   maxDimension: number,
-  vipsOptions?: VipsInitOptions
+  options?: {
+    vipsOptions?: VipsInitOptions
+    processor?: ImageProcessorBackend
+  }
 ): FilePreprocessor {
+  const processorType = options?.processor ?? "vips"
+
+  // Create the appropriate processor
+  const processor: BufferImageProcessor = processorType === "canvas"
+    ? createCanvasProcessor()
+    : createVipsProcessor(options?.vipsOptions)
+
   return async (file: File): Promise<File> => {
-    // Initialize vips (cached after first call)
-    const vips = await initVips(vipsOptions)
+    // Determine output format from input MIME type
+    let format: "jpeg" | "webp" | "png" = "jpeg"
+    if (file.type === "image/png") {
+      format = "png"
+    } else if (file.type === "image/webp") {
+      format = "webp"
+    }
 
     // Read file into buffer
     const arrayBuffer = await file.arrayBuffer()
-    const inputBuffer = new Uint8Array(arrayBuffer)
 
-    // Load image
-    const image = vips.Image.newFromBuffer(inputBuffer)
+    // Check dimensions first
+    const blob = new Blob([arrayBuffer])
+    const bitmap = await createImageBitmap(blob)
+    const width = bitmap.width
+    const height = bitmap.height
+    bitmap.close()
 
-    try {
-      // Skip if already within bounds
-      if (image.width <= maxDimension && image.height <= maxDimension) {
-        return file
-      }
-
-      // Resize maintaining aspect ratio
-      const processed = image.thumbnailImage(maxDimension, { height: maxDimension })
-
-      // Determine output format from input MIME type
-      let outputFormat = ".jpg"
-      if (file.type === "image/png") {
-        outputFormat = ".png"
-      } else if (file.type === "image/webp") {
-        outputFormat = ".webp"
-      } else if (file.type === "image/gif") {
-        outputFormat = ".gif"
-      }
-
-      // Export in the same format
-      const outputBuffer = processed.writeToBuffer(outputFormat)
-
-      // Clean up
-      processed.delete()
-
-      // Convert to ArrayBuffer
-      const buffer = outputBuffer.buffer.slice(
-        outputBuffer.byteOffset,
-        outputBuffer.byteOffset + outputBuffer.byteLength
-      ) as ArrayBuffer
-
-      return new File([buffer], file.name, { type: file.type })
-    } finally {
-      image.delete()
+    // Skip if already within bounds
+    if (width <= maxDimension && height <= maxDimension) {
+      return file
     }
+
+    // Initialize processor if needed
+    if (!processor.isInitialized()) {
+      await processor.init()
+    }
+
+    // Process the image
+    const result = await processor.process(arrayBuffer, {
+      maxDimension,
+      format,
+      quality: 90,
+      keepIccProfile: true
+    })
+
+    return new File([result.data], file.name, { type: file.type })
   }
 }
