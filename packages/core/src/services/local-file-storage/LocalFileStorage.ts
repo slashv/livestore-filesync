@@ -12,6 +12,7 @@ import { FileSystem } from "@effect/platform/FileSystem"
 import type * as FS from "@effect/platform/FileSystem"
 import { Context, Effect, Layer } from "effect"
 import { DirectoryNotFoundError, FileNotFoundError, StorageError } from "../../errors/index.js"
+import { MemoryFile } from "../../utils/MemoryFile.js"
 import { joinPath, parsePath } from "../../utils/path.js"
 
 interface FileMetadata {
@@ -263,26 +264,24 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
         const { filename } = parsePath(path)
         const mimeType = metadata?.type || "application/octet-stream"
 
-        // React Native doesn't support creating File from ArrayBuffer directly
-        // Use Blob as intermediate step which works in both web and RN
-        // Need to convert Uint8Array to a proper ArrayBuffer view for Blob
-        const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
-        const blob = new Blob([buffer], { type: mimeType })
-        
-        // Try File constructor first (works in browsers)
-        // Fall back to blob-as-file for React Native
+        // Try native File constructor first (works in browsers)
         try {
-          return new File([blob], filename, {
+          // Create a proper ArrayBuffer copy from the Uint8Array for the File constructor
+          const buffer = new ArrayBuffer(data.byteLength)
+          new Uint8Array(buffer).set(data)
+          return new File([buffer], filename, {
             type: mimeType,
             ...(metadata?.lastModified !== undefined ? { lastModified: metadata.lastModified } : {})
           })
         } catch {
-          // In React Native, File constructor may fail
-          // Return a File-like object that works with fetch
-          return Object.assign(blob, {
-            name: filename,
-            lastModified: metadata?.lastModified ?? Date.now()
-          }) as File
+          // React Native's Blob/File constructors don't support ArrayBuffer/Uint8Array
+          // Use MemoryFile which implements the Blob interface and works everywhere
+          return new MemoryFile(
+            data,
+            filename,
+            mimeType,
+            metadata?.lastModified !== undefined ? { lastModified: metadata.lastModified } : undefined
+          ) as unknown as File
         }
       })
 
