@@ -229,7 +229,8 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const { fileSystem, hashService, options = {}, remote, schema, store } = config
 
   // State
-  let online = typeof navigator !== "undefined" ? navigator.onLine : true
+  // Note: navigator.onLine is undefined in React Native, so we default to true
+  let online = (typeof navigator !== "undefined" && navigator.onLine !== undefined) ? navigator.onLine : true
   let unsubscribeEvents: (() => void) | null = null
   let connectivityEventsAttached = false
   let disposed = false
@@ -315,24 +316,31 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   // Connectivity wiring (browser-only)
+  // Note: In React Native, window exists but addEventListener doesn't.
+  // We check for window.addEventListener specifically to ensure browser environment.
   const attachConnectivityHandlers = async () => {
-    if (connectivityEventsAttached || typeof window === "undefined") return
+    if (connectivityEventsAttached) return
     connectivityEventsAttached = true
 
     const fileSync = await getFileSyncService()
 
-    const initialOnline = typeof navigator !== "undefined" ? navigator.onLine : true
+    // Note: navigator.onLine is undefined in React Native, so we default to true
+    const initialOnline = (typeof navigator !== "undefined" && navigator.onLine !== undefined) ? navigator.onLine : true
     online = initialOnline
     void runEffect(fileSync.setOnline(initialOnline))
 
-    window.addEventListener("online", () => {
-      online = true
-      void runEffect(fileSync.setOnline(true))
-    })
-    window.addEventListener("offline", () => {
-      online = false
-      void runEffect(fileSync.setOnline(false))
-    })
+    // Only attach window event listeners in browser environments
+    // React Native has window but not window.addEventListener
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("online", () => {
+        online = true
+        void runEffect(fileSync.setOnline(true))
+      })
+      window.addEventListener("offline", () => {
+        online = false
+        void runEffect(fileSync.setOnline(false))
+      })
+    }
   }
 
   const ensureEventSubscription = async () => {
@@ -349,13 +357,27 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const start = () => {
-    if (scope || disposed) return
+    console.log("[createFileSync] start() called")
+    if (scope || disposed) {
+      console.log("[createFileSync] start() early return - scope:", !!scope, "disposed:", disposed)
+      return
+    }
     void (async () => {
-      scope = await runEffect(Scope.make())
-      const fileSync = await getFileSyncService()
-      await ensureEventSubscription()
-      await attachConnectivityHandlers()
-      await runEffect(Scope.extend(fileSync.start(), scope))
+      try {
+        console.log("[createFileSync] Starting async init...")
+        scope = await runEffect(Scope.make())
+        console.log("[createFileSync] Scope created")
+        const fileSync = await getFileSyncService()
+        console.log("[createFileSync] FileSync service obtained")
+        await ensureEventSubscription()
+        console.log("[createFileSync] Event subscription ensured")
+        await attachConnectivityHandlers()
+        console.log("[createFileSync] Connectivity handlers attached")
+        await runEffect(Scope.extend(fileSync.start(), scope))
+        console.log("[createFileSync] FileSync.start() completed")
+      } catch (error) {
+        console.error("[createFileSync] Error during start:", error)
+      }
     })()
   }
 

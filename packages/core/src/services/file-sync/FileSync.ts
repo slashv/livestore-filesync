@@ -457,24 +457,35 @@ export const makeFileSync = (
     // Upload a file from local to remote
     const uploadFile = (fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
+        console.log(`[FileSync] uploadFile called for file: ${fileId}`)
         yield* stateManager.setTransferStatus(fileId, "upload", "inProgress")
         yield* emit({ type: "upload:start", fileId })
 
+        console.log(`[FileSync] Getting file record for: ${fileId}`)
         const file = yield* getFile(fileId)
         if (!file) {
+          console.log(`[FileSync] File not found: ${fileId}`)
           const error = new Error("File not found")
           yield* emit({ type: "upload:error", fileId, error })
           return yield* Effect.fail(error)
         }
+        console.log(`[FileSync] File found:`, file.id, file.path)
 
         if (file.deletedAt) {
+          console.log(`[FileSync] File is deleted, skipping upload: ${fileId}`)
           yield* stateManager.removeFile(fileId)
           yield* emit({ type: "upload:complete", fileId })
           return
         }
 
-        const localFile = yield* localStorage.readFile(file.path)
+        console.log(`[FileSync] Reading local file: ${file.path}`)
+        const localFile = yield* localStorage.readFile(file.path).pipe(
+          Effect.tap(() => console.log(`[FileSync] Local file read successfully`)),
+          Effect.tapError((e) => Effect.sync(() => console.error(`[FileSync] Local file read FAILED:`, e)))
+        )
+        console.log(`[FileSync] Local file size: ${localFile.size}`)
         const remoteKey = stripFilesRoot(file.path)
+        console.log(`[FileSync] Uploading to remote key: ${remoteKey}`)
         const uploadResult = yield* remoteStorage.upload(localFile, {
           key: remoteKey,
           onProgress: (progress) => {
@@ -494,6 +505,7 @@ export const makeFileSync = (
             )
           }
         })
+        console.log(`[FileSync] Upload completed for: ${fileId}`)
 
         const latestFile = yield* getFile(fileId)
         if (!latestFile || latestFile.deletedAt) {
@@ -520,9 +532,11 @@ export const makeFileSync = (
         })
 
         yield* emit({ type: "upload:complete", fileId })
+        console.log(`[FileSync] Upload complete event emitted for: ${fileId}`)
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function*() {
+            console.error(`[FileSync] Upload error for ${fileId}:`, error)
             yield* stateManager.setTransferError(
               fileId,
               "upload",
@@ -957,29 +971,38 @@ export const makeFileSync = (
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
+        console.log("[FileSync] start() called")
         const running = yield* Ref.get(runningRef)
-        if (running) return
+        if (running) {
+          console.log("[FileSync] Already running, returning")
+          return
+        }
 
         yield* Ref.set(runningRef, true)
 
         // Start the executor
+        console.log("[FileSync] Starting executor...")
         yield* executor.start()
+        console.log("[FileSync] Executor started")
 
         // Check initial lock status
+        console.log("[FileSync] Checking initial lock status...")
         const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
         const isInitialLeader = initialStatus === "has-lock"
+        console.log("[FileSync] Initial lock status:", initialStatus, "isLeader:", isInitialLeader)
         yield* Ref.set(isLeaderRef, isInitialLeader)
 
         if (isInitialLeader) {
-          yield* Effect.logDebug("[FileSync] Starting as leader")
+          console.log("[FileSync] Starting as leader")
           yield* startSyncLoop()
         } else {
-          yield* Effect.logDebug("[FileSync] Starting as non-leader, waiting for leadership")
+          console.log("[FileSync] Starting as non-leader, waiting for leadership")
         }
 
         // Watch for leadership changes
         const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
         yield* Ref.set(leaderWatcherFiberRef, watchFiber)
+        console.log("[FileSync] Leadership watcher started")
       })
 
     const stop = (): Effect.Effect<void> =>
@@ -1014,6 +1037,7 @@ export const makeFileSync = (
       hash: string
     ): Effect.Effect<void> =>
       Effect.gen(function*() {
+        console.log(`[FileSync] markLocalFileChanged for file: ${fileId}, path: ${path}`)
         yield* stateManager.setFileState(fileId, {
           path,
           localHash: hash,
@@ -1022,6 +1046,7 @@ export const makeFileSync = (
           lastSyncError: ""
         })
 
+        console.log(`[FileSync] Calling executor.enqueueUpload for file: ${fileId}`)
         yield* executor.enqueueUpload(fileId)
       })
 

@@ -261,12 +261,29 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
         const data = yield* readBytes(path)
         const metadata = yield* readMetadataFile(fs, path)
         const { filename } = parsePath(path)
-        const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+        const mimeType = metadata?.type || "application/octet-stream"
 
-        return new File([buffer], filename, {
-          type: metadata?.type || "application/octet-stream",
-          ...(metadata?.lastModified !== undefined ? { lastModified: metadata.lastModified } : {})
-        })
+        // React Native doesn't support creating File from ArrayBuffer directly
+        // Use Blob as intermediate step which works in both web and RN
+        // Need to convert Uint8Array to a proper ArrayBuffer view for Blob
+        const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+        const blob = new Blob([buffer], { type: mimeType })
+        
+        // Try File constructor first (works in browsers)
+        // Fall back to blob-as-file for React Native
+        try {
+          return new File([blob], filename, {
+            type: mimeType,
+            ...(metadata?.lastModified !== undefined ? { lastModified: metadata.lastModified } : {})
+          })
+        } catch {
+          // In React Native, File constructor may fail
+          // Return a File-like object that works with fetch
+          return Object.assign(blob, {
+            name: filename,
+            lastModified: metadata?.lastModified ?? Date.now()
+          }) as File
+        }
       })
 
     const fileExists = (path: string): Effect.Effect<boolean, StorageError> =>

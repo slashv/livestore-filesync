@@ -416,6 +416,7 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
 
   const readFile: FS.FileSystem["readFile"] = (path) =>
     Effect.gen(function*() {
+      console.log(`[ExpoFileSystem] readFile called with path: ${path}`)
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
       const normalizedPath = normalizePath(path)
@@ -425,14 +426,26 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
         ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
         : baseDir
 
+      console.log(`[ExpoFileSystem] Full path: ${fullPath}`)
       const file = new fs.File(fullPath)
+      console.log(`[ExpoFileSystem] File exists: ${file.exists}`)
       if (!file.exists) {
+        console.log(`[ExpoFileSystem] File not found!`)
         return yield* Effect.fail(makeSystemError("readFile", "NotFound", path))
       }
 
+      console.log(`[ExpoFileSystem] Calling file.bytes()...`)
       return yield* Effect.tryPromise({
-        try: () => file.bytes(),
-        catch: (cause) => makeSystemError("readFile", "Unknown", path, cause)
+        try: async () => {
+          console.log(`[ExpoFileSystem] Inside try block, calling file.bytes()`)
+          const result = await file.bytes()
+          console.log(`[ExpoFileSystem] file.bytes() returned, length: ${result.length}`)
+          return result
+        },
+        catch: (cause) => {
+          console.error(`[ExpoFileSystem] file.bytes() failed:`, cause)
+          return makeSystemError("readFile", "Unknown", path, cause)
+        }
       })
     })
 
