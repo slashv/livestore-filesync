@@ -2,6 +2,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import type { FileSyncConfig } from "../../services/file-sync/FileSync.js"
+import { HashServiceLive } from "../../services/hash/index.js"
 import type { PreprocessorMap } from "../../types/index.js"
 import { hashFile, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
@@ -15,7 +16,7 @@ const createRuntime = (
   config?: Partial<FileSyncConfig>
 ) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
-  const baseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, localFileStateManagerLayer, RemoteStorageMemory)
+  const baseLayer = Layer.mergeAll(Layer.scope, HashServiceLive, LocalFileStorageMemory, localFileStateManagerLayer, RemoteStorageMemory)
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
       executorConfig: {
@@ -32,6 +33,10 @@ const createRuntime = (
   const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer)
   return ManagedRuntime.make(mainLayer)
 }
+
+// Helper to run hashFile with the HashService layer
+const runHashFile = (file: File) =>
+  Effect.runPromise(Effect.provide(hashFile(file), HashServiceLive))
 
 describe("FileSync - File operations", () => {
   it("saves files and records metadata", async () => {
@@ -238,7 +243,7 @@ describe("FileSync - Preprocessor integration", () => {
       expect(storedContent).toBe("PROCESSED: hello world")
 
       // Verify hash is calculated from processed content
-      const expectedHash = await Effect.runPromise(hashFile(new File(["PROCESSED: hello world"], "test.txt")))
+      const expectedHash = await runHashFile(new File(["PROCESSED: hello world"], "test.txt"))
       expect(result.contentHash).toBe(expectedHash)
 
       // Verify database record
@@ -297,7 +302,7 @@ describe("FileSync - Preprocessor integration", () => {
       expect(updated.path).not.toBe(initial.path)
 
       // Verify hash reflects processed content
-      const expectedHash = await Effect.runPromise(hashFile(new File(["v2: second"], "data.txt")))
+      const expectedHash = await runHashFile(new File(["v2: second"], "data.txt"))
       expect(updated.contentHash).toBe(expectedHash)
     } finally {
       await runtime.runPromise(Scope.close(scope, Exit.void))

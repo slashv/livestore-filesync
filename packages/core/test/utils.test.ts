@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import { HashServiceLive } from "../src/services/hash/index.js"
 import {
   extractHashFromPath,
   FILES_DIRECTORY,
@@ -87,6 +88,9 @@ describe("hash utilities", () => {
   // Note: hash utilities use Web Crypto API which requires browser/Node 20+
   // These tests verify the Effect structure works correctly
 
+  const runWithHash = <A, E>(effect: Effect.Effect<A, E, import("../src/services/hash/index.js").Hash>) =>
+    Effect.runPromise(Effect.provide(effect, HashServiceLive))
+
   it("should hash a file to a hex string", async () => {
     // Skip if crypto.subtle is not available (Node < 20)
     if (typeof crypto === "undefined" || !crypto.subtle) {
@@ -96,7 +100,7 @@ describe("hash utilities", () => {
     const { hashFile } = await import("../src/utils/index.js")
 
     const file = new File(["hello world"], "test.txt", { type: "text/plain" })
-    const hash = await Effect.runPromise(hashFile(file))
+    const hash = await runWithHash(hashFile(file))
 
     // SHA-256 produces 64 hex characters
     expect(hash).toHaveLength(64)
@@ -104,7 +108,7 @@ describe("hash utilities", () => {
 
     // Same content should produce same hash
     const file2 = new File(["hello world"], "different-name.txt")
-    const hash2 = await Effect.runPromise(hashFile(file2))
+    const hash2 = await runWithHash(hashFile(file2))
     expect(hash2).toBe(hash)
   })
 
@@ -118,8 +122,8 @@ describe("hash utilities", () => {
     const file1 = new File(["content 1"], "file1.txt")
     const file2 = new File(["content 2"], "file2.txt")
 
-    const hash1 = await Effect.runPromise(hashFile(file1))
-    const hash2 = await Effect.runPromise(hashFile(file2))
+    const hash1 = await runWithHash(hashFile(file1))
+    const hash2 = await runWithHash(hashFile(file2))
 
     expect(hash1).not.toBe(hash2)
   })

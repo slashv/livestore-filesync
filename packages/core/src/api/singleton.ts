@@ -11,6 +11,7 @@ import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
 import type { SyncSchema } from "../livestore/types.js"
+import type { Hash } from "../services/hash/index.js"
 import { createFileSyncSchema } from "../schema/index.js"
 import type { FileSyncEvent } from "../types/index.js"
 import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
@@ -31,6 +32,14 @@ type SchemaFallback = Pick<SyncSchema, "tables" | "events"> & {
 export interface InitFileSyncConfig {
   /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
   fileSystem: Layer.Layer<FileSystem>
+
+  /**
+   * HashService layer - optional.
+   * Defaults to Web Crypto API implementation (works in browsers, Node 20+, Electron).
+   * For React Native, pass HashServiceLive from @livestore-filesync/expo.
+   */
+  hashService?: Layer.Layer<Hash>
+
   remote?: {
     signerBaseUrl?: string
     headers?: Record<string, string>
@@ -150,6 +159,7 @@ export const initFileSync = (
     schema,
     remote,
     fileSystem: config.fileSystem,
+    ...(config.hashService ? { hashService: config.hashService } : {}),
     options: {
       ...config.options,
       onEvent: (event) => {

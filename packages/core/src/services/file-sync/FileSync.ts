@@ -30,8 +30,9 @@ import type {
   PreprocessorMap,
   TransferStatus
 } from "../../types/index.js"
-import { applyPreprocessor, hashFile, makeStoredPath } from "../../utils/index.js"
+import { applyPreprocessor, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
+import { Hash } from "../hash/index.js"
 import { LocalFileStateManager } from "../local-file-state/index.js"
 import { LocalFileStorage } from "../local-file-storage/index.js"
 import { RemoteStorage } from "../remote-file-storage/index.js"
@@ -230,13 +231,17 @@ export const defaultFileSyncConfig: FileSyncConfig = {
 export const makeFileSync = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Effect.Effect<FileSyncService, never, LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
+): Effect.Effect<FileSyncService, never, Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
   Effect.gen(function*() {
+    const hashService = yield* Hash
     const localStorage = yield* LocalFileStorage
     const stateManager = yield* LocalFileStateManager
     const remoteStorage = yield* RemoteStorage
     const { schema, store, storeId } = deps
     const { events, queryDb, tables } = schema
+
+    // Local wrapper for hashFile that uses the captured hash service
+    const doHashFile = (file: File) => hashService.hashFile(file)
 
     // Get client session for leader election
     const clientSession = getClientSession(store)
@@ -391,7 +396,7 @@ export const makeFileSync = (
       })
 
     // Download a file from remote to local
-    const downloadFile = (fileId: string): Effect.Effect<void, unknown> =>
+    const downloadFile = (fileId: string) =>
       Effect.gen(function*() {
         yield* stateManager.setTransferStatus(fileId, "download", "inProgress")
         yield* emit({ type: "download:start", fileId })
@@ -422,7 +427,7 @@ export const makeFileSync = (
           }
         })
         yield* localStorage.writeFile(file.path, downloadedFile)
-        const localHash = yield* hashFile(downloadedFile)
+        const localHash = yield* doHashFile(downloadedFile)
 
         yield* stateManager.setFileState(fileId, {
           path: file.path,
@@ -531,7 +536,7 @@ export const makeFileSync = (
       )
 
     // Transfer handler for the sync executor
-    const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
+    const transferHandler = (kind: TransferKind, fileId: string) =>
       Effect.gen(function*() {
         if (kind === "download") {
           yield* downloadFile(fileId)
@@ -587,12 +592,12 @@ export const makeFileSync = (
         }
       })
 
-    const readLocalHash = (path: string): Effect.Effect<{ exists: boolean; localHash: string }> =>
+    const readLocalHash = (path: string) =>
       Effect.gen(function*() {
         const exists = yield* localStorage.fileExists(path)
         if (!exists) return { exists: false, localHash: "" }
         const file = yield* localStorage.readFile(path)
-        const localHash = yield* hashFile(file)
+        const localHash = yield* doHashFile(file)
         return { exists: true, localHash }
       }).pipe(Effect.catchAll(() => Effect.succeed({ exists: false, localHash: "" })))
 
@@ -1026,7 +1031,7 @@ export const makeFileSync = (
         const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
 
         const id = crypto.randomUUID()
-        const contentHash = yield* hashFile(processedFile)
+        const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
         yield* localStorage.writeFile(path, processedFile)
@@ -1049,7 +1054,7 @@ export const makeFileSync = (
         // Apply preprocessor if configured for this file type
         const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
 
-        const contentHash = yield* hashFile(processedFile)
+        const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
         if (contentHash !== existingFile.contentHash) {
@@ -1206,5 +1211,5 @@ export const makeFileSync = (
 export const FileSyncLive = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Layer.Layer<FileSync, never, LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
+): Layer.Layer<FileSync, never, Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
   Layer.scoped(FileSync, makeFileSync(deps, config))

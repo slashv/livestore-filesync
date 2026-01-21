@@ -33,12 +33,20 @@
   },
   "peerDependencies": {
     "@effect/platform": "catalog:",
+    "@livestore-filesync/core": "workspace:*",
     "effect": "catalog:",
+    "expo-crypto": "^15.0.0",
     "expo-file-system": "^19.0.0",
     "expo-image-manipulator": "^13.0.0 || ^14.0.0"
   },
+  "peerDependenciesMeta": {
+    "expo-crypto": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@effect/platform": "catalog:",
+    "@livestore-filesync/core": "workspace:*",
     "effect": "catalog:",
     "@livestore/utils": "catalog:",
     "typescript": "^5.6.2",

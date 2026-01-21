@@ -17,6 +17,8 @@ import type { FileSyncConfig, FileSyncService } from "../services/file-sync/inde
 import {
   FileSync,
   FileSyncLive,
+  Hash,
+  HashServiceLive,
   LocalFileStorage,
   LocalFileStorageLive,
   makeS3SignerRemoteStorage,
@@ -87,6 +89,13 @@ export interface CreateFileSyncConfig {
 
   /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
   fileSystem: Layer.Layer<FileSystem>
+
+  /**
+   * HashService layer - optional.
+   * Defaults to Web Crypto API implementation (works in browsers, Node 20+, Electron).
+   * For React Native, pass HashServiceLive from @livestore-filesync/expo.
+   */
+  hashService?: Layer.Layer<Hash>
 
   /** Optional configuration */
   options?: {
@@ -217,7 +226,7 @@ export interface FileSyncInstance {
  * ```
  */
 export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
-  const { fileSystem, options = {}, remote, schema, store } = config
+  const { fileSystem, hashService, options = {}, remote, schema, store } = config
 
   // State
   let online = typeof navigator !== "undefined" ? navigator.onLine : true
@@ -269,12 +278,14 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const FileSystemLive = fileSystem
+  const HashLive = hashService ?? HashServiceLive
   const LocalFileStorageLayer = Layer.provide(FileSystemLive)(LocalFileStorageLive)
   const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
 
   const BaseLayer = Layer.mergeAll(
     Layer.scope,
     FileSystemLive,
+    HashLive,
     LocalFileStorageLayer,
     LocalFileStateManagerLayer,
     RemoteStorageLive

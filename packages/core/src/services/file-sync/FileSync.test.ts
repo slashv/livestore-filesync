@@ -2,6 +2,7 @@ import { Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore, delay, generateTestFiles } from "../../../test/helpers/livestore.js"
 import { getSyncStatus } from "../../api/sync-status.js"
+import { HashServiceLive } from "../../services/hash/index.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
 import { LocalFileStateManagerLive } from "../local-file-state/index.js"
@@ -36,7 +37,7 @@ const createRuntimeWithConfig = async (
 
   const remoteLayer = Layer.succeed(RemoteStorage, service)
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
-  const baseLayer = Layer.mergeAll(Layer.scope, LocalFileStorageMemory, localFileStateManagerLayer, remoteLayer)
+  const baseLayer = Layer.mergeAll(Layer.scope, HashServiceLive, LocalFileStorageMemory, localFileStateManagerLayer, remoteLayer)
 
   const executorConfig: SyncExecutorConfig = {
     maxConcurrentDownloads: options.executorConfig?.maxConcurrentDownloads ?? 1,

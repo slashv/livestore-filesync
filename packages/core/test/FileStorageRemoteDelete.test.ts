@@ -7,6 +7,7 @@ import { createFileSyncSchema } from "../src/schema/index.js"
 import {
   FileSync,
   FileSyncLive,
+  HashServiceLive,
   LocalFileStorageMemory,
   makeRemoteStorageMemoryWithRefs,
   RemoteStorage
@@ -48,6 +49,7 @@ describe("FileSync remote delete", () => {
     const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
     const BaseLayer = Layer.mergeAll(
       Layer.scope,
+      HashServiceLive,
       LocalFileStorageMemory,
       LocalFileStateManagerLayer,
       RemoteStorageLayer

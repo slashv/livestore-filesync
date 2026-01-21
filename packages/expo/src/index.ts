@@ -62,3 +62,6 @@ export {
 
 // File wrapper exports
 export { ExpoFile } from "./ExpoFile.js"
+
+// Hash service exports
+export { HashServiceLive } from "./HashServiceExpo.js"
