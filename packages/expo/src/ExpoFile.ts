@@ -7,31 +7,160 @@
  * @module
  */
 
+
 // Expo file system types (minimal interface we need)
 interface ExpoFsFile {
   readonly size: number | null
+  readonly uri: string
   bytes(): Promise<Uint8Array>
+  bytesSync(): Uint8Array
   text(): Promise<string>
-  write(content: string | Uint8Array): Promise<void>
+  textSync(): string
+  write(content: string | Uint8Array): void
+}
+
+interface ExpoFsDirectory {
+  readonly uri: string
+}
+
+// The File class constructor in expo-file-system v19+
+interface ExpoFsFileConstructor {
+  new(...args: unknown[]): ExpoFsFile
 }
 
 interface ExpoFsModule {
-  File: new(uri: string) => ExpoFsFile
-  Paths: {
-    cache: string
-    document: string
+  File?: ExpoFsFileConstructor
+  Paths?: {
+    cache: ExpoFsDirectory | string
+    document: ExpoFsDirectory | string
   }
 }
 
-let _fs: ExpoFsModule | null = null
+interface LegacyFsModule {
+  readAsStringAsync: (uri: string, options?: { encoding?: string }) => Promise<string>
+  writeAsStringAsync: (uri: string, contents: string, options?: { encoding?: string }) => Promise<void>
+  getInfoAsync: (uri: string) => Promise<{ size?: number | null }>
+  cacheDirectory: string | null
+  documentDirectory: string | null
+}
 
-const getFs = async (): Promise<ExpoFsModule> => {
+type ExpoFsModuleCandidate = ExpoFsModule | { default?: ExpoFsModule }
+type LegacyFsModuleCandidate = LegacyFsModule | { default?: LegacyFsModule }
+
+let _fs: ExpoFsModule | null = null
+let _legacyFs: LegacyFsModule | null = null
+let _loggedFs = false
+let _loggedLegacy = false
+
+const normalizeExpoFsModule = (module: ExpoFsModuleCandidate): ExpoFsModule | null => {
+  if ("File" in module && module.File) {
+    return module as ExpoFsModule
+  }
+
+  if ("default" in module && module.default?.File) {
+    return module.default
+  }
+
+  return null
+}
+
+const normalizeLegacyFsModule = (module: LegacyFsModuleCandidate): LegacyFsModule => {
+  if ("readAsStringAsync" in module) {
+    return module as LegacyFsModule
+  }
+
+  if ("default" in module && module.default && "readAsStringAsync" in module.default) {
+    return module.default
+  }
+
+  throw new Error("expo-file-system legacy module missing readAsStringAsync")
+}
+
+const logExpoFsModule = (module: ExpoFsModuleCandidate, resolved: ExpoFsModule | null) => {
+  if (_loggedFs) return
+  _loggedFs = true
+  const moduleKeys = Object.keys(module)
+  const defaultKeys = "default" in module && module.default ? Object.keys(module.default) : []
+  console.log("[ExpoFile] expo-file-system module keys:", moduleKeys)
+  if (defaultKeys.length > 0) {
+    console.log("[ExpoFile] expo-file-system default keys:", defaultKeys)
+  }
+  console.log("[ExpoFile] Using module variant:", resolved === module ? "named" : "default")
+}
+
+const logLegacyModule = (module: LegacyFsModuleCandidate, resolved: LegacyFsModule) => {
+  if (_loggedLegacy) return
+  _loggedLegacy = true
+  const moduleKeys = Object.keys(module)
+  const defaultKeys = "default" in module && module.default ? Object.keys(module.default) : []
+  console.log("[ExpoFile] expo-file-system legacy keys:", moduleKeys)
+  if (defaultKeys.length > 0) {
+    console.log("[ExpoFile] expo-file-system legacy default keys:", defaultKeys)
+  }
+  console.log("[ExpoFile] Using legacy module variant:", resolved === module ? "named" : "default")
+}
+
+const getFs = async (): Promise<ExpoFsModule | null> => {
   if (!_fs) {
     // Dynamic import to avoid bundling issues
-    // @ts-expect-error - expo-file-system types are provided by the consuming app
-    _fs = (await import("expo-file-system")) as ExpoFsModule
+    const module = (await import("expo-file-system")) as ExpoFsModuleCandidate
+    const resolved = normalizeExpoFsModule(module)
+    logExpoFsModule(module, resolved)
+    _fs = resolved
   }
   return _fs
+}
+
+const getLegacyFs = async (): Promise<LegacyFsModule> => {
+  if (!_legacyFs) {
+    // @ts-expect-error - legacy entrypoint has no bundled types
+    const module = (await import("expo-file-system/legacy")) as LegacyFsModuleCandidate
+    const resolved = normalizeLegacyFsModule(module)
+    logLegacyModule(module, resolved)
+    _legacyFs = resolved
+  }
+  return _legacyFs
+}
+
+const normalizeFileUri = (uri: string): string => {
+  if (!uri) return uri
+  if (uri.startsWith("file://")) return uri
+  if (uri.startsWith("file:/")) {
+    return `file://${uri.replace(/^file:\/*/, "")}`
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(uri)) return uri
+  if (uri.startsWith("/")) return `file://${uri}`
+  return uri
+}
+
+const decodeBase64 = (input: string): Uint8Array => {
+  const binString = atob(input)
+  const size = binString.length
+  const bytes = new Uint8Array(size)
+  for (let i = 0; i < size; i++) {
+    bytes[i] = binString.charCodeAt(i)
+  }
+  return bytes
+}
+
+/**
+ * Create an expo-file-system File instance from a URI
+ */
+const createFsFile = async (uri: string): Promise<ExpoFsFile> => {
+  const fs = await getFs()
+  if (!fs?.File) {
+    throw new Error("expo-file-system module missing File export")
+  }
+  const normalizedUri = normalizeFileUri(uri)
+  const file = new fs.File(normalizedUri)
+  if (!(file as ExpoFsFile).uri || (file as ExpoFsFile).uri !== normalizedUri) {
+    console.log("[ExpoFile] File constructed", {
+      input: uri,
+      normalized: normalizedUri,
+      constructedUri: (file as ExpoFsFile).uri
+    })
+  }
+  return file
 }
 
 /**
@@ -104,10 +233,27 @@ export class ExpoFile implements Blob {
       return this._size
     }
 
-    const fs = await getFs()
-    const file = new fs.File(this.uri)
-    this._size = file.size ?? 0
-    return this._size
+    try {
+      const file = await createFsFile(this.uri)
+      this._size = file.size ?? 0
+      return this._size
+    } catch (error) {
+      try {
+        const legacy = await getLegacyFs()
+        const normalizedUri = normalizeFileUri(this.uri)
+        const info = await legacy.getInfoAsync(normalizedUri)
+        this._size = info.size ?? 0
+        return this._size
+      } catch (legacyError) {
+        console.error("[ExpoFile] getSize() failed", {
+          uri: this.uri,
+          name: this.name,
+          error,
+          legacyError
+        })
+        return 0
+      }
+    }
   }
 
   /**
@@ -129,21 +275,47 @@ export class ExpoFile implements Blob {
       return this._cachedBytes as Uint8Array<ArrayBuffer>
     }
 
-    const fs = await getFs()
-    const file = new fs.File(this.uri)
-    const bytes = await file.bytes()
-    this._cachedBytes = bytes
-    this._size = bytes.length
-    return bytes as Uint8Array<ArrayBuffer>
+    try {
+      const file = await createFsFile(this.uri)
+      const bytes = await file.bytes()
+      this._cachedBytes = bytes
+      this._size = bytes.length
+      return bytes as Uint8Array<ArrayBuffer>
+    } catch (error) {
+      const fallback = await this.readBytesWithLegacy()
+      if (fallback) {
+        return fallback
+      }
+      console.error("[ExpoFile] bytes() failed", {
+        uri: this.uri,
+        name: this.name,
+        type: this.type,
+        error
+      })
+      throw error
+    }
   }
 
   /**
    * Read the file contents as text
    */
   async text(): Promise<string> {
-    const fs = await getFs()
-    const file = new fs.File(this.uri)
-    return file.text()
+    try {
+      const file = await createFsFile(this.uri)
+      return file.text()
+    } catch (error) {
+      const fallback = await this.readTextWithLegacy()
+      if (fallback !== null) {
+        return fallback
+      }
+      console.error("[ExpoFile] text() failed", {
+        uri: this.uri,
+        name: this.name,
+        type: this.type,
+        error
+      })
+      throw error
+    }
   }
 
   /**
@@ -182,6 +354,44 @@ export class ExpoFile implements Blob {
     this._cachedBytes = null
   }
 
+  private async readBytesWithLegacy(): Promise<Uint8Array<ArrayBuffer> | null> {
+    try {
+      const legacy = await getLegacyFs()
+      const normalizedUri = normalizeFileUri(this.uri)
+      console.warn("[ExpoFile] Falling back to legacy bytes()", { uri: normalizedUri })
+      const base64 = await legacy.readAsStringAsync(normalizedUri, { encoding: "base64" })
+      const bytes = decodeBase64(base64)
+      this._cachedBytes = bytes as Uint8Array<ArrayBuffer>
+      this._size = bytes.length
+      return bytes as Uint8Array<ArrayBuffer>
+    } catch (error) {
+      console.error("[ExpoFile] Legacy bytes() failed", {
+        uri: this.uri,
+        name: this.name,
+        type: this.type,
+        error
+      })
+      return null
+    }
+  }
+
+  private async readTextWithLegacy(): Promise<string | null> {
+    try {
+      const legacy = await getLegacyFs()
+      const normalizedUri = normalizeFileUri(this.uri)
+      console.warn("[ExpoFile] Falling back to legacy text()", { uri: normalizedUri })
+      return await legacy.readAsStringAsync(normalizedUri)
+    } catch (error) {
+      console.error("[ExpoFile] Legacy text() failed", {
+        uri: this.uri,
+        name: this.name,
+        type: this.type,
+        error
+      })
+      return null
+    }
+  }
+
   /**
    * Create an ExpoFile from file metadata
    */
@@ -189,8 +399,10 @@ export class ExpoFile implements Blob {
     uri: string,
     options: { name?: string; type?: string; lastModified?: number; size?: number } = {}
   ): ExpoFile {
+    const normalizedUri = normalizeFileUri(uri)
+
     // Extract name from URI if not provided
-    const name = options.name ?? uri.split("/").pop() ?? "file"
+    const name = options.name ?? normalizedUri.split("/").pop() ?? "file"
 
     // Try to infer type from extension if not provided
     let type = options.type
@@ -199,11 +411,16 @@ export class ExpoFile implements Blob {
       type = ext ? getMimeTypeFromExtension(ext) : "application/octet-stream"
     }
 
-    return new ExpoFile(uri, name, type, {
+    if (normalizedUri !== uri) {
+      console.log("[ExpoFile] Normalized uri", { original: uri, normalized: normalizedUri })
+    }
+
+    return new ExpoFile(normalizedUri, name, type, {
       ...(options.lastModified !== undefined ? { lastModified: options.lastModified } : {}),
       ...(options.size !== undefined ? { size: options.size } : {})
     })
   }
+
 
   /**
    * Create an ExpoFile from bytes (writes to cache directory)
@@ -215,15 +432,25 @@ export class ExpoFile implements Blob {
     options?: { cacheDir?: string }
   ): Promise<ExpoFile> {
     const fs = await getFs()
+    if (!fs?.Paths) {
+      throw new Error("expo-file-system module missing Paths export")
+    }
 
     // Generate a unique filename in the cache directory
-    const cacheDir = options?.cacheDir ?? fs.Paths.cache
+    const cacheDirUri = options?.cacheDir ?? (typeof fs.Paths.cache === "string" ? fs.Paths.cache : fs.Paths.cache.uri)
     const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${name}`
-    const uri = `${cacheDir}/${uniqueName}`
+    const uri = `${cacheDirUri}/${uniqueName}`
+
+    console.log("[ExpoFile] Writing bytes", {
+      cacheDirUri,
+      uri,
+      name,
+      size: bytes.length
+    })
 
     // Write the bytes to the file
-    const file = new fs.File(uri)
-    await file.write(bytes)
+    const file = await createFsFile(uri)
+    file.write(bytes)
 
     return new ExpoFile(uri, name, type, {
       lastModified: Date.now(),

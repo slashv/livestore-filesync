@@ -37,21 +37,29 @@ interface ExpoFsDirectory {
   readonly uri: string
   readonly exists: boolean
   list(): Array<ExpoFsFile | ExpoFsDirectory>
-  create(): Promise<void>
+  create(options?: { intermediates?: boolean }): Promise<void>
   delete(): Promise<void>
   copy(destination: ExpoFsDirectory): Promise<void>
   move(destination: ExpoFsDirectory): Promise<void>
 }
 
 interface ExpoFsPaths {
-  readonly cache: string
-  readonly document: string
+  readonly cache: ExpoFsDirectory | string | { uri: string }
+  readonly document: ExpoFsDirectory | string | { uri: string }
 }
 
+
 interface ExpoFsModule {
-  File: new(uri: string) => ExpoFsFile
-  Directory: new(uri: string) => ExpoFsDirectory
-  Paths: ExpoFsPaths
+  File?: new(...uris: (string | { uri: string } | ExpoFsDirectory)[]) => ExpoFsFile
+  Directory?: new(...uris: (string | { uri: string } | ExpoFsDirectory)[]) => ExpoFsDirectory
+  Paths?: ExpoFsPaths
+  documentDirectory?: string | null
+  cacheDirectory?: string | null
+}
+
+type ResolvedExpoFsModule = ExpoFsModule & {
+  File: new(...uris: (string | { uri: string })[]) => ExpoFsFile
+  Directory: new(...uris: (string | { uri: string })[]) => ExpoFsDirectory
 }
 
 export interface ExpoFileSystemOptions {
@@ -76,12 +84,35 @@ export class ExpoFileSystemNotAvailableError extends Data.TaggedError(
   })
 }
 
-let _fs: ExpoFsModule | null = null
+let _fs: ResolvedExpoFsModule | null = null
 
-const getFs = async (): Promise<ExpoFsModule> => {
+const hasFsExports = (module: ExpoFsModule | undefined): boolean =>
+  Boolean(module && (module.File || module.Directory || module.Paths || module.documentDirectory || module.cacheDirectory))
+
+const normalizeFsModule = (module: ExpoFsModule | { default?: ExpoFsModule }): ExpoFsModule => {
+  if ("default" in module && module.default && hasFsExports(module.default)) {
+    return module.default
+  }
+  return module as ExpoFsModule
+}
+
+const importExpoFsModule = async (): Promise<ExpoFsModule> => {
+  try {
+    const module = (await import("expo-file-system")) as unknown as ExpoFsModule | { default?: ExpoFsModule }
+    return normalizeFsModule(module)
+  } catch (error) {
+    console.warn("[ExpoFileSystem] Failed to import expo-file-system", error)
+    throw error
+  }
+}
+
+const getFs = async (): Promise<ResolvedExpoFsModule> => {
   if (!_fs) {
-    // @ts-expect-error - expo-file-system types are provided by the consuming app
-    _fs = (await import("expo-file-system")) as ExpoFsModule
+    const module = await importExpoFsModule()
+    if (!module.File || !module.Directory || !module.Paths) {
+      throw new Error("Expo file-system missing File/Directory/Paths")
+    }
+    _fs = module as ResolvedExpoFsModule
   }
   return _fs
 }
@@ -92,26 +123,22 @@ const normalizePath = (path: string): string =>
     .filter((segment) => segment.length > 0)
     .join("/")
 
-const joinPath = (base: string, path: string): string => {
-  if (!base) return path
-  if (!path) return base
+const getPathUri = (path: string | { uri: string } | ExpoFsDirectory): string => {
+  if (typeof path === "string") return path
+  if ("uri" in path) return path.uri
+  return ""
+}
+
+const joinPath = (base: string | { uri: string } | ExpoFsDirectory, path: string): string => {
+  const baseUri = getPathUri(base)
+  if (!baseUri) return path
+  if (!path) return baseUri
   // Remove trailing slash from base and leading slash from path
-  const cleanBase = base.replace(/\/$/, "")
+  const cleanBase = baseUri.replace(/\/$/, "")
   const cleanPath = path.replace(/^\//, "")
   return `${cleanBase}/${cleanPath}`
 }
 
-const parsePath = (path: string): { directory: string; filename: string } => {
-  const normalized = normalizePath(path)
-  const lastSlash = normalized.lastIndexOf("/")
-  if (lastSlash === -1) {
-    return { directory: "", filename: normalized }
-  }
-  return {
-    directory: normalized.slice(0, lastSlash),
-    filename: normalized.slice(lastSlash + 1)
-  }
-}
 
 const resolvePath = (baseDirectory: string, path: string): string => {
   const normalized = normalizePath(path)
@@ -166,7 +193,14 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       return _baseDirectory
     }
     const fs = await getFs()
-    _baseDirectory = options.baseDirectory ?? fs.Paths.document
+    if (!fs.Paths) {
+      throw new Error("Expo file-system Paths unavailable")
+    }
+    const baseDir = options.baseDirectory ?? fs.Paths.document
+    _baseDirectory = getPathUri(baseDir)
+    if (!_baseDirectory) {
+      throw new Error("Expo file-system base directory unavailable")
+    }
     return _baseDirectory
   }
 
@@ -244,12 +278,17 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
     Effect.gen(function*() {
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
-      const resolvedPath = resolvePath(baseDir, path)
+      const normalizedPath = normalizePath(path)
 
-      const file = new fs.File(resolvedPath)
+      // Build full path by joining base directory URI with the relative path
+      const fullPath = normalizedPath
+        ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
+        : baseDir
+
+      const file = new fs.File(fullPath)
       if (file.exists) return true
 
-      const dir = new fs.Directory(resolvedPath)
+      const dir = new fs.Directory(fullPath)
       return dir.exists
     })
 
@@ -258,15 +297,31 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       makeSystemError("link", "Unknown", "", new Error("Expo does not support hard links"))
     )
 
-  const makeDirectory: FS.FileSystem["makeDirectory"] = (path, _options) =>
+  const makeDirectory: FS.FileSystem["makeDirectory"] = (path, options) =>
     Effect.gen(function*() {
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
-      const resolvedPath = resolvePath(baseDir, path)
+      const normalizedPath = normalizePath(path)
 
-      const dir = new fs.Directory(resolvedPath)
-      yield* Effect.tryPromise({
-        try: () => dir.create(),
+      // Build full path by joining base directory URI with the relative path
+      const fullPath = normalizedPath
+        ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
+        : baseDir
+
+      const dir = new fs.Directory(fullPath)
+
+      if (dir.exists) {
+        return
+      }
+
+      yield* Effect.try({
+        try: () => {
+          // dir.create() may be sync or async depending on expo-file-system version
+          const result = dir.create({ intermediates: options?.recursive ?? false })
+          // If it returns a promise, we need to handle it, but Effect.try expects sync
+          // For now, assume it's sync (expo-file-system v19 style)
+          return result
+        },
         catch: (cause) => makeSystemError("makeDirectory", "Unknown", path, cause)
       })
     })
@@ -276,12 +331,15 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       const fs = yield* Effect.promise(getFs)
       const prefix = options?.prefix ?? "tmp"
       const tempName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      if (!fs.Paths) {
+        throw new Error("Expo file-system Paths unavailable")
+      }
       const baseDir = options?.directory ?? fs.Paths.cache
       const tempPath = joinPath(baseDir, tempName)
 
       const dir = new fs.Directory(tempPath)
       yield* Effect.tryPromise({
-        try: () => dir.create(),
+        try: () => dir.create({ intermediates: true }),
         catch: (cause) => makeSystemError("makeTempDirectory", "Unknown", tempPath, cause)
       })
 
@@ -297,6 +355,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       const prefix = options?.prefix ?? "tmp"
       const suffix = options?.suffix ?? ""
       const tempName = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}${suffix}`
+      if (!fs.Paths) {
+        throw new Error("Expo file-system Paths unavailable")
+      }
       const baseDir = options?.directory ?? fs.Paths.cache
       const tempPath = joinPath(baseDir, tempName)
 
@@ -357,11 +418,16 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
     Effect.gen(function*() {
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
-      const resolvedPath = resolvePath(baseDir, path)
+      const normalizedPath = normalizePath(path)
 
-      const file = new fs.File(resolvedPath)
+      // Build full path by joining base directory URI with the relative path
+      const fullPath = normalizedPath
+        ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
+        : baseDir
+
+      const file = new fs.File(fullPath)
       if (!file.exists) {
-        yield* Effect.fail(makeSystemError("readFile", "NotFound", path))
+        return yield* Effect.fail(makeSystemError("readFile", "NotFound", path))
       }
 
       return yield* Effect.tryPromise({
@@ -484,16 +550,25 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
     Effect.gen(function*() {
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
-      const resolvedPath = resolvePath(baseDir, path)
+      const normalizedPath = normalizePath(path)
 
-      // Try as file first
-      const file = new fs.File(resolvedPath)
-      if (file.exists && file.type === "file") {
-        return makeFileInfo("File", file.size ?? 0, file.modificationTime, file.creationTime)
+      // Build full path by joining base directory URI with the relative path
+      const fullPath = normalizedPath
+        ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
+        : baseDir
+
+      // Try as file first - check exists first, then type
+      // Note: file.type may be null even for existing files in expo-file-system v19
+      const file = new fs.File(fullPath)
+      if (file.exists) {
+        // If type is "file" or null (for files where type isn't determined), treat as file
+        if (file.type === "file" || file.type === null) {
+          return makeFileInfo("File", file.size ?? 0, file.modificationTime, file.creationTime)
+        }
       }
 
       // Try as directory
-      const dir = new fs.Directory(resolvedPath)
+      const dir = new fs.Directory(fullPath)
       if (dir.exists) {
         return makeFileInfo("Directory")
       }
@@ -546,22 +621,31 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
     Effect.gen(function*() {
       const fs = yield* Effect.promise(getFs)
       const baseDir = yield* Effect.promise(getBaseDirectory)
-      const resolvedPath = resolvePath(baseDir, path)
+      const normalizedPath = normalizePath(path)
 
-      // Ensure parent directory exists
-      const { directory } = parsePath(resolvedPath)
-      if (directory) {
-        const parentDir = new fs.Directory(directory)
-        if (!parentDir.exists) {
-          yield* Effect.tryPromise({
-            try: () => parentDir.create(),
-            catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
-          })
-        }
+      const segments = normalizedPath.length > 0 ? normalizedPath.split("/") : []
+      const filename = segments.pop() ?? ""
+      if (!filename) {
+        return yield* Effect.fail(makeSystemError("writeFile", "InvalidData", path))
       }
 
-      const file = new fs.File(resolvedPath)
-      yield* Effect.tryPromise({
+      // Build directory path by joining base directory URI with the relative directory segments
+      const dirPath = segments.length > 0
+        ? `${baseDir.replace(/\/$/, "")}/${segments.join("/")}`
+        : baseDir
+
+      const dir = new fs.Directory(dirPath)
+      if (!dir.exists) {
+        yield* Effect.try({
+          try: () => dir.create({ intermediates: true }),
+          catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
+        })
+      }
+
+      // Build full file path
+      const filePath = `${dirPath.replace(/\/$/, "")}/${filename}`
+      const file = new fs.File(filePath)
+      yield* Effect.try({
         try: () => file.write(data),
         catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
       })

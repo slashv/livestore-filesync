@@ -313,6 +313,23 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
 
     const getFileUrl = (path: string): Effect.Effect<string, FileNotFoundError | StorageError> =>
       Effect.gen(function*() {
+        // In React Native, URL.createObjectURL isn't fully functional
+        // Detect React Native by checking for navigator.product or lack of document
+        const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative"
+        const isNonBrowser = typeof document === "undefined"
+        
+        if (isReactNative || isNonBrowser) {
+          const realFilePath = yield* fs.realPath(path).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: `Failed to resolve real path: ${path}`,
+                  cause: error
+                })
+            )
+          )
+          return realFilePath
+        }
         const file = yield* readFile(path)
         return URL.createObjectURL(file)
       })

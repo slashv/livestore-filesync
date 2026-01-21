@@ -34,12 +34,13 @@
   "peerDependencies": {
     "@effect/platform": "catalog:",
     "effect": "catalog:",
-    "expo-file-system": "^18.0.0 || ^19.0.0",
+    "expo-file-system": "^19.0.0",
     "expo-image-manipulator": "^13.0.0 || ^14.0.0"
   },
   "devDependencies": {
     "@effect/platform": "catalog:",
     "effect": "catalog:",
+    "@livestore/utils": "catalog:",
     "typescript": "^5.6.2",
     "vitest": "^3.2.0"
   }
