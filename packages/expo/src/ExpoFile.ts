@@ -7,7 +7,6 @@
  * @module
  */
 
-
 // Expo file system types (minimal interface we need)
 interface ExpoFsFile {
   readonly size: number | null
@@ -25,7 +24,7 @@ interface ExpoFsDirectory {
 
 // The File class constructor in expo-file-system v19+
 interface ExpoFsFileConstructor {
-  new(...args: unknown[]): ExpoFsFile
+  new(...args: Array<unknown>): ExpoFsFile
 }
 
 interface ExpoFsModule {
@@ -354,7 +353,6 @@ export class ExpoFile implements Blob {
       ...(options.size !== undefined ? { size: options.size } : {})
     })
   }
-
 
   /**
    * Create an ExpoFile from bytes (writes to cache directory)

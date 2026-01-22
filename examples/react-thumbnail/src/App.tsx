@@ -21,7 +21,7 @@ const adapter = makePersistedAdapter({
   sharedWorker: LiveStoreSharedWorker
 })
 
-const authToken = import.meta.env.VITE_AUTH_TOKEN
+const authToken = import.meta.env.VITE_AUTH_TOKEN as string
 
 const syncPayload = { authToken }
 

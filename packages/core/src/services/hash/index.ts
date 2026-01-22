@@ -4,4 +4,4 @@
  * @module
  */
 
-export { Hash, HashServiceLive, type HashService } from "./HashService.js"
+export { Hash, type HashService, HashServiceLive } from "./HashService.js"

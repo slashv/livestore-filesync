@@ -334,7 +334,7 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
         // Detect React Native by checking for navigator.product or lack of document
         const isReactNative = typeof navigator !== "undefined" && navigator.product === "ReactNative"
         const isNonBrowser = typeof document === "undefined"
-        
+
         if (isReactNative || isNonBrowser) {
           const realFilePath = yield* fs.realPath(path).pipe(
             Effect.mapError(

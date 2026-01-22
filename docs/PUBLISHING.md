@@ -10,6 +10,8 @@ This guide covers versioning and publishing the `@livestore-filesync/*` packages
 | `packages/opfs` | `@livestore-filesync/opfs` | OPFS filesystem adapter |
 | `packages/r2` | `@livestore-filesync/r2` | Cloudflare R2 handler |
 | `packages/s3-signer` | `@livestore-filesync/s3-signer` | S3 signing utilities |
+| `packages/image` | `@livestore-filesync/image` | Image preprocessing and thumbnail generation |
+| `packages/expo` | `@livestore-filesync/expo` | Expo filesystem and image processing adapters |
 
 ## Prerequisites
 
@@ -271,6 +273,8 @@ Expected package sizes after publish:
 | `@livestore-filesync/opfs` | ~9 kB | ~42 kB | ~10 |
 | `@livestore-filesync/r2` | ~10 kB | ~57 kB | ~30 |
 | `@livestore-filesync/s3-signer` | ~8 kB | ~31 kB | ~26 |
+| `@livestore-filesync/image` | ~50 kB | ~250 kB | ~50 |
+| `@livestore-filesync/expo` | ~20 kB | ~100 kB | ~15 |
 
 If sizes are significantly larger, check that test files and source directories are being excluded.
 

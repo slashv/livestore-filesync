@@ -16,7 +16,13 @@ const createRuntime = (
   config?: Partial<FileSyncConfig>
 ) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
-  const baseLayer = Layer.mergeAll(Layer.scope, HashServiceLive, LocalFileStorageMemory, localFileStateManagerLayer, RemoteStorageMemory)
+  const baseLayer = Layer.mergeAll(
+    Layer.scope,
+    HashServiceLive,
+    LocalFileStorageMemory,
+    localFileStateManagerLayer,
+    RemoteStorageMemory
+  )
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
       executorConfig: {
@@ -35,8 +41,7 @@ const createRuntime = (
 }
 
 // Helper to run hashFile with the HashService layer
-const runHashFile = (file: File) =>
-  Effect.runPromise(Effect.provide(hashFile(file), HashServiceLive))
+const runHashFile = (file: File) => Effect.runPromise(Effect.provide(hashFile(file), HashServiceLive))
 
 describe("FileSync - File operations", () => {
   it("saves files and records metadata", async () => {

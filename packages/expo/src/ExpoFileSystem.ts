@@ -48,18 +48,17 @@ interface ExpoFsPaths {
   readonly document: ExpoFsDirectory | string | { uri: string }
 }
 
-
 interface ExpoFsModule {
-  File?: new(...uris: (string | { uri: string } | ExpoFsDirectory)[]) => ExpoFsFile
-  Directory?: new(...uris: (string | { uri: string } | ExpoFsDirectory)[]) => ExpoFsDirectory
+  File?: new(...uris: Array<string | { uri: string } | ExpoFsDirectory>) => ExpoFsFile
+  Directory?: new(...uris: Array<string | { uri: string } | ExpoFsDirectory>) => ExpoFsDirectory
   Paths?: ExpoFsPaths
   documentDirectory?: string | null
   cacheDirectory?: string | null
 }
 
 type ResolvedExpoFsModule = ExpoFsModule & {
-  File: new(...uris: (string | { uri: string })[]) => ExpoFsFile
-  Directory: new(...uris: (string | { uri: string })[]) => ExpoFsDirectory
+  File: new(...uris: Array<string | { uri: string }>) => ExpoFsFile
+  Directory: new(...uris: Array<string | { uri: string }>) => ExpoFsDirectory
 }
 
 export interface ExpoFileSystemOptions {
@@ -87,7 +86,9 @@ export class ExpoFileSystemNotAvailableError extends Data.TaggedError(
 let _fs: ResolvedExpoFsModule | null = null
 
 const hasFsExports = (module: ExpoFsModule | undefined): boolean =>
-  Boolean(module && (module.File || module.Directory || module.Paths || module.documentDirectory || module.cacheDirectory))
+  Boolean(
+    module && (module.File || module.Directory || module.Paths || module.documentDirectory || module.cacheDirectory)
+  )
 
 const normalizeFsModule = (module: ExpoFsModule | { default?: ExpoFsModule }): ExpoFsModule => {
   if ("default" in module && module.default && hasFsExports(module.default)) {
@@ -138,7 +139,6 @@ const joinPath = (base: string | { uri: string } | ExpoFsDirectory, path: string
   const cleanPath = path.replace(/^\//, "")
   return `${cleanBase}/${cleanPath}`
 }
-
 
 const resolvePath = (baseDirectory: string, path: string): string => {
   const normalized = normalizePath(path)

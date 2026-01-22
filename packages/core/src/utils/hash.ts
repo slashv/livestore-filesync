@@ -10,7 +10,7 @@
  */
 
 import { Effect } from "effect"
-import { HashError } from "../errors/index.js"
+import type { HashError } from "../errors/index.js"
 import { Hash } from "../services/hash/index.js"
 
 /**

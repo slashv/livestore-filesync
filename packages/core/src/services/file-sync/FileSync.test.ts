@@ -37,7 +37,13 @@ const createRuntimeWithConfig = async (
 
   const remoteLayer = Layer.succeed(RemoteStorage, service)
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
-  const baseLayer = Layer.mergeAll(Layer.scope, HashServiceLive, LocalFileStorageMemory, localFileStateManagerLayer, remoteLayer)
+  const baseLayer = Layer.mergeAll(
+    Layer.scope,
+    HashServiceLive,
+    LocalFileStorageMemory,
+    localFileStateManagerLayer,
+    remoteLayer
+  )
 
   const executorConfig: SyncExecutorConfig = {
     maxConcurrentDownloads: options.executorConfig?.maxConcurrentDownloads ?? 1,

@@ -7,9 +7,9 @@
  * @module
  */
 
-import { Effect, Layer } from "effect"
 import { Hash, type HashService } from "@livestore-filesync/core"
 import { HashError } from "@livestore-filesync/core"
+import { Effect, Layer } from "effect"
 import { CryptoDigestAlgorithm, digest } from "expo-crypto"
 
 /**

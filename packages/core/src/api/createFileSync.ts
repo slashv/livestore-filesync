@@ -14,7 +14,7 @@ import type { FileSystem } from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
 import type { FileSyncConfig, FileSyncService } from "../services/file-sync/index.js"
-import {
+import type {
   FileSync,
   FileSyncLive,
   Hash,
@@ -23,7 +23,7 @@ import {
   LocalFileStorageLive,
   makeS3SignerRemoteStorage,
   RemoteStorage,
-  type RemoteStorageConfig
+  RemoteStorageConfig
 } from "../services/index.js"
 import { LocalFileStateManagerLive } from "../services/local-file-state/index.js"
 import { defaultConfig as defaultExecutorConfig } from "../services/sync-executor/index.js"

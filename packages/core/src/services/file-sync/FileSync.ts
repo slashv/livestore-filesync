@@ -231,7 +231,11 @@ export const defaultFileSyncConfig: FileSyncConfig = {
 export const makeFileSync = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Effect.Effect<FileSyncService, never, Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
+): Effect.Effect<
+  FileSyncService,
+  never,
+  Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope
+> =>
   Effect.gen(function*() {
     const hashService = yield* Hash
     const localStorage = yield* LocalFileStorage
