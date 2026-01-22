@@ -15,6 +15,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
+import { MemoryFile } from "../../utils/MemoryFile.js"
 
 /**
  * Configuration for remote storage
@@ -357,10 +358,10 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
       const contentLength = parseInt(response.headers.get("Content-Length") || "0", 10)
       const reader = response.body?.getReader()
 
-      // If no progress callback or no reader (streaming not supported), use simple blob()
+      // If no progress callback or no reader (streaming not supported), use arrayBuffer
       if (!options?.onProgress || !reader) {
-        const blob = yield* Effect.tryPromise({
-          try: async () => await response.blob(),
+        const arrayBuffer = yield* Effect.tryPromise({
+          try: async () => await response.arrayBuffer(),
           catch: (error) =>
             new DownloadError({
               message: `Failed to read response body`,
@@ -370,7 +371,10 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         })
 
         const filename = key.split("/").pop() || "file"
-        return new File([blob], filename, { type: blob.type })
+        const contentType = response.headers.get("Content-Type") || "application/octet-stream"
+        // Use MemoryFile for React Native compatibility
+        // React Native's File/Blob constructors don't properly support ArrayBuffer
+        return new MemoryFile(new Uint8Array(arrayBuffer), filename, contentType) as unknown as File
       }
 
       // Stream download with progress tracking
@@ -395,11 +399,19 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         options.onProgress({ loaded, total: contentLength })
       }
 
-      const blob = new Blob(chunks as Array<BlobPart>, {
-        type: response.headers.get("Content-Type") || "application/octet-stream"
-      })
+      // Concatenate chunks into a single Uint8Array
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      const data = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        data.set(chunk, offset)
+        offset += chunk.length
+      }
+
       const filename = key.split("/").pop() || "file"
-      return new File([blob], filename, { type: blob.type })
+      const contentType = response.headers.get("Content-Type") || "application/octet-stream"
+      // Use MemoryFile for React Native compatibility
+      return new MemoryFile(data, filename, contentType) as unknown as File
     })
 
   const getDownloadUrl = (key: string): Effect.Effect<string, DownloadError> =>

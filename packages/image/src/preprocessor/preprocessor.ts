@@ -6,7 +6,7 @@
  * @module
  */
 
-import type { FilePreprocessor } from "@livestore-filesync/core"
+import { type FilePreprocessor, MemoryFile } from "@livestore-filesync/core"
 
 import { createCanvasProcessor } from "../processor/canvas.js"
 import type { BufferImageProcessor } from "../processor/types.js"
@@ -235,7 +235,9 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
     const baseName = file.name.replace(/\.[^/.]+$/, "") // Remove extension
     const newFilename = `${baseName}.${getExtension(format)}`
 
-    return new File([result.data], newFilename, { type: result.mimeType })
+    // Use MemoryFile for React Native compatibility
+    // React Native's File/Blob constructors don't properly support ArrayBuffer
+    return new MemoryFile(new Uint8Array(result.data), newFilename, result.mimeType) as unknown as File
   }
 }
 
@@ -301,6 +303,8 @@ export function createResizeOnlyPreprocessor(
       keepIccProfile: true
     })
 
-    return new File([result.data], file.name, { type: file.type })
+    // Use MemoryFile for React Native compatibility
+    // React Native's File/Blob constructors don't properly support ArrayBuffer
+    return new MemoryFile(new Uint8Array(result.data), file.name, file.type) as unknown as File
   }
 }
