@@ -49,8 +49,6 @@ type LegacyFsModuleCandidate = LegacyFsModule | { default?: LegacyFsModule }
 
 let _fs: ExpoFsModule | null = null
 let _legacyFs: LegacyFsModule | null = null
-let _loggedFs = false
-let _loggedLegacy = false
 
 const normalizeExpoFsModule = (module: ExpoFsModuleCandidate): ExpoFsModule | null => {
   if ("File" in module && module.File) {
@@ -76,37 +74,11 @@ const normalizeLegacyFsModule = (module: LegacyFsModuleCandidate): LegacyFsModul
   throw new Error("expo-file-system legacy module missing readAsStringAsync")
 }
 
-const logExpoFsModule = (module: ExpoFsModuleCandidate, resolved: ExpoFsModule | null) => {
-  if (_loggedFs) return
-  _loggedFs = true
-  const moduleKeys = Object.keys(module)
-  const defaultKeys = "default" in module && module.default ? Object.keys(module.default) : []
-  console.log("[ExpoFile] expo-file-system module keys:", moduleKeys)
-  if (defaultKeys.length > 0) {
-    console.log("[ExpoFile] expo-file-system default keys:", defaultKeys)
-  }
-  console.log("[ExpoFile] Using module variant:", resolved === module ? "named" : "default")
-}
-
-const logLegacyModule = (module: LegacyFsModuleCandidate, resolved: LegacyFsModule) => {
-  if (_loggedLegacy) return
-  _loggedLegacy = true
-  const moduleKeys = Object.keys(module)
-  const defaultKeys = "default" in module && module.default ? Object.keys(module.default) : []
-  console.log("[ExpoFile] expo-file-system legacy keys:", moduleKeys)
-  if (defaultKeys.length > 0) {
-    console.log("[ExpoFile] expo-file-system legacy default keys:", defaultKeys)
-  }
-  console.log("[ExpoFile] Using legacy module variant:", resolved === module ? "named" : "default")
-}
-
 const getFs = async (): Promise<ExpoFsModule | null> => {
   if (!_fs) {
     // Dynamic import to avoid bundling issues
     const module = (await import("expo-file-system")) as ExpoFsModuleCandidate
-    const resolved = normalizeExpoFsModule(module)
-    logExpoFsModule(module, resolved)
-    _fs = resolved
+    _fs = normalizeExpoFsModule(module)
   }
   return _fs
 }
@@ -115,9 +87,7 @@ const getLegacyFs = async (): Promise<LegacyFsModule> => {
   if (!_legacyFs) {
     // @ts-expect-error - legacy entrypoint has no bundled types
     const module = (await import("expo-file-system/legacy")) as LegacyFsModuleCandidate
-    const resolved = normalizeLegacyFsModule(module)
-    logLegacyModule(module, resolved)
-    _legacyFs = resolved
+    _legacyFs = normalizeLegacyFsModule(module)
   }
   return _legacyFs
 }
@@ -152,15 +122,7 @@ const createFsFile = async (uri: string): Promise<ExpoFsFile> => {
     throw new Error("expo-file-system module missing File export")
   }
   const normalizedUri = normalizeFileUri(uri)
-  const file = new fs.File(normalizedUri)
-  if (!(file as ExpoFsFile).uri || (file as ExpoFsFile).uri !== normalizedUri) {
-    console.log("[ExpoFile] File constructed", {
-      input: uri,
-      normalized: normalizedUri,
-      constructedUri: (file as ExpoFsFile).uri
-    })
-  }
-  return file
+  return new fs.File(normalizedUri)
 }
 
 /**
@@ -282,16 +244,11 @@ export class ExpoFile implements Blob {
       this._size = bytes.length
       return bytes as Uint8Array<ArrayBuffer>
     } catch (error) {
+      // Try legacy API as fallback
       const fallback = await this.readBytesWithLegacy()
       if (fallback) {
         return fallback
       }
-      console.error("[ExpoFile] bytes() failed", {
-        uri: this.uri,
-        name: this.name,
-        type: this.type,
-        error
-      })
       throw error
     }
   }
@@ -304,16 +261,11 @@ export class ExpoFile implements Blob {
       const file = await createFsFile(this.uri)
       return file.text()
     } catch (error) {
+      // Try legacy API as fallback
       const fallback = await this.readTextWithLegacy()
       if (fallback !== null) {
         return fallback
       }
-      console.error("[ExpoFile] text() failed", {
-        uri: this.uri,
-        name: this.name,
-        type: this.type,
-        error
-      })
       throw error
     }
   }
@@ -358,19 +310,12 @@ export class ExpoFile implements Blob {
     try {
       const legacy = await getLegacyFs()
       const normalizedUri = normalizeFileUri(this.uri)
-      console.warn("[ExpoFile] Falling back to legacy bytes()", { uri: normalizedUri })
       const base64 = await legacy.readAsStringAsync(normalizedUri, { encoding: "base64" })
       const bytes = decodeBase64(base64)
       this._cachedBytes = bytes as Uint8Array<ArrayBuffer>
       this._size = bytes.length
       return bytes as Uint8Array<ArrayBuffer>
-    } catch (error) {
-      console.error("[ExpoFile] Legacy bytes() failed", {
-        uri: this.uri,
-        name: this.name,
-        type: this.type,
-        error
-      })
+    } catch {
       return null
     }
   }
@@ -379,15 +324,8 @@ export class ExpoFile implements Blob {
     try {
       const legacy = await getLegacyFs()
       const normalizedUri = normalizeFileUri(this.uri)
-      console.warn("[ExpoFile] Falling back to legacy text()", { uri: normalizedUri })
       return await legacy.readAsStringAsync(normalizedUri)
-    } catch (error) {
-      console.error("[ExpoFile] Legacy text() failed", {
-        uri: this.uri,
-        name: this.name,
-        type: this.type,
-        error
-      })
+    } catch {
       return null
     }
   }
@@ -409,10 +347,6 @@ export class ExpoFile implements Blob {
     if (!type) {
       const ext = name.split(".").pop()?.toLowerCase()
       type = ext ? getMimeTypeFromExtension(ext) : "application/octet-stream"
-    }
-
-    if (normalizedUri !== uri) {
-      console.log("[ExpoFile] Normalized uri", { original: uri, normalized: normalizedUri })
     }
 
     return new ExpoFile(normalizedUri, name, type, {
@@ -440,13 +374,6 @@ export class ExpoFile implements Blob {
     const cacheDirUri = options?.cacheDir ?? (typeof fs.Paths.cache === "string" ? fs.Paths.cache : fs.Paths.cache.uri)
     const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${name}`
     const uri = `${cacheDirUri}/${uniqueName}`
-
-    console.log("[ExpoFile] Writing bytes", {
-      cacheDirUri,
-      uri,
-      name,
-      size: bytes.length
-    })
 
     // Write the bytes to the file
     const file = await createFsFile(uri)

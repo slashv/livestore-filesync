@@ -237,12 +237,23 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
       // If no progress callback, use simple fetch
       if (!options.onProgress) {
+        // Convert file to ArrayBuffer to ensure React Native's fetch properly sends the bytes.
+        // Passing a File/Blob-like object directly doesn't work reliably in React Native.
+        const arrayBuffer = yield* Effect.tryPromise({
+          try: () => file.arrayBuffer(),
+          catch: (error) =>
+            new UploadError({
+              message: `Failed to read file bytes`,
+              cause: error
+            })
+        })
+
         const response = yield* Effect.tryPromise({
           try: async () => {
             const r = await fetch(signed.url, {
               method: signed.method,
               ...(signed.headers ? { headers: signed.headers } : {}),
-              body: file
+              body: arrayBuffer
             })
             return r
           },
@@ -266,6 +277,16 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
       }
 
       // Use XMLHttpRequest for upload progress tracking
+      // Convert file to ArrayBuffer for React Native compatibility
+      const xhrArrayBuffer = yield* Effect.tryPromise({
+        try: () => file.arrayBuffer(),
+        catch: (error) =>
+          new UploadError({
+            message: `Failed to read file bytes`,
+            cause: error
+          })
+      })
+
       const result = yield* Effect.tryPromise({
         try: () =>
           new Promise<{ etag?: string }>((resolve, reject) => {
@@ -293,7 +314,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             if (signed.headers) {
               Object.entries(signed.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
             }
-            xhr.send(file)
+            xhr.send(xhrArrayBuffer)
           }),
         catch: (error) =>
           new UploadError({

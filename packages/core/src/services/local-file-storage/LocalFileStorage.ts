@@ -195,7 +195,8 @@ const make = (): Effect.Effect<LocalFileStorageService, never, FileSystem> =>
             })
         })
 
-        yield* fs.writeFile(path, new Uint8Array(buffer)).pipe(
+        const data = new Uint8Array(buffer)
+        yield* fs.writeFile(path, data).pipe(
           Effect.mapError(
             (error) =>
               new StorageError({
