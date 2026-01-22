@@ -421,10 +421,11 @@ describe("RemoteStorage", () => {
           } as Response
         }
         if (String(url) === "https://s3.local/get-url") {
+          const content = new TextEncoder().encode("download")
           return {
             ok: true,
             headers: new Headers({ "Content-Type": "text/plain", "Content-Length": "8" }),
-            blob: async () => new Blob(["download"], { type: "text/plain" })
+            arrayBuffer: async () => content.buffer
           } as Response
         }
         return { ok: false, status: 404 } as Response

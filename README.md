@@ -1,16 +1,18 @@
 # Livestore-Filesync
 
-Local-first file sync for LiveStore apps. Files are stored locally first, then synced between clients via remote storage in the background.
+File sync for LiveStore apps. This missing piece for local-first apps that need to sync files.
+
+**[!]** This is still under active development and not yet fully tested or ready. Generally the sync functionality on web and desktop (electron) is in a functional state while the expo (mobile) and image packages are less mature.
 
 - **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
-- **Content-Addressable Storage (CAS)**: Files are named by their hash which avoids duplicated content and allows for automatic change detection.
+- **Background sync**: Files as synced in background by reacting to LiveStore events.
 
-- **Event-stream sync**: File transfers react to LiveStore file events with a shared cursor stored in `fileSyncCursor`.
-
-- **Effect Platform Filesystem**: Use any Effect Platform Filesystem or the bundled OPFS adapter for local filesystem.
+- **Cross platform support**: Web, desktop and mobile support through file system adapters based on the Effect Platform Filesystem interface.
 
 - **R2 and S3 remote storage**: Built in support for Cloudflare R2 and any S3 compatible remote storage service.
+
+- **Media type support**: An optional image package is available for pre-processing helpers and local thumbnail generation. Artchitecture supports extending to other media types.
 
 ## Packages
 
@@ -21,7 +23,7 @@ Local-first file sync for LiveStore apps. Files are stored locally first, then s
 | `@livestore-filesync/expo` | Expo/React Native filesystem and image processing adapters |
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
-| `@livestore-filesync/image` | Image preprocessing and thumbnail generation using wasm-vips |
+| `@livestore-filesync/image` | Image preprocessing and thumbnail generation |
 
 ## Install
 
@@ -79,11 +81,13 @@ const url = await resolveFileUrl(result.fileId)
 ```
 
 See `examples/` for complete implementations:
-- `examples/react-filesync` — React example using `resolveFileUrl()`
-- `examples/vue-filesync` — Vue example using `resolveFileUrl()`
+- `examples/react-filesync` — React example
+- `examples/vue-filesync` — Vue example
 - `examples/vue-thumbnail` — Vue example with image thumbnail generation (wasm-vips)
 - `examples/react-thumbnail` — React example with image thumbnails using the canvas processor (no WASM)
 - `examples/node-filesync` — Node.js usage
+
+**Note on examples**: I've been using examples to test out the implementation on different platforms and frameworks. The examples are also used to run the e2e tests against which makes them more complicated than they need to be for testing and debugging purposes. As the project matures the examples will probably migrate towards a few simpler examples and the e2e testing targets into seperate apps.
 
 ## Filesystem Adapters
 
@@ -106,83 +110,6 @@ initFileSync(store, { fileSystem: expoLayer(), ... })
 import { NodeFileSystem } from '@effect/platform-node'
 createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
-
-## File Preprocessors
-
-FileSync supports preprocessing files before they are saved. This is useful for:
-- Resizing images to reduce storage and bandwidth
-- Converting images to more efficient formats (WebP, JPEG)
-- Applying transformations based on file type
-
-### Basic Usage
-
-```typescript
-import { initFileSync, type PreprocessorMap } from '@livestore-filesync/core'
-import { layer as opfsLayer } from '@livestore-filesync/opfs'
-
-const preprocessors: PreprocessorMap = {
-  // Transform all images
-  'image/*': async (file) => {
-    // Your transformation logic
-    return transformedFile
-  },
-  // Or specific types
-  'image/png': async (file) => convertPngToJpeg(file)
-}
-
-initFileSync(store, {
-  fileSystem: opfsLayer(),
-  remote: { signerBaseUrl: '/api' },
-  options: { preprocessors }
-})
-```
-
-### Pattern Matching
-
-Preprocessor patterns support:
-- **Exact match**: `'image/png'` matches only PNG files
-- **Wildcard subtype**: `'image/*'` matches all image types
-- **Universal wildcard**: `'*'` or `'*/*'` matches any file
-
-Priority order: exact match > wildcard subtype > universal wildcard.
-
-### Image Preprocessing Package
-
-For image preprocessing, use the optional `@livestore-filesync/image` package:
-
-```bash
-pnpm add @livestore-filesync/image wasm-vips
-```
-
-```typescript
-import { createImagePreprocessor } from '@livestore-filesync/image/preprocessor'
-
-initFileSync(store, {
-  fileSystem: opfsLayer(),
-  remote: { signerBaseUrl: '/api' },
-  options: {
-    preprocessors: {
-      'image/*': createImagePreprocessor({
-        maxDimension: 1500,  // Max width/height in pixels
-        quality: 90,         // JPEG/WebP quality (1-100)
-        format: 'jpeg'       // Output format: 'jpeg', 'webp', or 'png'
-      })
-    }
-  }
-})
-```
-
-**Lightweight Canvas Alternative:** If you don't need the full power of wasm-vips (ICC profile preservation, lossless compression), you can use the canvas-based processor:
-
-```typescript
-createImagePreprocessor({
-  processor: 'canvas',  // No WASM required
-  maxDimension: 1500,
-  format: 'webp'
-})
-```
-
-See the [image package README](packages/image/README.md) and [image processing docs](docs/image-processing.md) for setup instructions and full documentation.
 
 ## Backend Storage
 
@@ -303,6 +230,83 @@ FileSync is designed to work correctly when multiple browser tabs are open to th
 - **Automatic failover**: If the leader tab closes, another tab automatically becomes leader
 
 No configuration required — this works automatically.
+
+## File Preprocessors
+
+FileSync supports preprocessing files before they are saved. This is useful for:
+- Resizing images to reduce storage and bandwidth
+- Converting images to more efficient formats (WebP, JPEG)
+- Applying transformations based on file type
+
+### Basic Usage
+
+```typescript
+import { initFileSync, type PreprocessorMap } from '@livestore-filesync/core'
+import { layer as opfsLayer } from '@livestore-filesync/opfs'
+
+const preprocessors: PreprocessorMap = {
+  // Transform all images
+  'image/*': async (file) => {
+    // Your transformation logic
+    return transformedFile
+  },
+  // Or specific types
+  'image/png': async (file) => convertPngToJpeg(file)
+}
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: { preprocessors }
+})
+```
+
+### Pattern Matching
+
+Preprocessor patterns support:
+- **Exact match**: `'image/png'` matches only PNG files
+- **Wildcard subtype**: `'image/*'` matches all image types
+- **Universal wildcard**: `'*'` or `'*/*'` matches any file
+
+Priority order: exact match > wildcard subtype > universal wildcard.
+
+### Image Preprocessing Package
+
+For image preprocessing, use the optional `@livestore-filesync/image` package:
+
+```bash
+pnpm add @livestore-filesync/image wasm-vips
+```
+
+```typescript
+import { createImagePreprocessor } from '@livestore-filesync/image/preprocessor'
+
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    preprocessors: {
+      'image/*': createImagePreprocessor({
+        maxDimension: 1500,  // Max width/height in pixels
+        quality: 90,         // JPEG/WebP quality (1-100)
+        format: 'jpeg'       // Output format: 'jpeg', 'webp', or 'png'
+      })
+    }
+  }
+})
+```
+
+**Lightweight Canvas Alternative:** If you don't need the full power of wasm-vips (ICC profile preservation, lossless compression), you can use the canvas-based processor:
+
+```typescript
+createImagePreprocessor({
+  processor: 'canvas',  // No WASM required
+  maxDimension: 1500,
+  format: 'webp'
+})
+```
+
+See the [image package README](packages/image/README.md) and [image processing docs](docs/image-processing.md) for setup instructions and full documentation.
 
 ## Image Thumbnails (Optional)
 
