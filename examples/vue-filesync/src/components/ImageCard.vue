@@ -118,7 +118,7 @@ watch(() => props.file.updatedAt, async () => {
           </tr>
           <tr>
             <td class="label">Local File: Hash</td>
-            <td>{{ localFile?.localHash }}</td>
+            <td data-testid="file-local-hash">{{ localFile?.localHash }}</td>
           </tr>
           <tr>
             <td class="label">Local File: Download</td>

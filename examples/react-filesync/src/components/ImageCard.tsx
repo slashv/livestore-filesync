@@ -106,7 +106,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
             </tr>
             <tr>
               <td className="label">Local File: Hash</td>
-              <td>{localFile?.localHash}</td>
+              <td data-testid="file-local-hash">{localFile?.localHash}</td>
             </tr>
             <tr>
               <td className="label">Local File: Download</td>

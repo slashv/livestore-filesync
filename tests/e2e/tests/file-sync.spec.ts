@@ -111,6 +111,108 @@ test.describe('File Sync', () => {
     await context2.close()
   })
 
+  test('should trigger download on receiving client when file is synced', async ({ browser }) => {
+    // This test verifies that when Browser A uploads a file:
+    // 1. Browser B receives the file metadata via LiveStore sync
+    // 2. Browser B displays the image (using remote URL) 
+    // 3. Browser B triggers a download to sync the file locally
+    // 4. Browser B's downloadStatus transitions to "done" and localHash gets set
+    //
+    // BUG: Currently, step 3 and 4 don't happen - the download is never triggered
+    
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+
+    // Create two separate browser contexts (simulates two different clients)
+    const context1 = await browser.newContext()
+    const context2 = await browser.newContext()
+
+    const page1 = await context1.newPage()
+    const page2 = await context2.newPage()
+
+    // Navigate both to the app with the same storeId
+    await page1.goto(url)
+    await page2.goto(url)
+
+    await waitForLiveStoreAndSync(page1)
+    await waitForLiveStoreAndSync(page2)
+
+    // Verify both start with empty state
+    await expect(page1.locator('[data-testid="empty-state"]')).toBeVisible()
+    await expect(page2.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // Upload a file in Browser 1
+    const testImage = createTestImage('blue')
+    await page1.locator('input[type="file"]').setInputFiles(testImage)
+
+    // Wait for upload to complete in Browser 1
+    await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await expect(page1.locator('[data-testid="file-upload-status"]')).toHaveText('done', { timeout: 15000 })
+    
+    // Get the content hash from Browser 1 for later comparison
+    const contentHash = await page1.locator('[data-testid="file-card"] table').evaluate((table) => {
+      const rows = table.querySelectorAll('tr')
+      for (const row of rows) {
+        const label = row.querySelector('td.label')?.textContent
+        if (label?.includes('File: Hash')) {
+          return row.querySelectorAll('td')[1]?.textContent?.trim() || ''
+        }
+      }
+      return ''
+    })
+    expect(contentHash).not.toBe('')
+    console.log('Content hash from Browser 1:', contentHash)
+
+    // Verify Browser 1 has the file locally
+    await expect(page1.locator('[data-testid="file-local-hash"]')).toHaveText(contentHash, { timeout: 5000 })
+
+    // ========================================
+    // Now verify Browser 2's behavior
+    // ========================================
+
+    // Browser 2: File card should appear (metadata synced via LiveStore)
+    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 15000 })
+    console.log('Browser 2: File card appeared (metadata synced)')
+
+    // Browser 2: canDisplay should be true (remoteKey is set, can display via remote URL)
+    await expect(page2.locator('[data-testid="file-can-display"]')).toHaveText('true', { timeout: 10000 })
+    console.log('Browser 2: canDisplay is true')
+
+    // Browser 2: Image should be visible (displayed via remote URL)
+    await waitForImageLoaded(page2.locator('[data-testid="file-image"]'), 15000)
+    console.log('Browser 2: Image loaded (via remote URL)')
+
+    // Browser 2: Verify remoteKey is set
+    const remoteKey = await page2.locator('[data-testid="file-remote-key"]').textContent()
+    expect(remoteKey?.trim()).not.toBe('')
+    console.log('Browser 2: remoteKey is set:', remoteKey)
+
+    // ========================================
+    // THE BUG: These assertions will fail
+    // ========================================
+    
+    // Browser 2: downloadStatus should transition to "done"
+    // This is the key assertion that will fail if the bug exists
+    console.log('Browser 2: Waiting for downloadStatus to become "done"...')
+    
+    // First, let's log what the current state is
+    const initialDownloadStatus = await page2.locator('[data-testid="file-download-status"]').textContent()
+    const initialLocalHash = await page2.locator('[data-testid="file-local-hash"]').textContent()
+    console.log('Browser 2 initial state - downloadStatus:', initialDownloadStatus, 'localHash:', initialLocalHash)
+
+    // Wait for download to complete (this should happen automatically)
+    await expect(page2.locator('[data-testid="file-download-status"]')).toHaveText('done', { timeout: 30000 })
+    console.log('Browser 2: downloadStatus is "done"')
+
+    // Browser 2: localHash should match the contentHash
+    await expect(page2.locator('[data-testid="file-local-hash"]')).toHaveText(contentHash, { timeout: 5000 })
+    console.log('Browser 2: localHash matches contentHash')
+
+    // Cleanup
+    await context1.close()
+    await context2.close()
+  })
+
   test('should sync edited images across browsers', async ({ browser }) => {
     const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
