@@ -868,11 +868,6 @@ export const makeFileSync = (
           since: resolveCursor(storedCursor),
           filter: ["v1.FileCreated", "v1.FileUpdated", "v1.FileDeleted"]
         }).pipe(
-          Stream.tap((event) =>
-            Effect.gen(function*() {
-              yield* Effect.logDebug("[FileSync] Event", { event })
-            })
-          ),
           Stream.tapError((error) =>
             Effect.gen(function*() {
               const attempt = yield* Ref.updateAndGet(attemptRef, (n) => n + 1)
