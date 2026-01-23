@@ -14,15 +14,17 @@ import type { FileSystem } from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
 import type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
 import type { FileSyncConfig, FileSyncService } from "../services/file-sync/index.js"
-import type {
+import {
   FileSync,
   FileSyncLive,
-  Hash,
   HashServiceLive,
   LocalFileStorage,
   LocalFileStorageLive,
   makeS3SignerRemoteStorage,
-  RemoteStorage,
+  RemoteStorage
+} from "../services/index.js"
+import type {
+  Hash,
   RemoteStorageConfig
 } from "../services/index.js"
 import { LocalFileStateManagerLive } from "../services/local-file-state/index.js"
