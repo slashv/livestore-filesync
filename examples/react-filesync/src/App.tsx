@@ -12,7 +12,7 @@ import { schema, SyncPayload } from "./livestore/schema.ts"
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
-const storeId = urlParams.get("storeId") || "react_filesync_store_2"
+const storeId = urlParams.get("storeId") || "react_filesync_store_4"
 
 const adapter = makePersistedAdapter({
   storage: { type: "opfs" },

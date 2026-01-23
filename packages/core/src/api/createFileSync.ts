@@ -447,7 +447,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const triggerSync = () => {
     void (async () => {
       const fileSync = await getFileSyncService()
-      await runEffect(fileSync.syncNow())
+      await runEffect(Effect.scoped(fileSync.syncNow()))
     })()
   }
 
