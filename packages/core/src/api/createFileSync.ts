@@ -23,10 +23,7 @@ import {
   makeS3SignerRemoteStorage,
   RemoteStorage
 } from "../services/index.js"
-import type {
-  Hash,
-  RemoteStorageConfig
-} from "../services/index.js"
+import type { Hash, RemoteStorageConfig } from "../services/index.js"
 import { LocalFileStateManagerLive } from "../services/local-file-state/index.js"
 import { defaultConfig as defaultExecutorConfig } from "../services/sync-executor/index.js"
 import type {

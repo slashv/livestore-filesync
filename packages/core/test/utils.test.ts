@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
+import type { Hash } from "../src/services/hash/HashService.js"
 import { HashServiceLive } from "../src/services/hash/index.js"
 import {
   extractHashFromPath,
@@ -88,7 +89,7 @@ describe("hash utilities", () => {
   // Note: hash utilities use Web Crypto API which requires browser/Node 20+
   // These tests verify the Effect structure works correctly
 
-  const runWithHash = <A, E>(effect: Effect.Effect<A, E, import("../src/services/hash/index.js").Hash>) =>
+  const runWithHash = <A, E>(effect: Effect.Effect<A, E, Hash>) =>
     Effect.runPromise(Effect.provide(effect, HashServiceLive))
 
   it("should hash a file to a hex string", async () => {
