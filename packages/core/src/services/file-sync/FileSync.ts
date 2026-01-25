@@ -1071,8 +1071,6 @@ export const makeFileSync = (
           lastSyncError: ""
         })
 
-        console.log(`[FileSync] Calling executor.enqueueUpload for file: ${fileId}`)
-        yield* executor.enqueueUpload(fileId)
       })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>

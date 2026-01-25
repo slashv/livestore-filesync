@@ -152,7 +152,7 @@ Text diagram (arrows show the main direction of calls):
 ```
 
 Notes:
-- `FileSync` is the primary entry point for CRUD; it always writes locally first and then queues sync.
+- `FileSync` is the primary entry point for CRUD; it writes locally first and the leader event stream queues sync.
 - `FileSync` handles background uploads/downloads and keeps metadata in the LiveStore tables.
 - `LocalFileStorage` is the only layer that touches the filesystem adapter directly.
 - `RemoteStorage` is the only layer that knows about the remote backend API.

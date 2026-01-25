@@ -17,7 +17,7 @@ This document summarizes the event-stream refactor that replaces the previous re
 
 ## Event handling rules
 
-- **FileCreated**: If the local file exists, set local state and enqueue upload.
+- **FileCreated**: If the local file exists, set local state and enqueue upload (event stream is the only automatic trigger).
 - **FileUpdated**:
   - If local file missing and `remoteKey` exists → queue download.
   - If local hash mismatches and `remoteKey` exists → queue download.

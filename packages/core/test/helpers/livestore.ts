@@ -88,3 +88,37 @@ export function generateTestFiles(
  * Simple delay helper for tests
  */
 export const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+interface WaitForOptions {
+  timeoutMs?: number
+  intervalMs?: number
+  message?: string
+}
+
+export async function waitFor<T, S extends T>(
+  check: () => Promise<T> | T,
+  predicate: (value: T) => value is S,
+  options?: WaitForOptions
+): Promise<S>
+export async function waitFor<T>(
+  check: () => Promise<T> | T,
+  predicate: (value: T) => boolean,
+  options?: WaitForOptions
+): Promise<T>
+export async function waitFor<T>(
+  check: () => Promise<T> | T,
+  predicate: (value: T) => boolean,
+  options: WaitForOptions = {}
+): Promise<T> {
+  const { timeoutMs = 2000, intervalMs = 25, message = "Timed out waiting for condition" } = options
+  const start = Date.now()
+
+  while (true) {
+    const value = await check()
+    if (predicate(value)) return value
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(message)
+    }
+    await delay(intervalMs)
+  }
+}

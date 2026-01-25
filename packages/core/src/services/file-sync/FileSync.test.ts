@@ -1,6 +1,6 @@
 import { Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import { createTestStore, delay, generateTestFiles } from "../../../test/helpers/livestore.js"
+import { createTestStore, delay, generateTestFiles, waitFor } from "../../../test/helpers/livestore.js"
 import { getSyncStatus } from "../../api/sync-status.js"
 import { HashServiceLive } from "../../services/hash/index.js"
 import { makeStoredPath } from "../../utils/index.js"
@@ -320,15 +320,20 @@ describe("FileSync - Transfer Progress Events", () => {
       // Save a file
       const files = generateTestFiles(1)
       const result = await runtime.runPromise(fileSync.saveFile(files[0]))
+      await runtime.runPromise(fileSync.syncNow())
 
       // Wait for upload to complete
       await delay(400)
 
       // Should have received progress events
-      const fileProgressEvents = progressEvents.filter(
-        (e) => e.fileId === result.fileId && e.type === "upload:progress"
+      const fileProgressEvents = await waitFor(
+        () => progressEvents.filter((e) => e.fileId === result.fileId && e.type === "upload:progress"),
+        (events): events is Array<(typeof progressEvents)[number]> => events.length > 0,
+        {
+          timeoutMs: 1500,
+          message: "Expected upload progress events"
+        }
       )
-      expect(fileProgressEvents.length).toBeGreaterThan(0)
 
       // Each progress event should have valid loaded/total values
       for (const event of fileProgressEvents) {
@@ -491,16 +496,27 @@ describe("FileSync - Transfer Progress Events", () => {
 
       const files = generateTestFiles(1)
       const result = await runtime.runPromise(fileSync.saveFile(files[0]))
+      await runtime.runPromise(fileSync.syncNow())
 
-      await delay(300)
+      const progress = await waitFor(
+        () => capturedProgress,
+        (value): value is NonNullable<typeof value> => value !== null,
+        {
+          timeoutMs: 1500,
+          message: "Expected upload progress event"
+        }
+      )
+
+      if (!progress) {
+        throw new Error("Expected upload progress event")
+      }
 
       // Verify captured progress has correct structure
-      expect(capturedProgress).not.toBeNull()
-      expect(capturedProgress!.kind).toBe("upload")
-      expect(capturedProgress!.fileId).toBe(result.fileId)
-      expect(capturedProgress!.status).toBe("inProgress")
-      expect(typeof capturedProgress!.loaded).toBe("number")
-      expect(typeof capturedProgress!.total).toBe("number")
+      expect(progress.kind).toBe("upload")
+      expect(progress.fileId).toBe(result.fileId)
+      expect(progress.status).toBe("inProgress")
+      expect(typeof progress.loaded).toBe("number")
+      expect(typeof progress.total).toBe("number")
     } finally {
       unsubscribe()
       await runtime.runPromise(fileSync.stop())
@@ -534,12 +550,20 @@ describe("FileSync - Multi-file upload sync status", () => {
       const results = await Promise.all(
         files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
+      await runtime.runPromise(fileSync.syncNow())
 
       // All 5 files should have been saved
       expect(results).toHaveLength(5)
 
-      // Get sync status
-      const state = await runtime.runPromise(fileSync.getLocalFilesState())
+      // Get sync status (wait for event stream to enqueue uploads)
+      const state = await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (value) => Object.keys(value).length === 5,
+        {
+          timeoutMs: 1500,
+          message: "Expected 5 files in local state"
+        }
+      )
       const status = getSyncStatus(state)
 
       // All 5 should be in some upload state (queued since we're offline)
@@ -634,12 +658,18 @@ describe("FileSync - Multi-file upload sync status", () => {
       const results = await Promise.all(
         files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
+      await runtime.runPromise(fileSync.syncNow())
 
       // Wait for first upload to start processing
       // The executor worker polls every 50-100ms, so we need to wait long enough
-      await delay(150)
-
-      const state1 = await runtime.runPromise(fileSync.getLocalFilesState())
+      const state1 = await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (value) => Object.keys(value).length === 3,
+        {
+          timeoutMs: 1500,
+          message: "Expected 3 files in local state"
+        }
+      )
       const status1 = getSyncStatus(state1)
 
       // With maxConcurrentUploads: 1 and 200ms delay, expect:
@@ -753,11 +783,17 @@ describe("FileSync - Multi-file upload sync status", () => {
       const results = await Promise.all(
         files.map((f) => runtime.runPromise(fileSync.saveFile(f)))
       )
+      await runtime.runPromise(fileSync.syncNow())
 
       // Wait for executor to pick up tasks
-      await delay(100)
-
-      const state = await runtime.runPromise(fileSync.getLocalFilesState())
+      const state = await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (value) => Object.keys(value).length === 5,
+        {
+          timeoutMs: 1500,
+          message: "Expected 5 files in local state"
+        }
+      )
       const status = getSyncStatus(state)
 
       // All 5 files should be tracked

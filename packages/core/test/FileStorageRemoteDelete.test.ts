@@ -94,6 +94,7 @@ describe("FileSync remote delete", () => {
       const result = await runtime.runPromise(fileSync.saveFile(file))
       targetFileId = result.fileId
 
+      await runtime.runPromise(fileSync.syncNow())
       await Effect.runPromise(Deferred.await(uploadStarted))
       await runtime.runPromise(fileSync.deleteFile(targetFileId))
 
