@@ -1,7 +1,9 @@
+import { EventSequenceNumber } from "@livestore/livestore"
 import { Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore, delay, generateTestFiles, waitFor } from "../../../test/helpers/livestore.js"
 import { getSyncStatus } from "../../api/sync-status.js"
+import { getClientSession } from "../../livestore/types.js"
 import { HashServiceLive } from "../../services/hash/index.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
@@ -206,7 +208,7 @@ describe("FileSync", () => {
     }
   })
 
-  it("persists the event cursor after batches", async () => {
+  it("sets the cursor to upstream head after bootstrap", async () => {
     const { deps, events, shutdown, store, tables } = await createTestStore()
     const { runtime } = await createRuntime(deps, { offline: true })
     const fileId = crypto.randomUUID()
@@ -241,7 +243,11 @@ describe("FileSync", () => {
       await delay(50)
 
       const cursorDoc = store.query(deps.schema.queryDb(tables.fileSyncCursor.get()))
-      expect(cursorDoc.lastEventSequence).not.toBe("")
+      const upstreamState = await runtime.runPromise(
+        getClientSession(store as typeof deps.store).leaderThread.syncState
+      )
+      const upstreamCursor = EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
+      expect(cursorDoc.lastEventSequence).toBe(upstreamCursor)
     } finally {
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))

@@ -110,7 +110,7 @@ export async function waitFor<T>(
   predicate: (value: T) => boolean,
   options: WaitForOptions = {}
 ): Promise<T> {
-  const { timeoutMs = 2000, intervalMs = 25, message = "Timed out waiting for condition" } = options
+  const { intervalMs = 25, message = "Timed out waiting for condition", timeoutMs = 2000 } = options
   const start = Date.now()
 
   while (true) {

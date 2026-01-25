@@ -349,6 +349,22 @@ export const makeFileSync = (
         return doc.lastEventSequence ?? ""
       })
 
+    const updateCursorFromUpstreamHead = (): Effect.Effect<string> =>
+      Effect.gen(function*() {
+        const storedCursor = yield* readCursor()
+        const upstreamState = yield* clientSession.leaderThread.syncState
+        const upstreamCursor = EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
+        yield* persistCursor(upstreamCursor)
+        yield* Ref.set(cursorRef, upstreamCursor)
+        if (storedCursor && storedCursor !== upstreamCursor) {
+          yield* Effect.logInfo("[FileSync] Overriding stored cursor after bootstrap", {
+            storedCursor,
+            upstreamCursor
+          })
+        }
+        return upstreamCursor
+      }).pipe(Effect.orDie)
+
     const resolveCursor = (sequence: string) =>
       sequence ? EventSequenceNumber.Client.fromString(sequence) : EventSequenceNumber.Client.ROOT
 
@@ -862,8 +878,7 @@ export const makeFileSync = (
         yield* recoverStaleTransfers()
         yield* bootstrapFromTables()
 
-        const storedCursor = yield* readCursor()
-        yield* Ref.set(cursorRef, storedCursor)
+        const storedCursor = yield* updateCursorFromUpstreamHead()
 
         // Stream recovery configuration
         const maxAttempts = config.maxStreamRecoveryAttempts ?? 5
@@ -1070,7 +1085,6 @@ export const makeFileSync = (
           uploadStatus: "queued",
           lastSyncError: ""
         })
-
       })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>

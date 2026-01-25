@@ -6,7 +6,7 @@ This document summarizes the event-stream refactor that replaces the previous re
 
 - **Stream-driven sync**: `FileSync` now consumes the LiveStore event stream filtered to file events and processes them in batches.
 - **Shared cursor**: A new client document, `fileSyncCursor`, stores the last processed event sequence so any leader tab can resume the stream.
-- **Bootstrap step**: On startup, the leader bootstraps file state from the `files` table before streaming events.
+- **Bootstrap step**: On startup, the leader bootstraps file state from the `files` table, then advances the cursor to the current upstream head before streaming new events.
 - **Immediate delete handling**: `v1.FileDeleted` events delete local files immediately and remove local state entries.
 - **Configuration cleanup**: `gcDelayMs` was removed since periodic cleanup is no longer used.
 
@@ -93,7 +93,7 @@ Event batch re-processing is safe due to:
 2. **Deduplicated queues**: `SyncExecutor` uses sets to track queued file IDs, preventing duplicate enqueues
 3. **Hash-based decisions**: Upload/download decisions are based on comparing `localHash` vs `contentHash` and checking `remoteKey` existence
 
-The cursor is only updated after all events in a batch are successfully processed. If processing fails, the cursor is not updated, allowing the batch to be re-processed on the next attempt.
+On leader startup, the cursor is set to the current upstream head after table bootstrap so historical events are skipped. The cursor is then updated after all events in a batch are successfully processed. If processing fails, the cursor is not updated, allowing the batch to be re-processed on the next attempt.
 
 ## Remaining tasks / follow-ups
 
