@@ -304,6 +304,14 @@ export interface InitThumbnailsConfig {
    * The files table from @livestore-filesync/core.
    */
   filesTable?: FilesTable
+
+  /**
+   * User ID for the current authenticated user.
+   * When provided, Thumbnails will automatically dispose and recreate the singleton
+   * if a different user ID is passed (e.g., after logout/login).
+   * This prevents stale state from persisting after user switch.
+   */
+  userId?: string
 }
 
 // ============================================
