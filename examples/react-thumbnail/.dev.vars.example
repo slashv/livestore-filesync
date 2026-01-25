@@ -1,0 +1,24 @@
+# Cloudflare Worker secrets (used by wrangler dev)
+# Copy this file to .dev.vars and set your own values
+
+# Auth token for the filesync signer API
+WORKER_AUTH_TOKEN=dev-token-change-in-production
+
+# =============================================================================
+# S3 Signer Configuration (Optional)
+# =============================================================================
+# If you want to use the S3 signer instead of the R2 adapter for higher
+# performance (direct-to-S3/R2 uploads), uncomment the variables below and
+# update the Worker code in src/cf-worker/index.ts.
+#
+# To get these credentials for Cloudflare R2:
+# 1. Go to Cloudflare Dashboard > R2 > Manage R2 API Tokens
+# 2. Create a token with read/write permissions for your bucket
+# 3. Copy the Access Key ID and Secret Access Key
+# 4. Your S3 endpoint is: https://<account-id>.r2.cloudflarestorage.com
+#
+# S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+# S3_REGION=auto
+# S3_BUCKET=livestore-filesync-dev
+# S3_ACCESS_KEY_ID=your-access-key-id
+# S3_SECRET_ACCESS_KEY=your-secret-access-key

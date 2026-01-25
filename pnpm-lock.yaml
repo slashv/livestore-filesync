@@ -208,6 +208,9 @@ importers:
       '@livestore-filesync/r2':
         specifier: workspace:*
         version: link:../../packages/r2
+      '@livestore-filesync/s3-signer':
+        specifier: workspace:*
+        version: link:../../packages/s3-signer
       '@livestore/adapter-web':
         specifier: 'catalog:'
         version: 0.4.0-dev.22(f1635e944b74b530f71e694298604d8c)
