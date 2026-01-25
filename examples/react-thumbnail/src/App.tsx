@@ -13,7 +13,7 @@ import { schema, SyncPayload } from "./livestore/schema.ts"
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
 // Bump default storeId when schema changes to avoid loading an incompatible persisted db in dev.
-const storeId = urlParams.get("storeId") || "react_thumbnail_store_v1"
+const storeId = urlParams.get("storeId") || "react_thumbnail_store_v2"
 
 const adapter = makePersistedAdapter({
   storage: { type: "opfs" },
@@ -48,7 +48,7 @@ export const App = () => (
     <FileSyncProvider
       authHeaders={getAuthHeaders}
       authToken={authToken}
-      thumbnails={{ workerUrl: thumbnailWorkerUrl }}
+      thumbnails={{ workerUrl: thumbnailWorkerUrl, sizes: { small: 256, medium: 512, large: 1024 }, format: "webp" }}
     >
       <div className="app-layout">
         <div className="main">

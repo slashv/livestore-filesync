@@ -1,10 +1,10 @@
-import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
-import { resolveThumbnailUrl } from "@livestore-filesync/image/thumbnails"
+import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
 import { useStore } from "@livestore/react"
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useMemo } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 import type { FileType } from "../types"
+import { FileSyncImage } from "./FileSyncImage.tsx"
 
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const store = useStore(reactStoreOptions)
@@ -14,37 +14,16 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
     file,
     localFileState?.localFiles ?? {}
   )
-  const { canDisplay, isUploading, localState: localFile } = displayState
+  const { canDisplay, localState: localFile } = displayState
 
-  // Thumbnail state from LiveStore client document
+  // Thumbnail state from LiveStore client document (for debug display)
   const [thumbnailStateDoc] = store.useClientDocument(tables.thumbnailState)
   const thumbnailState = thumbnailStateDoc?.files?.[file.id]
   const smallThumbnailStatus = useMemo(
     () => thumbnailState?.sizes?.["small"]?.status ?? "pending",
     [thumbnailState]
   )
-
-  const [fullSrc, setFullSrc] = useState<string | null>(null)
-  const [thumbnailSrc, setThumbnailSrc] = useState<string | null>(null)
-
-  // Resolve full image URL on mount and when file updates
-  useEffect(() => {
-    resolveFileUrl(file.id).then((url) => {
-      if (url) setFullSrc(url)
-    })
-  }, [file.id, file.updatedAt])
-
-  // Resolve thumbnail URL when thumbnail state changes to 'done'
-  useEffect(() => {
-    if (smallThumbnailStatus === "done") {
-      resolveThumbnailUrl(file.id, "small").then((url) => {
-        if (url) setThumbnailSrc(url)
-      })
-    }
-  }, [file.id, smallThumbnailStatus])
-
-  // Use thumbnail if available, fallback to full image
-  const displaySrc = thumbnailSrc || fullSrc
+  const hasThumbnail = smallThumbnailStatus === "done"
 
   const handleDelete = async () => {
     try {
@@ -67,26 +46,15 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   return (
     <div className="card" data-testid="file-card">
       <div className="image-container">
-        {canDisplay && displaySrc ?
-          (
-            <img
-              src={displaySrc}
-              alt={file.path}
-              className="image"
-              data-testid="file-image"
-            />
-          ) :
-          (
-            <div className="image-placeholder" data-testid="file-placeholder">
-              {isUploading ? "Uploading..." : "Waiting for file..."}
-            </div>
-          )}
-        {/* Thumbnail badge */}
-        {thumbnailSrc && (
-          <div className="thumbnail-badge" data-testid="thumbnail-badge">
-            Thumbnail
-          </div>
-        )}
+        <FileSyncImage
+          fileId={file.id}
+          fillMode="cover"
+          size="medium"
+          className="image"
+          alt={file.path}
+          showThumbnailBadge
+          data-testid="file-image"
+        />
       </div>
       <div className="info">
         <div className="header">
@@ -113,12 +81,8 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
         <table className="debug-table">
           <tbody>
             <tr>
-              <td className="label">Display src</td>
-              <td>{displaySrc ? "Set" : "Not set"}</td>
-            </tr>
-            <tr>
               <td className="label">Thumbnail URL</td>
-              <td data-testid="thumbnail-url">{thumbnailSrc ? "Generated" : "Not generated"}</td>
+              <td data-testid="thumbnail-url">{hasThumbnail ? "Generated" : "Not generated"}</td>
             </tr>
             <tr>
               <td className="label">Thumbnail Status</td>
