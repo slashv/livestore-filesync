@@ -412,6 +412,13 @@ export const makeFileSync = (
           return yield* Effect.fail(error)
         }
 
+        // Check if file was deleted - if so, clean up silently
+        if (file.deletedAt) {
+          yield* stateManager.removeFile(fileId)
+          yield* emit({ type: "download:complete", fileId })
+          return
+        }
+
         const downloadedFile = yield* remoteStorage.download(file.remoteKey, {
           onProgress: (progress) => {
             // Fire-and-forget progress event - don't block the download
@@ -445,6 +452,14 @@ export const makeFileSync = (
       }).pipe(
         Effect.catchAll((error) =>
           Effect.gen(function*() {
+            // Check if file was deleted during download - if so, clean up silently
+            const file = yield* getFile(fileId)
+            if (!file || file.deletedAt) {
+              yield* stateManager.removeFile(fileId)
+              // Don't emit error event since this is expected when file is deleted
+              return
+            }
+
             yield* stateManager.setTransferError(
               fileId,
               "download",
@@ -707,6 +722,9 @@ export const makeFileSync = (
         if (path) {
           yield* localStorage.deleteFile(path).pipe(Effect.ignore)
         }
+
+        // Cancel any pending download for this file
+        yield* executor.cancelDownload(payload.id)
 
         yield* stateManager.removeFile(payload.id)
       })

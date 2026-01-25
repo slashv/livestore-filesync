@@ -494,4 +494,131 @@ describe("SyncExecutor", () => {
       )
     })
   })
+
+  describe("cancelDownload", () => {
+    it("should skip cancelled downloads when dequeued", async () => {
+      const processed: Array<string> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("5 millis")
+                processed.push(`${kind}:${fileId}`)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.start()
+
+          // Enqueue multiple downloads
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueDownload("file2")
+          yield* executor.enqueueDownload("file3")
+
+          // Cancel file2
+          yield* executor.cancelDownload("file2")
+
+          // Resume processing
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          // file2 should not be processed
+          expect(processed).toContain("download:file1")
+          expect(processed).not.toContain("download:file2")
+          expect(processed).toContain("download:file3")
+        })
+      )
+    })
+
+    it("should remove cancelled file from queued count", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.sleep("50 millis"),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          yield* executor.pause()
+          yield* executor.start()
+
+          // Enqueue downloads
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueDownload("file2")
+
+          // Verify initial queued count
+          const beforeCancel = yield* executor.getQueuedCount()
+          expect(beforeCancel.downloads).toBe(2)
+
+          // Cancel file1
+          yield* executor.cancelDownload("file1")
+
+          // Verify queued count decreased
+          const afterCancel = yield* executor.getQueuedCount()
+          expect(afterCancel.downloads).toBe(1)
+
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+        })
+      )
+    })
+
+    it("should be a no-op for non-existent files", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.void,
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Cancel a file that was never enqueued - should not throw
+          yield* executor.cancelDownload("non-existent")
+
+          yield* executor.awaitIdle()
+        })
+      )
+    })
+
+    it("should skip cancelled downloads even when prioritized", async () => {
+      const processed: Array<string> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("5 millis")
+                processed.push(`${kind}:${fileId}`)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1 }
+          )
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.start()
+
+          // Enqueue and prioritize file1
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueDownload("file2")
+          yield* executor.prioritizeDownload("file1")
+
+          // Cancel file1 (now in both queues)
+          yield* executor.cancelDownload("file1")
+
+          // Resume processing
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          // file1 should not be processed (even though it was prioritized)
+          expect(processed).not.toContain("download:file1")
+          expect(processed).toContain("download:file2")
+        })
+      )
+    })
+  })
 })

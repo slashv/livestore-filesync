@@ -113,6 +113,13 @@ export interface SyncExecutorService {
   readonly prioritizeDownload: (fileId: string) => Effect.Effect<void>
 
   /**
+   * Cancel a pending download.
+   * Marks the file as cancelled so it will be skipped when dequeued.
+   * If already inflight, the download will continue but won't be retried on failure.
+   */
+  readonly cancelDownload: (fileId: string) => Effect.Effect<void>
+
+  /**
    * Pause processing (e.g., when going offline)
    */
   readonly pause: () => Effect.Effect<void>
@@ -194,6 +201,9 @@ export const makeSyncExecutor = (
     // Track processed downloads to skip duplicates when same file is in both queues
     const downloadProcessedSet = yield* Ref.make<Set<string>>(new Set())
 
+    // Track cancelled downloads to skip when dequeued (e.g., file was deleted)
+    const cancelledDownloadsSet = yield* Ref.make<Set<string>>(new Set())
+
     // Signal for idle waiting
     const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
 
@@ -218,9 +228,10 @@ export const makeSyncExecutor = (
         downloadQueueSize === 0 &&
         uploadQueueSize === 0
       ) {
-        // Clear processed set when idle to avoid unbounded memory growth
+        // Clear processed and cancelled sets when idle to avoid unbounded memory growth
         yield* Ref.set(downloadProcessedSet, new Set())
         yield* Ref.set(highPriorityDownloadQueuedSet, new Set())
+        yield* Ref.set(cancelledDownloadsSet, new Set())
 
         const maybeDeferred = yield* Ref.get(idleDeferred)
         if (Option.isSome(maybeDeferred)) {
@@ -342,9 +353,10 @@ export const makeSyncExecutor = (
           const maybeHighPriority = yield* Queue.poll(highPriorityDownloadQueue)
           if (Option.isSome(maybeHighPriority)) {
             const fileId = maybeHighPriority.value
-            // Check if already processed (could happen if file was in both queues)
+            // Check if already processed or cancelled (e.g., file was deleted)
             const processed = yield* Ref.get(downloadProcessedSet)
-            if (!processed.has(fileId)) {
+            const cancelled = yield* Ref.get(cancelledDownloadsSet)
+            if (!processed.has(fileId) && !cancelled.has(fileId)) {
               yield* Effect.fork(processTask("download", fileId))
             } else {
               // Item was skipped - check if we're idle now
@@ -357,9 +369,10 @@ export const makeSyncExecutor = (
           const maybeNormal = yield* Queue.poll(downloadQueue)
           if (Option.isSome(maybeNormal)) {
             const fileId = maybeNormal.value
-            // Check if already processed via high priority queue
+            // Check if already processed or cancelled via high priority queue
             const processed = yield* Ref.get(downloadProcessedSet)
-            if (!processed.has(fileId)) {
+            const cancelled = yield* Ref.get(cancelledDownloadsSet)
+            if (!processed.has(fileId) && !cancelled.has(fileId)) {
               yield* Effect.fork(processTask("download", fileId))
             } else {
               // Item was skipped - check if we're idle now
@@ -440,6 +453,31 @@ export const makeSyncExecutor = (
         // it will already be in the downloadProcessedSet by then.
       })
 
+    const cancelDownload = (fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        // Mark as cancelled so it will be skipped when dequeued
+        yield* Ref.update(cancelledDownloadsSet, (set) => {
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return newSet
+        })
+
+        // Remove from queued sets so queue counts are accurate
+        yield* Ref.update(downloadQueuedSet, (set) => {
+          const newSet = new Set(set)
+          newSet.delete(fileId)
+          return newSet
+        })
+        yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
+          const newSet = new Set(set)
+          newSet.delete(fileId)
+          return newSet
+        })
+
+        // Note: We can't remove from the actual Queue, but the worker will skip
+        // when it sees the fileId in cancelledDownloadsSet
+      })
+
     const pause = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: true }))
 
     const resume = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: false }))
@@ -500,6 +538,7 @@ export const makeSyncExecutor = (
       enqueueDownload,
       enqueueUpload,
       prioritizeDownload,
+      cancelDownload,
       pause,
       resume,
       isPaused,
