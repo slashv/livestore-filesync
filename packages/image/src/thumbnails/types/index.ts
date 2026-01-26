@@ -263,7 +263,7 @@ export interface InitThumbnailsConfig {
    * Worker constructor from Vite's ?worker import
    * Preferred over workerUrl for production builds
    */
-  worker?: new () => Worker
+  worker?: new() => Worker
 
   /**
    * Maximum concurrent thumbnail generations

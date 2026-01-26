@@ -94,7 +94,7 @@ export interface CreateThumbnailsConfig {
   /** URL to the thumbnail worker (use workerUrl OR worker, not both) */
   workerUrl?: URL | string
   /** Worker constructor from Vite's ?worker import (preferred for production builds) */
-  worker?: new () => Worker
+  worker?: new() => Worker
   sizes: ThumbnailSizes
   format?: ThumbnailFormat | undefined
   concurrency?: number | undefined
@@ -139,8 +139,8 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
     store,
     supportedMimeTypes = [...SUPPORTED_IMAGE_MIME_TYPES],
     tables,
-    workerUrl,
-    worker
+    worker,
+    workerUrl
   } = config
 
   // Resolve worker source - prefer worker constructor over URL

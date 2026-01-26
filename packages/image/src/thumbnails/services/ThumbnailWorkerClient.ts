@@ -88,7 +88,7 @@ const DEFAULT_TIMEOUT_MS = 60000 // 60 seconds
 /**
  * Worker source - either a URL/string or a Worker constructor
  */
-export type WorkerSource = URL | string | (new () => Worker)
+export type WorkerSource = URL | string | (new() => Worker)
 
 /**
  * Create the ThumbnailWorkerClient service
@@ -99,10 +99,9 @@ const make = (
 ): Effect.Effect<ThumbnailWorkerClientService, never, never> =>
   Effect.gen(function*() {
     // Create the worker - either from URL or from constructor
-    const worker =
-      typeof workerSource === "function"
-        ? new workerSource()
-        : new Worker(workerSource, { type: "module" })
+    const worker = typeof workerSource === "function"
+      ? new workerSource()
+      : new Worker(workerSource, { type: "module" })
 
     // Pending requests map
     const pendingRequestsRef = yield* Ref.make<Map<string, PendingRequest>>(new Map())
