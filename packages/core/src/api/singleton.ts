@@ -44,6 +44,8 @@ export interface InitFileSyncConfig {
     signerBaseUrl?: string
     headers?: Record<string, string>
     authToken?: string
+    /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
+    includeCredentials?: boolean
   }
   options?: CreateFileSyncConfig["options"]
   schema?: SchemaFallback
@@ -178,7 +180,8 @@ export const initFileSync = (
   const remote: CreateFileSyncConfig["remote"] = {
     signerBaseUrl: config.remote?.signerBaseUrl ?? DEFAULT_SIGNER_BASE_URL,
     ...(config.remote?.headers ? { headers: config.remote.headers } : {}),
-    ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {})
+    ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {}),
+    ...(config.remote?.includeCredentials ? { includeCredentials: config.remote.includeCredentials } : {})
   }
 
   singleton = createFileSync({

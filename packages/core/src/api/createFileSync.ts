@@ -84,6 +84,8 @@ export interface CreateFileSyncConfig {
     signerBaseUrl: string
     headers?: Record<string, string>
     authToken?: string
+    /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
+    includeCredentials?: boolean
   }
 
   /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
@@ -247,7 +249,8 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const remoteStorageConfig: RemoteStorageConfig = {
     signerBaseUrl: remote.signerBaseUrl,
     ...(remote.headers ? { headers: remote.headers } : {}),
-    ...(remote.authToken ? { authToken: remote.authToken } : {})
+    ...(remote.authToken ? { authToken: remote.authToken } : {}),
+    ...(remote.includeCredentials ? { includeCredentials: remote.includeCredentials } : {})
   }
 
   const RemoteStorageLive = Layer.succeed(

@@ -118,8 +118,8 @@ export const initThumbnails = (
     )
   }
 
-  if (!config.workerUrl) {
-    throw new Error("Thumbnails requires a workerUrl pointing to your thumbnail worker file.")
+  if (!config.workerUrl && !config.worker) {
+    throw new Error("Thumbnails requires either 'worker' (Worker constructor) or 'workerUrl' (URL/string)")
   }
 
   const tables = resolveSchema(store)
@@ -139,7 +139,8 @@ export const initThumbnails = (
     store,
     tables,
     fileSystem: config.fileSystem as Layer.Layer<FileSystem>,
-    workerUrl: config.workerUrl,
+    ...(config.worker ? { worker: config.worker } : {}),
+    ...(config.workerUrl ? { workerUrl: config.workerUrl } : {}),
     sizes: config.sizes,
     ...(config.format !== undefined ? { format: config.format } : {}),
     ...(config.concurrency !== undefined ? { concurrency: config.concurrency } : {}),

@@ -35,6 +35,13 @@ export interface RemoteStorageConfig {
    * Optional custom headers
    */
   readonly headers?: Record<string, string>
+
+  /**
+   * Whether to include credentials (cookies) in cross-origin requests.
+   * Required for cookie-based auth when the signer is on a different origin.
+   * @default false
+   */
+  readonly includeCredentials?: boolean
 }
 
 /**
@@ -177,6 +184,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     readonly expiresAt: string
   }
 
+  const fetchOptions = config.includeCredentials ? { credentials: "include" as const } : {}
+
   const signUpload = (params: {
     key: string
     contentType?: string
@@ -190,7 +199,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             "Content-Type": "application/json",
             ...makeHeaders()
           },
-          body: JSON.stringify(params)
+          body: JSON.stringify(params),
+          ...fetchOptions
         })
         if (!response.ok) throw new Error(`Signer upload signing failed: ${response.status}`)
         return (await response.json()) as SignUploadResponse
@@ -211,7 +221,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             "Content-Type": "application/json",
             ...makeHeaders()
           },
-          body: JSON.stringify({ key })
+          body: JSON.stringify({ key }),
+          ...fetchOptions
         })
 
         if (!response.ok) throw new Error(`Signer download signing failed: ${response.status}`)
@@ -426,7 +437,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             "Content-Type": "application/json",
             ...makeHeaders()
           },
-          body: JSON.stringify({ key })
+          body: JSON.stringify({ key }),
+          ...fetchOptions
         })
 
         if (!response.ok) {
@@ -446,7 +458,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
       try: async () => {
         const response = await fetch(signerUrl("/health"), {
           method: "GET",
-          headers: makeHeaders()
+          headers: makeHeaders(),
+          ...fetchOptions
         })
         return response.ok
       },

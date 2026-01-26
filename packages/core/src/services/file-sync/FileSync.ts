@@ -1204,6 +1204,32 @@ export const makeFileSync = (
         } else {
           yield* emit({ type: "offline" })
           yield* executor.pause()
+
+          // Reset inProgress transfers to queued since they can't complete while offline
+          yield* stateManager.atomicUpdate((state) => {
+            let hasChanges = false
+            const nextState = { ...state }
+            for (const [fileId, localFile] of Object.entries(nextState)) {
+              let updated = false
+              const updatedFile = { ...localFile }
+
+              if (localFile.uploadStatus === "inProgress") {
+                updatedFile.uploadStatus = "queued"
+                updated = true
+              }
+              if (localFile.downloadStatus === "inProgress") {
+                updatedFile.downloadStatus = "queued"
+                updated = true
+              }
+
+              if (updated) {
+                nextState[fileId] = updatedFile
+                hasChanges = true
+              }
+            }
+            return hasChanges ? nextState : state
+          })
+
           yield* startHealthCheckLoop()
         }
       })

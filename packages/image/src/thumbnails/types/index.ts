@@ -242,10 +242,28 @@ export interface InitThumbnailsConfig {
   format?: ThumbnailFormat
 
   /**
-   * URL to the thumbnail worker
+   * URL to the thumbnail worker, or a Worker constructor (for Vite's ?worker imports)
    * Apps create their own worker file that imports the package worker
+   *
+   * @example URL-based (works in dev, may have issues in production builds)
+   * ```typescript
+   * workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+   * ```
+   *
+   * @example Worker constructor (recommended for Vite projects)
+   * ```typescript
+   * import ThumbnailWorker from './thumbnail.worker?worker'
+   * // ...
+   * worker: ThumbnailWorker
+   * ```
    */
-  workerUrl: URL | string
+  workerUrl?: URL | string
+
+  /**
+   * Worker constructor from Vite's ?worker import
+   * Preferred over workerUrl for production builds
+   */
+  worker?: new () => Worker
 
   /**
    * Maximum concurrent thumbnail generations

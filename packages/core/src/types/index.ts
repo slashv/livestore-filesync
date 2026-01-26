@@ -283,10 +283,14 @@ export interface FileDisplayState {
   readonly hasLocalCopy: boolean
   /** True if file has been uploaded to remote storage */
   readonly isUploaded: boolean
-  /** True if upload is currently in progress or queued */
+  /** True if upload is actively in progress (status: "inProgress") */
   readonly isUploading: boolean
-  /** True if download is currently in progress or queued */
+  /** True if download is actively in progress (status: "inProgress") */
   readonly isDownloading: boolean
+  /** True if upload is queued waiting to start (status: "queued") */
+  readonly isUploadQueued: boolean
+  /** True if download is queued waiting to start (status: "queued") */
+  readonly isDownloadQueued: boolean
 }
 
 /**
@@ -325,10 +329,10 @@ export function getFileDisplayState(
   // This ensures we have the correct version of the file locally
   const hasLocalCopy = !!localState?.localHash && localState.localHash === file.contentHash
   const isUploaded = file.remoteKey !== ""
-  const isUploading = localState?.uploadStatus === "inProgress" ||
-    localState?.uploadStatus === "queued"
-  const isDownloading = localState?.downloadStatus === "inProgress" ||
-    localState?.downloadStatus === "queued"
+  const isUploading = localState?.uploadStatus === "inProgress"
+  const isDownloading = localState?.downloadStatus === "inProgress"
+  const isUploadQueued = localState?.uploadStatus === "queued"
+  const isDownloadQueued = localState?.downloadStatus === "queued"
 
   return {
     file,
@@ -337,6 +341,8 @@ export function getFileDisplayState(
     hasLocalCopy,
     isUploaded,
     isUploading,
-    isDownloading
+    isDownloading,
+    isUploadQueued,
+    isDownloadQueued
   }
 }
