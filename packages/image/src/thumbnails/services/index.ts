@@ -14,7 +14,8 @@ export {
   type GeneratedThumbnails,
   ThumbnailWorkerClient,
   ThumbnailWorkerClientLive,
-  type ThumbnailWorkerClientService
+  type ThumbnailWorkerClientService,
+  type WorkerSource
 } from "./ThumbnailWorkerClient.js"
 
 export {

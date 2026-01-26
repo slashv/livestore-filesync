@@ -86,15 +86,23 @@ interface PendingRequest {
 const DEFAULT_TIMEOUT_MS = 60000 // 60 seconds
 
 /**
+ * Worker source - either a URL/string or a Worker constructor
+ */
+export type WorkerSource = URL | string | (new () => Worker)
+
+/**
  * Create the ThumbnailWorkerClient service
  */
 const make = (
-  workerUrl: URL | string,
+  workerSource: WorkerSource,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
 ): Effect.Effect<ThumbnailWorkerClientService, never, never> =>
   Effect.gen(function*() {
-    // Create the worker
-    const worker = new Worker(workerUrl, { type: "module" })
+    // Create the worker - either from URL or from constructor
+    const worker =
+      typeof workerSource === "function"
+        ? new workerSource()
+        : new Worker(workerSource, { type: "module" })
 
     // Pending requests map
     const pendingRequestsRef = yield* Ref.make<Map<string, PendingRequest>>(new Map())
@@ -298,10 +306,10 @@ const make = (
 /**
  * Create a live layer for ThumbnailWorkerClient
  *
- * @param workerUrl - URL to the worker file
+ * @param workerSource - URL/string to the worker file, or a Worker constructor
  * @param timeoutMs - Timeout for requests in milliseconds (default: 60000)
  */
 export const ThumbnailWorkerClientLive = (
-  workerUrl: URL | string,
+  workerSource: WorkerSource,
   timeoutMs?: number
-): Layer.Layer<ThumbnailWorkerClient> => Layer.effect(ThumbnailWorkerClient, make(workerUrl, timeoutMs))
+): Layer.Layer<ThumbnailWorkerClient> => Layer.effect(ThumbnailWorkerClient, make(workerSource, timeoutMs))

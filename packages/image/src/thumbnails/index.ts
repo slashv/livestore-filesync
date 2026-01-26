@@ -94,3 +94,6 @@ export {
   startThumbnails,
   stopThumbnails
 } from "./api/singleton.js"
+
+// Worker setup - for creating custom worker entry points
+export { setupThumbnailWorker } from "./worker-core.js"
