@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import {
   createTestImage,
   createMultipleTestImages,
+  createMultipleUniqueTestImages,
+  createMultipleLargeTestImages,
   waitForLiveStore,
   waitForLiveStoreAndSync,
   waitForImageLoaded,
@@ -114,12 +116,12 @@ test.describe('File Sync', () => {
   test('should trigger download on receiving client when file is synced', async ({ browser }) => {
     // This test verifies that when Browser A uploads a file:
     // 1. Browser B receives the file metadata via LiveStore sync
-    // 2. Browser B displays the image (using remote URL) 
+    // 2. Browser B displays the image (using remote URL)
     // 3. Browser B triggers a download to sync the file locally
     // 4. Browser B's downloadStatus transitions to "done" and localHash gets set
     //
     // BUG: Currently, step 3 and 4 don't happen - the download is never triggered
-    
+
     const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
 
@@ -148,7 +150,7 @@ test.describe('File Sync', () => {
     // Wait for upload to complete in Browser 1
     await expect(page1.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
     await expect(page1.locator('[data-testid="file-upload-status"]')).toHaveText('done', { timeout: 15000 })
-    
+
     // Get the content hash from Browser 1 for later comparison
     const contentHash = await page1.locator('[data-testid="file-card"] table').evaluate((table) => {
       const rows = table.querySelectorAll('tr')
@@ -190,11 +192,11 @@ test.describe('File Sync', () => {
     // ========================================
     // THE BUG: These assertions will fail
     // ========================================
-    
+
     // Browser 2: downloadStatus should transition to "done"
     // This is the key assertion that will fail if the bug exists
     console.log('Browser 2: Waiting for downloadStatus to become "done"...')
-    
+
     // First, let's log what the current state is
     const initialDownloadStatus = await page2.locator('[data-testid="file-download-status"]').textContent()
     const initialLocalHash = await page2.locator('[data-testid="file-local-hash"]').textContent()
@@ -775,7 +777,7 @@ test.describe('File Sync', () => {
       // Wait for all canDisplay to become true (files are available)
       const canDisplayLocators = tab.locator('[data-testid="file-can-display"]')
       await expect(canDisplayLocators).toHaveCount(fileCount, { timeout: 10000 })
-      
+
       // Poll until all files can be displayed
       await expect
         .poll(
@@ -934,7 +936,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // Download status could be in various states depending on timing
     const downloadStatus = page2.locator('[data-testid="file-download-status"]')
     const downloadStatusText = await downloadStatus.textContent()
-    
+
     // If download already completed before we went offline, skip the recovery test part
     if (downloadStatusText?.trim() !== 'done') {
       // Verify download is blocked (queued, inProgress stuck, or error)
@@ -1157,5 +1159,134 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // Cleanup
     await context1.close()
     await context2.close()
+  })
+
+  test('should upload multiple files added while offline after going back online', async ({ browser }) => {
+    // Bug: When adding multiple files while offline, then going back online,
+    // some uploads fail with FileNotFoundError even though files were saved to OPFS.
+    //
+    // This happens because:
+    // 1. Files are saved to OPFS while offline, upload queued
+    // 2. When going back online, executor resumes and starts processing
+    // 3. Some race condition causes FileNotFoundError during upload
+    //
+    // Using large images (2-8MB each) to better simulate real-world conditions
+    // and increase the likelihood of hitting timing issues.
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}`
+    const fileCount = 8
+
+    const context = await browser.newContext()
+    const page = await context.newPage()
+
+    // Track errors - specifically looking for FileNotFoundError
+    const errors: string[] = []
+    const consoleMessages: string[] = []
+
+    page.on('pageerror', (error) => {
+      errors.push(error.message)
+    })
+    page.on('console', (msg) => {
+      const text = msg.text()
+      if (
+        text.includes('FileNotFoundError') ||
+        text.includes('File not found') ||
+        text.includes('Upload error') ||
+        text.includes('[FileSync] Local file read FAILED')
+      ) {
+        consoleMessages.push(text)
+      }
+    })
+
+    await page.goto(url)
+    await waitForLiveStoreAndSync(page)
+
+    // Verify we start with empty state
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // 1. Go offline
+    await setOffline(page)
+    console.log('Went offline')
+
+    // Wait for offline state to take effect
+    await page.waitForTimeout(500)
+
+    // 2. Add multiple large files while offline (2-8MB each, unique content)
+    const testImages = createMultipleLargeTestImages(fileCount)
+    await page.locator('input[type="file"]').setInputFiles(testImages)
+    console.log(`Added ${fileCount} files while offline`)
+
+    // 3. Verify all file cards appear (local state updated)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(fileCount, {
+      timeout: 15000,
+    })
+    console.log('All file cards appeared')
+
+    // 4. Wait for all images to load from local storage
+    const images = page.locator('[data-testid="file-image"]')
+    for (let i = 0; i < fileCount; i++) {
+      await waitForImageLoaded(images.nth(i), 10000)
+    }
+    console.log('All images loaded from local storage')
+
+    // 5. Verify all files have uploadStatus: queued (cannot upload while offline)
+    const uploadStatuses = page.locator('[data-testid="file-upload-status"]')
+    for (let i = 0; i < fileCount; i++) {
+      await expect(uploadStatuses.nth(i)).toHaveText('queued', { timeout: 5000 })
+    }
+    console.log('All files have upload status: queued')
+
+    // 6. Verify all files have empty remoteKey (not uploaded yet)
+    const remoteKeys = page.locator('[data-testid="file-remote-key"]')
+    for (let i = 0; i < fileCount; i++) {
+      const text = await remoteKeys.nth(i).textContent()
+      expect(text?.trim()).toBe('')
+    }
+    console.log('All files have empty remoteKey')
+
+    // Wait for a while
+    await page.waitForTimeout(10000)
+
+    // 7. Go back online
+    await setOnline(page)
+    console.log('Went back online')
+
+    // 8. Wait for all uploads to complete
+    for (let i = 0; i < fileCount; i++) {
+      await expect(uploadStatuses.nth(i)).toHaveText('done', { timeout: 30000 })
+      console.log(`File ${i + 1}/${fileCount} upload completed`)
+    }
+    console.log('All uploads completed')
+
+    // 9. Verify all files have non-empty remoteKey
+    for (let i = 0; i < fileCount; i++) {
+      await expect
+        .poll(async () => (await remoteKeys.nth(i).textContent())?.trim() || '', {
+          timeout: 15000,
+        })
+        .not.toBe('')
+    }
+    console.log('All files have remoteKey')
+
+    // 10. Check for any FileNotFoundError or upload errors
+    if (consoleMessages.length > 0) {
+      console.log('Console messages with errors:', consoleMessages)
+    }
+    if (errors.length > 0) {
+      console.log('Page errors:', errors)
+    }
+
+    const uploadErrors = consoleMessages.filter(
+      (m) =>
+        m.includes('FileNotFoundError') ||
+        m.includes('File not found') ||
+        m.includes('Upload error') ||
+        m.includes('Local file read FAILED')
+    )
+    expect(uploadErrors).toHaveLength(0)
+
+    // Cleanup
+    await context.close()
   })
 })

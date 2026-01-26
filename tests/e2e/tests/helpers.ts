@@ -1,4 +1,5 @@
 import { expect, type Page, type Locator } from '@playwright/test'
+import * as crypto from 'node:crypto'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -59,6 +60,71 @@ export function createMultipleTestImages(count: number): string[] {
   return Array.from({ length: count }, (_, i) =>
     createTestImage(i % 2 === 0 ? 'blue' : 'red', { suffix: `multi-${i}-${Date.now()}` })
   )
+}
+
+/**
+ * Create a test image with unique content by appending random bytes.
+ * This ensures each image has a different content hash, useful for testing
+ * scenarios where multiple files should have unique OPFS paths.
+ */
+export function createUniqueTestImage(
+  color: 'blue' | 'red',
+  index: number
+): string {
+  const format = 'png'
+  const fixturesDir = path.resolve(currentDir, '../fixtures/images')
+  const fixturePath = path.join(fixturesDir, `${color}.${format}`)
+
+  const imagePath = path.join(
+    os.tmpdir(),
+    `test-unique-${color}-${index}-${Date.now()}-${Math.random().toString(36).slice(2)}.${format}`
+  )
+
+  // Read fixture and append random bytes to make hash unique
+  const content = fs.readFileSync(fixturePath)
+  const randomBytes = crypto.randomBytes(32)
+  const uniqueContent = Buffer.concat([content, randomBytes])
+  fs.writeFileSync(imagePath, uniqueContent)
+
+  return imagePath
+}
+
+/**
+ * Create multiple test images with unique content (different hashes).
+ * Each file will have a unique content hash and therefore a unique OPFS path.
+ */
+export function createMultipleUniqueTestImages(count: number): string[] {
+  return Array.from({ length: count }, (_, i) =>
+    createUniqueTestImage(i % 2 === 0 ? 'blue' : 'red', i)
+  )
+}
+
+/**
+ * Create a large test image by copying from the large-images fixtures.
+ * These are real photos (2-8MB each) useful for testing with realistic file sizes.
+ * Available indices: 1-8
+ */
+export function createLargeTestImage(index: number): string {
+  const fixturesDir = path.resolve(currentDir, '../fixtures/large-images')
+  // Clamp index to 1-8 range
+  const imageIndex = ((index - 1) % 8) + 1
+  const fixturePath = path.join(fixturesDir, `${imageIndex}.jpeg`)
+
+  const imagePath = path.join(
+    os.tmpdir(),
+    `test-large-${imageIndex}-${Date.now()}-${Math.random().toString(36).slice(2)}.jpeg`
+  )
+
+  fs.copyFileSync(fixturePath, imagePath)
+  return imagePath
+}
+
+/**
+ * Create multiple large test images.
+ * Each image is a different large photo (2-8MB each).
+ */
+export function createMultipleLargeTestImages(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => createLargeTestImage(i + 1))
 }
 
 /**
