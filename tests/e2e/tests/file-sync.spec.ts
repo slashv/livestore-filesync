@@ -963,15 +963,15 @@ test.describe('File Sync - Offline/Online Recovery', () => {
   test('should upload files added after going offline then online (toggle recovery bug)', async ({ browser }) => {
     // Test scenario that replicates a specific bug:
     // 1. Start online
-    // 2. Go offline (click the toggle-browser-offline button)
-    // 3. Go online again
-    // 4. Add a file
+    // 2. Go offline
+    // 3. Add a file while offline (should stay queued)
+    // 4. Go back online
+    // 5. File added while offline should upload
+    // 6. Add another file after going online - should also upload
     //
-    // Expected: File gets uploaded, remote key assigned, upload status is done
-    // Bug: File stays upload status queued, no remote key
-    //
-    // This tests the sync state recovery after online/offline toggle without
-    // any file operations happening while offline.
+    // This tests both:
+    // - Files queued while offline get uploaded when coming back online
+    // - Files added after going online also get uploaded (the original bug)
 
     const storeId = generateStoreId()
     const url = `/?storeId=${storeId}`
@@ -992,56 +992,85 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // Wait a moment for offline state to take effect
     await page.waitForTimeout(500)
 
-    // Go back online (without adding any files while offline)
+    // Add a file WHILE OFFLINE
+    const offlineImage = createTestImage('red')
+    await page.locator('input[type="file"]').setInputFiles(offlineImage)
+    console.log('Added file while offline')
+
+    // Wait for file card to appear (local state is updated even while offline)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    console.log('Offline file card appeared')
+
+    // Wait for image to load from local storage
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+    console.log('Offline image loaded from local storage')
+
+    // Verify the offline file stays queued (cannot upload while offline)
+    const offlineUploadStatus = page.locator('[data-testid="file-upload-status"]')
+    await expect(offlineUploadStatus).toHaveText('queued', { timeout: 5000 })
+    console.log('Offline file upload status is queued (as expected)')
+
+    // Verify no remote key while offline
+    const offlineRemoteKey = page.locator('[data-testid="file-remote-key"]')
+    const offlineRemoteKeyValue = await offlineRemoteKey.textContent()
+    expect(offlineRemoteKeyValue?.trim()).toBe('')
+    console.log('Offline file has no remote key (as expected)')
+
+    // Go back online
     await setOnline(page)
     console.log('Went back online')
 
     // Wait for online state to stabilize
     await page.waitForTimeout(500)
 
-    // Now add a file AFTER going back online
-    const testImage = createTestImage('blue')
-    await page.locator('input[type="file"]').setInputFiles(testImage)
-    console.log('Added file after going back online')
+    // The file added while offline should now upload
+    await expect(offlineUploadStatus).toHaveText('done', { timeout: 30000 })
+    console.log('Offline file now uploaded after going online')
 
-    // Wait for file card to appear (local state is updated)
-    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
-    console.log('File card appeared')
-
-    // Wait for image to load (from local OPFS storage)
-    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
-    console.log('Image loaded from local storage')
-
-    // Verify local hash is set
-    const localHashLocator = page.locator('[data-testid="file-local-hash"]')
-    const localHash = await localHashLocator.textContent()
-    console.log('Local hash:', localHash)
-    expect(localHash?.trim()).not.toBe('')
-
-    // Log current upload status for debugging
-    const uploadStatusLocator = page.locator('[data-testid="file-upload-status"]')
-    const initialUploadStatus = await uploadStatusLocator.textContent()
-    console.log('Initial upload status:', initialUploadStatus)
-
-    // THE BUG: This assertion should pass but fails if the bug exists
-    // Upload status should transition to 'done' (file should be uploaded)
-    await expect(uploadStatusLocator).toHaveText('done', { timeout: 30000 })
-    console.log('Upload status is done')
-
-    // Verify the file now has a remote key (not empty)
-    const remoteKeyLocator = page.locator('[data-testid="file-remote-key"]')
+    // Verify the offline file now has a remote key
     await expect.poll(
-      async () => (await remoteKeyLocator.textContent())?.trim() || '',
+      async () => (await offlineRemoteKey.textContent())?.trim() || '',
       { timeout: 15000 }
     ).not.toBe('')
-    const remoteKey = await remoteKeyLocator.textContent()
-    console.log('Remote key:', remoteKey)
+    const firstRemoteKey = await offlineRemoteKey.textContent()
+    console.log('First file remote key:', firstRemoteKey)
 
-    // Verify the file is accessible on remote storage
-    const remoteKeyValue = await getRemoteKey(page)
-    const fileUrl = toRemoteUrl(page.url(), remoteKeyValue)
-    await waitForRemoteStatus(page, fileUrl, 200)
-    console.log('File verified on remote storage')
+    // Now add ANOTHER file AFTER going back online
+    const onlineImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(onlineImage)
+    console.log('Added second file after going back online')
+
+    // Wait for second file card to appear
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(2, { timeout: 10000 })
+    console.log('Second file card appeared')
+
+    // Wait for second image to load
+    const secondImage = page.locator('[data-testid="file-image"]').nth(1)
+    await waitForImageLoaded(secondImage, 10000)
+    console.log('Second image loaded from local storage')
+
+    // Verify second file also uploads
+    const secondUploadStatus = page.locator('[data-testid="file-upload-status"]').nth(1)
+    await expect(secondUploadStatus).toHaveText('done', { timeout: 30000 })
+    console.log('Second file upload status is done')
+
+    // Verify the second file has a remote key
+    const secondRemoteKey = page.locator('[data-testid="file-remote-key"]').nth(1)
+    await expect.poll(
+      async () => (await secondRemoteKey.textContent())?.trim() || '',
+      { timeout: 15000 }
+    ).not.toBe('')
+    const secondRemoteKeyValue = await secondRemoteKey.textContent()
+    console.log('Second file remote key:', secondRemoteKeyValue)
+
+    // Verify both files are accessible on remote storage
+    const firstFileUrl = toRemoteUrl(page.url(), firstRemoteKey!.trim())
+    await waitForRemoteStatus(page, firstFileUrl, 200)
+    console.log('First file verified on remote storage')
+
+    const secondFileUrl = toRemoteUrl(page.url(), secondRemoteKeyValue!.trim())
+    await waitForRemoteStatus(page, secondFileUrl, 200)
+    console.log('Second file verified on remote storage')
 
     // Cleanup
     await context.close()

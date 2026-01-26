@@ -356,24 +356,14 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const start = () => {
-    console.log("[createFileSync] start() called")
-    if (scope || disposed) {
-      console.log("[createFileSync] start() early return - scope:", !!scope, "disposed:", disposed)
-      return
-    }
+    if (scope || disposed) return
     void (async () => {
       try {
-        console.log("[createFileSync] Starting async init...")
         scope = await runEffect(Scope.make())
-        console.log("[createFileSync] Scope created")
         const fileSync = await getFileSyncService()
-        console.log("[createFileSync] FileSync service obtained")
         await ensureEventSubscription()
-        console.log("[createFileSync] Event subscription ensured")
         await attachConnectivityHandlers()
-        console.log("[createFileSync] Connectivity handlers attached")
         await runEffect(Scope.extend(fileSync.start(), scope))
-        console.log("[createFileSync] FileSync.start() completed")
       } catch (error) {
         console.error("[createFileSync] Error during start:", error)
       }

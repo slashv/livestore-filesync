@@ -61,7 +61,7 @@ export interface FileSyncService {
   /**
    * Manually restart the event stream from the stored cursor
    */
-  readonly syncNow: () => Effect.Effect<void, never, Scope.Scope>
+  readonly syncNow: () => Effect.Effect<void>
 
   /**
    * Save a new file locally and queue for upload
@@ -264,6 +264,9 @@ export const makeFileSync = (
     // Background fibers
     const healthCheckFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
 
+    // Main scope ref - stores the scope from start() for use in setOnline/health check
+    const mainScopeRef = yield* Ref.make<Scope.Scope | null>(null)
+
     const executorConfig: SyncExecutorConfig = {
       ...defaultExecutorConfig,
       ...config.executorConfig
@@ -404,7 +407,7 @@ export const makeFileSync = (
             yield* Ref.set(onlineRef, true)
             yield* emit({ type: "online" })
             yield* executor.resume()
-            yield* restartEventStream().pipe(Effect.scoped)
+            // Note: Don't restart the event stream - it was never stopped
             return
           }
 
@@ -872,9 +875,8 @@ export const makeFileSync = (
         }
       })
 
-    const startEventStream = (): Effect.Effect<void, never, Scope.Scope> =>
+    const startEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        console.log("[FileSync] Starting event stream")
         const isLeader = yield* Ref.get(isLeaderRef)
         if (!isLeader) return
 
@@ -903,7 +905,6 @@ export const makeFileSync = (
         // Track recovery attempts for logging
         const attemptRef = yield* Ref.make(0)
 
-        console.log("[FileSync] Starting event stream with since", { since: resolveCursor(storedCursor) })
         const stream = store.eventsStream({
           since: resolveCursor(storedCursor),
           filter: ["v1.FileCreated", "v1.FileUpdated", "v1.FileDeleted"]
@@ -936,12 +937,16 @@ export const makeFileSync = (
           )
         )
 
-        const fiber = yield* stream.pipe(
-          Stream.runForEachChunk((chunk) => handleEventBatch(Chunk.toReadonlyArray(chunk))),
-          Effect.forkScoped
+        // Use the stored main scope for forking - this ensures the fiber lives as long as start()
+        const mainScope = yield* Ref.get(mainScopeRef)
+        if (!mainScope) {
+          console.warn("[FileSync] Cannot start event stream - main scope not available")
+          return
+        }
+        const streamEffect = stream.pipe(
+          Stream.runForEachChunk((chunk) => handleEventBatch(Chunk.toReadonlyArray(chunk)))
         )
-
-        console.log("[FileSync] Event stream fiber started", { fiber })
+        const fiber = yield* Effect.forkIn(streamEffect, mainScope)
 
         yield* Ref.set(eventStreamFiberRef, fiber)
       }).pipe(
@@ -961,7 +966,7 @@ export const makeFileSync = (
         yield* Ref.set(eventStreamFiberRef, null)
       })
 
-    const restartEventStream = (): Effect.Effect<void, never, Scope.Scope> =>
+    const restartEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
         if (!isLeader) return
@@ -971,7 +976,6 @@ export const makeFileSync = (
     // Start the sync loop (only called when we're the leader)
     const startSyncLoop = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        console.log("[FileSync] Starting sync loop")
         const isOnline = yield* Ref.get(onlineRef)
         if (isOnline) {
           yield* executor.resume()
@@ -1018,38 +1022,30 @@ export const makeFileSync = (
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        console.log("[FileSync] start() called")
         const running = yield* Ref.get(runningRef)
-        if (running) {
-          console.log("[FileSync] Already running, returning")
-          return
-        }
+        if (running) return
 
         yield* Ref.set(runningRef, true)
 
+        // Capture and store the scope for use in setOnline/health check
+        const scope = yield* Effect.scope
+        yield* Ref.set(mainScopeRef, scope)
+
         // Start the executor
-        console.log("[FileSync] Starting executor...")
         yield* executor.start()
-        console.log("[FileSync] Executor started")
 
         // Check initial lock status
-        console.log("[FileSync] Checking initial lock status...")
         const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
         const isInitialLeader = initialStatus === "has-lock"
-        console.log("[FileSync] Initial lock status:", initialStatus, "isLeader:", isInitialLeader)
         yield* Ref.set(isLeaderRef, isInitialLeader)
 
         if (isInitialLeader) {
-          console.log("[FileSync] Starting as leader")
           yield* startSyncLoop()
-        } else {
-          console.log("[FileSync] Starting as non-leader, waiting for leadership")
         }
 
         // Watch for leadership changes
         const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
         yield* Ref.set(leaderWatcherFiberRef, watchFiber)
-        console.log("[FileSync] Leadership watcher started")
       })
 
     const stop = (): Effect.Effect<void> =>
@@ -1076,22 +1072,19 @@ export const makeFileSync = (
         yield* Ref.set(isLeaderRef, false)
       })
 
-    const syncNow = (): Effect.Effect<void, never, Scope.Scope> => restartEventStream()
+    const syncNow = (): Effect.Effect<void> => restartEventStream()
 
     const markLocalFileChanged = (
       fileId: string,
       path: string,
       hash: string
     ): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        console.log(`[FileSync] markLocalFileChanged for file: ${fileId}, path: ${path}`)
-        yield* stateManager.setFileState(fileId, {
-          path,
-          localHash: hash,
-          downloadStatus: "done",
-          uploadStatus: "queued",
-          lastSyncError: ""
-        })
+      stateManager.setFileState(fileId, {
+        path,
+        localHash: hash,
+        downloadStatus: "done",
+        uploadStatus: "queued",
+        lastSyncError: ""
       })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
@@ -1207,7 +1200,7 @@ export const makeFileSync = (
           yield* emit({ type: "online" })
           yield* executor.resume()
           yield* stopHealthCheckLoop()
-          yield* restartEventStream().pipe(Effect.scoped)
+          yield* restartEventStream()
         } else {
           yield* emit({ type: "offline" })
           yield* executor.pause()

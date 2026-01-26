@@ -302,7 +302,6 @@ export const makeSyncExecutor = (
     // Worker that processes uploads (single queue)
     const createUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        console.log("[SyncExecutor] Upload worker started")
         const processLoop: Effect.Effect<void> = Effect.gen(function*() {
           // Check if paused
           const state = yield* Ref.get(stateRef)
@@ -324,7 +323,6 @@ export const makeSyncExecutor = (
             return
           }
 
-          console.log(`[SyncExecutor] Processing upload for file: ${maybeFileId.value}`)
           // Process the task in the background
           yield* Effect.fork(processTask("upload", maybeFileId.value))
         })
@@ -391,11 +389,9 @@ export const makeSyncExecutor = (
     // Start workers
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        console.log("[SyncExecutor] Starting workers")
         // Fork download and upload workers
         yield* Effect.forkScoped(createDownloadWorker())
         yield* Effect.forkScoped(createUploadWorker())
-        console.log("[SyncExecutor] Workers forked")
       })
 
     const enqueueDownload = (fileId: string): Effect.Effect<void> =>
@@ -415,15 +411,12 @@ export const makeSyncExecutor = (
       Effect.gen(function*() {
         const queued = yield* Ref.get(uploadQueuedSet)
         if (!queued.has(fileId)) {
-          console.log(`[SyncExecutor] Enqueueing upload for file: ${fileId}`)
           yield* Ref.update(uploadQueuedSet, (set) => {
             const newSet = new Set(set)
             newSet.add(fileId)
             return newSet
           })
           yield* Queue.offer(uploadQueue, fileId)
-        } else {
-          console.log(`[SyncExecutor] File already queued for upload: ${fileId}`)
         }
       })
 
