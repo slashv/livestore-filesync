@@ -255,6 +255,7 @@ export const getFileUrl = (path: string) => requireFileSync().getFileUrl(path)
 export const resolveFileUrl = (fileId: string) => requireFileSync().resolveFileUrl(fileId)
 export const prioritizeDownload = (fileId: string) => requireFileSync().prioritizeDownload(fileId)
 export const isOnline = () => requireFileSync().isOnline()
+export const setOnline = (online: boolean) => requireFileSync().setOnline(online)
 export const triggerSync = () => requireFileSync().triggerSync()
 
 /**
