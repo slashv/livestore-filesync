@@ -24,6 +24,7 @@ export {
 // Singleton helpers
 export {
   deleteFile,
+  disposeFileSync,
   getFileUrl,
   initFileSync,
   type InitFileSyncConfig,
@@ -32,6 +33,7 @@ export {
   prioritizeDownload,
   readFile,
   resolveFileUrl,
+  retryErrors,
   saveFile,
   startFileSync,
   stopFileSync,

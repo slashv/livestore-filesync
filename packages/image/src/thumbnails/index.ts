@@ -84,6 +84,7 @@ export { createThumbnails, type CreateThumbnailsConfig, type ThumbnailInstance }
 
 // API - Singleton
 export {
+  disposeThumbnails,
   getThumbnailState,
   initThumbnails,
   onThumbnailEvent,

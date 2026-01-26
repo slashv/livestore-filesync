@@ -20,6 +20,7 @@ import { createThumbnails, type ThumbnailInstance } from "./createThumbnails.js"
 // ============================================
 
 let singleton: ThumbnailInstance | null = null
+let singletonUserId: string | null = null
 
 const requireThumbnails = (): ThumbnailInstance => {
   if (!singleton) {
@@ -65,6 +66,10 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ThumbnailTab
  * Creates a ThumbnailService instance, and by default starts automatically.
  * Returns a dispose function to clean up resources.
  *
+ * If a userId is provided and differs from the previous initialization,
+ * the existing singleton will be disposed and a new one created.
+ * This ensures state is refreshed when switching users.
+ *
  * @example
  * ```typescript
  * import { initThumbnails } from '@livestore-filesync/image/thumbnails'
@@ -73,7 +78,8 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ThumbnailTab
  * const dispose = initThumbnails(store, {
  *   sizes: { small: 128, medium: 256, large: 512 },
  *   fileSystem: opfsLayer(),
- *   workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+ *   workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
+ *   userId: 'user-123'
  * })
  *
  * // Later, to clean up:
@@ -86,12 +92,25 @@ export const initThumbnails = (
   store: Store<any>,
   config: InitThumbnailsConfig
 ): () => Promise<void> => {
+  const userId = config.userId ?? null
+
+  // If singleton exists but for a different user, dispose it first
+  if (singleton && singletonUserId !== userId) {
+    console.log("[Thumbnails] User changed, disposing old instance")
+    singleton.dispose()
+    singleton = null
+    singletonUserId = null
+  }
+
   if (singleton) {
     return async () => {
       await singleton?.dispose()
       singleton = null
+      singletonUserId = null
     }
   }
+
+  singletonUserId = userId
 
   if (!config.fileSystem) {
     throw new Error(
@@ -139,6 +158,30 @@ export const initThumbnails = (
   return async () => {
     await singleton?.dispose()
     singleton = null
+    singletonUserId = null
+  }
+}
+
+/**
+ * Dispose the Thumbnails singleton.
+ * Call this on logout to ensure state is cleared.
+ *
+ * @example
+ * ```typescript
+ * import { disposeThumbnails } from '@livestore-filesync/image/thumbnails'
+ *
+ * async function handleLogout() {
+ *   await disposeThumbnails()
+ *   await authClient.signOut()
+ * }
+ * ```
+ */
+export const disposeThumbnails = async (): Promise<void> => {
+  if (singleton) {
+    console.log("[Thumbnails] Disposing singleton")
+    await singleton.dispose()
+    singleton = null
+    singletonUserId = null
   }
 }
 

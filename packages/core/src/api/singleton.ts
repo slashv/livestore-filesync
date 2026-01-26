@@ -53,9 +53,18 @@ export interface InitFileSyncConfig {
    * @default true
    */
   autoStart?: boolean
+
+  /**
+   * User ID for the current authenticated user.
+   * When provided, FileSync will automatically dispose and recreate the singleton
+   * if a different user ID is passed (e.g., after logout/login).
+   * This prevents stale auth credentials from being used after user switch.
+   */
+  userId?: string
 }
 
 let singleton: FileSyncInstance | null = null
+let singletonUserId: string | null = null
 
 const requireFileSync = (): FileSyncInstance => {
   if (!singleton) {
@@ -114,6 +123,10 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): SyncSchema =
  * Creates a FileSync instance, and by default starts syncing immediately.
  * Returns a dispose function to clean up resources.
  *
+ * If a userId is provided and differs from the previous initialization,
+ * the existing singleton will be disposed and a new one created.
+ * This ensures auth credentials are refreshed when switching users.
+ *
  * @example
  * ```typescript
  * import { initFileSync } from '@livestore-filesync/core'
@@ -121,7 +134,8 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): SyncSchema =
  *
  * const dispose = initFileSync(store, {
  *   fileSystem: opfsLayer(),
- *   remote: { signerBaseUrl: '/api' }
+ *   remote: { signerBaseUrl: '/api' },
+ *   userId: 'user-123'
  * })
  *
  * // Later, to clean up:
@@ -134,12 +148,25 @@ export const initFileSync = (
   store: Store<any>,
   config: InitFileSyncConfig
 ): () => Promise<void> => {
+  const userId = config.userId ?? null
+
+  // If singleton exists but for a different user, dispose it first
+  if (singleton && singletonUserId !== userId) {
+    console.log("[FileSync] User changed, disposing old instance")
+    singleton.dispose()
+    singleton = null
+    singletonUserId = null
+  }
+
   if (singleton) {
     return async () => {
       await singleton?.dispose()
       singleton = null
+      singletonUserId = null
     }
   }
+
+  singletonUserId = userId
 
   if (!config.fileSystem) {
     throw new Error(
@@ -177,6 +204,30 @@ export const initFileSync = (
   return async () => {
     await singleton?.dispose()
     singleton = null
+    singletonUserId = null
+  }
+}
+
+/**
+ * Dispose the FileSync singleton.
+ * Call this on logout to ensure auth credentials are cleared.
+ *
+ * @example
+ * ```typescript
+ * import { disposeFileSync } from '@livestore-filesync/core'
+ *
+ * async function handleLogout() {
+ *   await disposeFileSync()
+ *   await authClient.signOut()
+ * }
+ * ```
+ */
+export const disposeFileSync = async (): Promise<void> => {
+  if (singleton) {
+    console.log("[FileSync] Disposing singleton")
+    await singleton.dispose()
+    singleton = null
+    singletonUserId = null
   }
 }
 
