@@ -349,11 +349,15 @@ export const makeFileSync = (
         return doc.lastEventSequence ?? ""
       })
 
-    const updateCursorFromUpstreamHead = (): Effect.Effect<string> =>
+    const getUpstreamHeadCursor = (): Effect.Effect<string> =>
+      Effect.gen(function*() {
+        const upstreamState = yield* clientSession.leaderThread.syncState
+        return EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
+      }).pipe(Effect.orDie)
+
+    const setCursorAfterBootstrap = (upstreamCursor: string): Effect.Effect<string> =>
       Effect.gen(function*() {
         const storedCursor = yield* readCursor()
-        const upstreamState = yield* clientSession.leaderThread.syncState
-        const upstreamCursor = EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
         yield* persistCursor(upstreamCursor)
         yield* Ref.set(cursorRef, upstreamCursor)
         if (storedCursor && storedCursor !== upstreamCursor) {
@@ -876,9 +880,12 @@ export const makeFileSync = (
 
         yield* stopEventStream()
         yield* recoverStaleTransfers()
+        const upstreamCursor = yield* getUpstreamHeadCursor()
         yield* bootstrapFromTables()
-
-        const storedCursor = yield* updateCursorFromUpstreamHead()
+        if (upstreamCursor) {
+          yield* setCursorAfterBootstrap(upstreamCursor)
+        }
+        const storedCursor = yield* readCursor()
 
         // Stream recovery configuration
         const maxAttempts = config.maxStreamRecoveryAttempts ?? 5

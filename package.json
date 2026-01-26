@@ -16,9 +16,9 @@
     "check": "pnpm -r check",
     "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\" --ignore-pattern \"**/reference/**\"",
     "lint-fix": "pnpm lint --fix",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test -- --project=chromium",
     "test:unit": "pnpm --filter @livestore-filesync/core test",
-    "test:e2e": "pnpm --filter e2e-tests test",
+    "test:e2e": "pnpm --filter e2e-tests test -- --project=chromium",
     "dev": "pnpm -r --parallel dev",
     "dev:vue": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-vue-example dev",
     "dev:react": "pnpm --filter @livestore-filesync/core build && pnpm --filter livestore-filesync-react-example dev"
