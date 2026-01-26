@@ -168,9 +168,6 @@ export interface FileSyncInstance {
   /** Check if currently online */
   isOnline: () => boolean
 
-  /** Manually set online state */
-  setOnline: (online: boolean) => Promise<void>
-
   /** Manually restart the event stream from the stored cursor */
   triggerSync: () => void
 
@@ -444,12 +441,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     return runEffect(fileSync.prioritizeDownload(fileId))
   }
 
-  const setOnline = async (nextOnline: boolean): Promise<void> => {
-    const fileSync = await getFileSyncService()
-    online = nextOnline
-    await runEffect(fileSync.setOnline(nextOnline))
-  }
-
   const triggerSync = () => {
     void (async () => {
       const fileSync = await getFileSyncService()
@@ -480,7 +471,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     resolveFileUrl,
     prioritizeDownload,
     isOnline: () => online,
-    setOnline,
     triggerSync,
     retryErrors,
     dispose

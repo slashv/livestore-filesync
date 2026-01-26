@@ -35,7 +35,6 @@ export {
   resolveFileUrl,
   retryErrors,
   saveFile,
-  setOnline,
   startFileSync,
   stopFileSync,
   triggerSync,
