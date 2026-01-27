@@ -310,11 +310,14 @@ See the [image package README](packages/image/README.md) and [image processing d
 
 ## Image Thumbnails (Optional)
 
-The `@livestore-filesync/image` package provides client-side thumbnail generation using wasm-vips in a dedicated web worker.
+The `@livestore-filesync/image` package provides client-side thumbnail generation in a dedicated web worker. Two processing backends are available:
+
+- **Canvas**: Lightweight, zero additional bundle size, works everywhere
+- **Vips (wasm-vips)**: Higher quality, ICC profile preservation, ~5 MB WASM download
 
 ### Features
 
-- **Client-side generation**: Thumbnails are generated in the browser using wasm-vips
+- **Client-side generation**: Thumbnails are generated in the browser
 - **Multiple sizes**: Configure named sizes (e.g., small: 128, medium: 256, large: 512)
 - **Local storage**: Thumbnails stored in OPFS (not synced between clients)
 - **Automatic generation**: Watches for new image files and generates thumbnails automatically
@@ -355,7 +358,7 @@ See `examples/vue-thumbnail` (wasm-vips) and `examples/react-thumbnail` (canvas 
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)
 - Effect 3.x, @effect/platform 0.92+
-- For image-thumbnails: wasm-vips ^0.0.16, SharedArrayBuffer support (requires COOP/COEP headers)
+- For image processing with Vips: wasm-vips ^0.0.16 (~5 MB WASM), SharedArrayBuffer support (requires COOP/COEP headers). Alternatively, use the Canvas processor which has no additional requirements.
 
 ## License
 

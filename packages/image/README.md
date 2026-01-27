@@ -1,6 +1,6 @@
 # @livestore-filesync/image
 
-High-quality image processing for livestore-filesync using [wasm-vips](https://github.com/nicolo-ribaudo/libvips-wasm).
+Image processing for livestore-filesync with two backend options: a lightweight **Canvas** processor and a full-featured **[wasm-vips](https://github.com/kleisauke/wasm-vips)** processor.
 
 ## Features
 
@@ -18,17 +18,48 @@ High-quality image processing for livestore-filesync using [wasm-vips](https://g
 - Persistent state tracking via LiveStore client document
 - Automatic cleanup when files are deleted
 
+## Processing Backends
+
+This package provides two image processing backends. Choose based on your requirements:
+
+| Feature | Canvas | Vips (wasm-vips) |
+|---------|--------|------------------|
+| Additional bundle size | 0 KB | ~5 MB WASM |
+| ICC profile preservation | No (converts to sRGB) | Yes |
+| Lossless WebP | No | Yes |
+| Metadata preservation | No | Yes |
+| COOP/COEP headers required | No | Yes |
+| Initialization time | Instant | ~100-500ms (first use) |
+
+### When to use Canvas
+
+- You want zero additional bundle size
+- You don't need color-accurate output (sRGB is fine)
+- You can't configure COOP/COEP headers on your server
+- You're building a simple app where image quality isn't critical
+
+### When to use Vips
+
+- You need professional-quality image processing
+- You want to preserve ICC color profiles (important for photography)
+- You need lossless WebP compression for smaller thumbnails
+- You want to preserve image metadata (EXIF, etc.)
+
 ## Installation
 
 ```bash
+# Canvas only (no WASM dependency)
+pnpm add @livestore-filesync/image
+
+# With Vips support (recommended for quality)
 pnpm add @livestore-filesync/image wasm-vips
 ```
 
 ## Setup
 
-### 1. Copy the WASM file
+### Vips Setup (skip if using Canvas only)
 
-Copy the wasm-vips WASM file to your public directory so it can be loaded at runtime:
+If using the Vips processor, copy the wasm-vips WASM file to your public directory:
 
 ```bash
 # From your project root
@@ -36,6 +67,13 @@ cp node_modules/wasm-vips/lib/vips.wasm public/
 ```
 
 For Vite projects, you may want to add this to your build script or use a plugin.
+
+Your server must also send COOP/COEP headers for SharedArrayBuffer support:
+
+```
+Cross-Origin-Embedder-Policy: require-corp
+Cross-Origin-Opener-Policy: same-origin
+```
 
 ## Image Preprocessing
 
@@ -48,15 +86,20 @@ import { createImagePreprocessor } from '@livestore-filesync/image/preprocessor'
 import { initFileSync } from '@livestore-filesync/core'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
-// Create a preprocessor with default settings
-// (max 1500px, JPEG at 90% quality)
-const imagePreprocessor = createImagePreprocessor()
+// Canvas processor (lightweight, no WASM)
+const canvasPreprocessor = createImagePreprocessor({
+  processor: 'canvas',
+  maxDimension: 1500,
+  quality: 90,
+  format: 'jpeg'
+})
 
-// Or customize the settings
-const customPreprocessor = createImagePreprocessor({
-  maxDimension: 1200,  // Max width/height in pixels
-  quality: 85,         // JPEG/WebP quality (1-100)
-  format: 'webp'       // Output format: 'jpeg', 'webp', or 'png'
+// Vips processor (high quality, requires wasm-vips)
+const vipsPreprocessor = createImagePreprocessor({
+  processor: 'vips',  // default when wasm-vips is installed
+  maxDimension: 1500,
+  quality: 90,
+  format: 'jpeg'
 })
 
 initFileSync(store, {
@@ -64,7 +107,7 @@ initFileSync(store, {
   remote: { signerBaseUrl: '/api' },
   options: {
     preprocessors: {
-      'image/*': imagePreprocessor
+      'image/*': canvasPreprocessor  // or vipsPreprocessor
     }
   }
 })
@@ -80,11 +123,12 @@ Creates a file preprocessor that resizes and converts images.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `processor` | `'canvas' \| 'vips'` | `'vips'` | Processing backend to use. |
 | `maxDimension` | `number` | `1500` | Maximum width/height in pixels. Images exceeding this are resized. Set to 0 to disable. |
 | `quality` | `number` | `90` | Output quality (1-100). Only applies to JPEG and WebP. |
 | `format` | `'jpeg' \| 'webp' \| 'png'` | `'jpeg'` | Output format for all processed images. |
 | `minSizeThreshold` | `number` | `0` | Skip processing files below this size (in bytes). |
-| `vipsOptions` | `VipsInitOptions` | - | Custom wasm-vips initialization options. |
+| `vipsOptions` | `VipsInitOptions` | - | Custom wasm-vips initialization options (Vips only). |
 
 #### `createResizeOnlyPreprocessor(maxDimension, vipsOptions?)`
 
@@ -119,9 +163,16 @@ const tables = {
 
 2. **Create a worker file:**
 
+Choose based on your preferred processing backend:
+
 ```typescript
-// thumbnail.worker.ts
-import '@livestore-filesync/image/thumbnails/worker'
+// thumbnail.worker.ts (Canvas - lightweight, no WASM)
+import '@livestore-filesync/image/thumbnails/workers/canvas.worker'
+
+// OR
+
+// thumbnail.worker.ts (Vips - high quality, requires wasm-vips)
+import '@livestore-filesync/image/thumbnails/workers/vips.worker'
 ```
 
 3. **Initialize thumbnails:**
@@ -217,13 +268,14 @@ const unsub = onThumbnailEvent((event) => {
 })
 ```
 
-## Advanced: WASM Path Configuration
+## Advanced: WASM Path Configuration (Vips only)
 
 If your WASM file is not in the root public directory:
 
 ```typescript
 // Preprocessor
 const preprocessor = createImagePreprocessor({
+  processor: 'vips',
   vipsOptions: {
     locateFile: (path) => `/wasm/${path}`
   }
@@ -239,18 +291,32 @@ await initVips({
 
 ## Performance Notes
 
-- The WASM module (~7MB) is downloaded once and cached by the browser
-- First image processing may have a slight delay while WASM initializes
-- Subsequent processing is fast (native speed via WebAssembly)
+### Canvas Processor
+- Zero additional download - uses built-in browser APIs
+- Instant initialization
+- Good performance for most use cases
+- Thumbnails are generated in a Web Worker to avoid blocking the main thread
+
+### Vips Processor
+- The WASM module (~5 MB) is downloaded once and cached by the browser
+- First image processing may have a slight delay (~100-500ms) while WASM initializes
+- Subsequent processing is very fast (native speed via WebAssembly)
+- Higher quality output, especially for downscaling
 - Thumbnails are generated in a Web Worker to avoid blocking the main thread
 
 ## Browser Support
 
-Requires browsers with WebAssembly support:
-- Chrome 57+
-- Firefox 52+
-- Safari 11+
-- Edge 16+
+### Canvas Processor
+Works in all modern browsers with Canvas API support.
+
+### Vips Processor
+Requires browsers with WebAssembly SIMD and SharedArrayBuffer support:
+- Chrome 91+
+- Firefox 89+
+- Safari 16.4+
+- Edge 91+
+
+Note: SharedArrayBuffer requires COOP/COEP headers to be set on your server.
 
 ## License
 
