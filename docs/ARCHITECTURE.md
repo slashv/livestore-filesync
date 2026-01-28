@@ -732,6 +732,32 @@ onFileSyncEvent((event) => {
 | `sync:stream-exhausted` | `error`, `attempts` | Max recovery attempts reached |
 | `sync:recovery` | `from` | Successful recovery ("stream-error" or "error-retry") |
 | `sync:error-retry-start` | `fileIds` | Files being retried from error state |
+| `sync:heartbeat-recovery` | `reason` | Heartbeat recovered dead stream or stuck queue |
+
+### Heartbeat Monitoring
+
+FileSync includes a background heartbeat loop that periodically verifies the event stream and sync executor are alive, automatically recovering from silent failures (e.g., a stream that exhausted retries and stopped).
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    heartbeatIntervalMs: 15000 // Default: 15000 (15 seconds). Set to 0 to disable.
+  }
+})
+```
+
+Every heartbeat interval, the following checks run (only when the current tab is the leader):
+
+1. **Event stream liveness**: If the stream fiber is dead (null ref or exited), it is restarted via the same `startEventStream()` path, which interrupts any stale fiber first to prevent duplicates.
+2. **Stuck queue detection**: If there are queued items with nothing inflight for 2 consecutive heartbeats (and the executor is not paused and is online), the executor is resumed to unblock processing.
+
+Recovery actions emit a `sync:heartbeat-recovery` event with a `reason` field (`"stream-dead"` or `"stuck-queue"`).
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| `sync:heartbeat-recovery` | `reason` | Heartbeat detected and recovered a dead stream or stuck queue |
 
 ## Download Prioritization
 

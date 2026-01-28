@@ -102,6 +102,7 @@ export type FileSyncEvent =
   | { readonly type: "sync:stream-error"; readonly error: unknown; readonly attempt?: number }
   | { readonly type: "sync:stream-exhausted"; readonly error: unknown; readonly attempts: number }
   | { readonly type: "sync:recovery"; readonly from: "stream-error" | "error-retry" }
+  | { readonly type: "sync:heartbeat-recovery"; readonly reason: "stream-dead" | "stuck-queue" }
   | { readonly type: "sync:error-retry-start"; readonly fileIds: ReadonlyArray<string> }
   | { readonly type: "download:start"; readonly fileId: string }
   | { readonly type: "download:progress"; readonly fileId: string; readonly progress: TransferProgress }

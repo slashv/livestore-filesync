@@ -59,7 +59,9 @@ const createRuntimeWithConfig = async (
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
       executorConfig,
-      healthCheckIntervalMs: options.fileSyncConfig?.healthCheckIntervalMs ?? 50
+      healthCheckIntervalMs: options.fileSyncConfig?.healthCheckIntervalMs ?? 50,
+      heartbeatIntervalMs: options.fileSyncConfig?.heartbeatIntervalMs ?? 0,
+      ...(options.fileSyncConfig ?? {})
     })
   )
 
@@ -1109,6 +1111,163 @@ describe("FileSync - Sync Error Events", () => {
       // Verify we can subscribe to events and receive basic events
       // The sync:error events will only fire on actual errors
       expect(allEvents).toBeDefined()
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
+describe("FileSync - Heartbeat", () => {
+  it("does not emit heartbeat-recovery when stream is healthy", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: { heartbeatIntervalMs: 30 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      // Wait for several heartbeat intervals
+      await delay(200)
+
+      // No recovery events should fire when everything is healthy
+      expect(recoveryEvents).toEqual([])
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("syncNow restarts event stream without triggering heartbeat recovery", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: { heartbeatIntervalMs: 30 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const allEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      allEvents.push(event.type)
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Restart stream via syncNow — should not cause errors
+      await runtime.runPromise(fileSync.syncNow())
+      // Wait long enough for multiple heartbeat ticks to verify no false recovery
+      await delay(150)
+
+      // Stream should still be functional after restart
+      // Verify no heartbeat-recovery was needed (stream was restarted cleanly via syncNow)
+      expect(allEvents.filter((e) => e === "sync:heartbeat-recovery")).toEqual([])
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("heartbeat is disabled when heartbeatIntervalMs is 0", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: { heartbeatIntervalMs: 0 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(100)
+
+      // No recovery events since heartbeat is disabled
+      expect(recoveryEvents).toEqual([])
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("heartbeat recovers dead event stream", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: { heartbeatIntervalMs: 30 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Verify stream is running (no recovery yet)
+      expect(recoveryEvents).toEqual([])
+
+      // Kill the event stream to simulate a dead fiber
+      await runtime.runPromise(fileSync._simulateStreamDeath())
+
+      // Wait for heartbeat to detect and recover (30ms interval + buffer)
+      await waitFor(
+        () => Promise.resolve(recoveryEvents),
+        (evts) => evts.includes("stream-dead"),
+        { timeoutMs: 500, message: "Expected heartbeat to recover dead stream" }
+      )
+
+      // Recovery event should have been emitted
+      expect(recoveryEvents).toContain("stream-dead")
+
+      // Wait a bit more to verify no duplicate recoveries
+      await delay(100)
+      const recoveryCount = recoveryEvents.filter((r) => r === "stream-dead").length
+      expect(recoveryCount).toBe(1)
     } finally {
       unsubscribe()
       await runtime.runPromise(fileSync.stop())

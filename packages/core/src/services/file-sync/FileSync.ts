@@ -14,7 +14,7 @@
 import { EventSequenceNumber } from "@livestore/livestore"
 import type { LiveStoreEvent } from "@livestore/livestore"
 import type { Scope } from "effect"
-import { Chunk, Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Stream, SubscriptionRef } from "effect"
+import { Chunk, Context, Duration, Effect, Fiber, Layer, Option, Ref, Schedule, Stream, SubscriptionRef } from "effect"
 import { StorageError } from "../../errors/index.js"
 import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
@@ -129,6 +129,12 @@ export interface FileSyncService {
    * @returns Array of file IDs that were re-queued
    */
   readonly retryErrors: () => Effect.Effect<ReadonlyArray<string>>
+
+  /**
+   * @internal Test-only: Simulates event stream death for heartbeat testing.
+   * Interrupts the stream fiber and clears the ref so heartbeat will detect and recover.
+   */
+  readonly _simulateStreamDeath: () => Effect.Effect<void>
 }
 
 /**
@@ -168,6 +174,14 @@ export interface FileSyncConfig {
    * Health check interval when offline (ms)
    */
   readonly healthCheckIntervalMs?: number
+
+  /**
+   * Heartbeat interval in ms. A background loop checks that the event stream
+   * and sync executor are still alive, restarting them if needed.
+   * Set to 0 to disable.
+   * @default 15000
+   */
+  readonly heartbeatIntervalMs?: number
 
   /**
    * Automatically prioritize downloads when resolving file URLs.
@@ -219,6 +233,7 @@ export interface FileSyncConfig {
  */
 export const defaultFileSyncConfig: FileSyncConfig = {
   healthCheckIntervalMs: 10000,
+  heartbeatIntervalMs: 15000,
   autoPrioritizeOnResolve: true,
   maxStreamRecoveryAttempts: 5,
   streamRecoveryBaseDelayMs: 1000,
@@ -263,6 +278,10 @@ export const makeFileSync = (
 
     // Background fibers
     const healthCheckFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const heartbeatFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+
+    // Stuck-queue detection: consecutive heartbeats where items are queued but nothing is inflight
+    const stuckCounterRef = yield* Ref.make(0)
 
     // Main scope ref - stores the scope from start() for use in setOnline/health check
     const mainScopeRef = yield* Ref.make<Scope.Scope | null>(null)
@@ -655,7 +674,12 @@ export const makeFileSync = (
         const file = yield* localStorage.readFile(path)
         const localHash = yield* doHashFile(file)
         return { exists: true, localHash }
-      }).pipe(Effect.catchAll(() => Effect.succeed({ exists: false, localHash: "" })))
+      }).pipe(Effect.catchAll((error) =>
+        Effect.gen(function*() {
+          yield* Effect.logWarning("[FileSync] readLocalHash failed, treating as non-existent", { path, error })
+          return { exists: false, localHash: "" }
+        })
+      ))
 
     const handleFileCreated = (payload: FileCreatedPayload): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -932,6 +956,8 @@ export const makeFileSync = (
               const attempts = yield* Ref.get(attemptRef)
               yield* Effect.logError("[FileSync] Stream recovery exhausted", { error, attempts })
               yield* emit({ type: "sync:stream-exhausted", error, attempts })
+              // Clear fiber ref so the heartbeat can detect the dead stream and restart it
+              yield* Ref.set(eventStreamFiberRef, null)
               return Stream.empty
             }).pipe(Stream.unwrap)
           )
@@ -1019,6 +1045,96 @@ export const makeFileSync = (
         )
       })
 
+    // Heartbeat: periodically verify that the event stream and executor are alive
+    const stopHeartbeat = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const existing = yield* Ref.get(heartbeatFiberRef)
+        if (!existing) return
+        yield* Fiber.interrupt(existing)
+        yield* Ref.set(heartbeatFiberRef, null)
+      })
+
+    const startHeartbeat = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const intervalMs = config.heartbeatIntervalMs ?? 15000
+        if (intervalMs <= 0) return
+
+        yield* stopHeartbeat()
+
+        const tick: Effect.Effect<void> = Effect.gen(function*() {
+          const running = yield* Ref.get(runningRef)
+          const isLeader = yield* Ref.get(isLeaderRef)
+          if (!running || !isLeader) {
+            yield* Ref.set(stuckCounterRef, 0)
+            return
+          }
+
+          // 1. Check event stream fiber liveness
+          const streamFiber = yield* Ref.get(eventStreamFiberRef)
+          if (!streamFiber) {
+            // Fiber is null — stream died or was never started
+            yield* Effect.logWarning("[FileSync] Heartbeat: event stream fiber is dead, restarting")
+            yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-dead" })
+            yield* startEventStream()
+          } else {
+            // Fiber exists — check if it has exited
+            const poll = yield* Fiber.poll(streamFiber)
+            if (Option.isSome(poll)) {
+              // Fiber has exited (completed or failed)
+              yield* Ref.set(eventStreamFiberRef, null)
+              yield* Effect.logWarning("[FileSync] Heartbeat: event stream fiber exited, restarting")
+              yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-dead" })
+              yield* startEventStream()
+            }
+          }
+
+          // 2. Check for stuck queue (queued items but nothing inflight, not paused, online)
+          const online = yield* Ref.get(onlineRef)
+          const paused = yield* executor.isPaused()
+          if (online && !paused) {
+            const queued = yield* executor.getQueuedCount()
+            const inflight = yield* executor.getInflightCount()
+            const totalQueued = queued.downloads + queued.uploads
+            const totalInflight = inflight.downloads + inflight.uploads
+
+            if (totalQueued > 0 && totalInflight === 0) {
+              const count = yield* Ref.updateAndGet(stuckCounterRef, (n) => n + 1)
+              if (count >= 2) {
+                yield* Effect.logWarning(
+                  `[FileSync] Heartbeat: ${totalQueued} items stuck in queue for ${count} intervals, recovering`
+                )
+                yield* emit({ type: "sync:heartbeat-recovery", reason: "stuck-queue" })
+                // Resume executor in case workers stopped polling
+                yield* executor.resume()
+                yield* Ref.set(stuckCounterRef, 0)
+              }
+            } else {
+              yield* Ref.set(stuckCounterRef, 0)
+            }
+          } else {
+            yield* Ref.set(stuckCounterRef, 0)
+          }
+        }).pipe(
+          Effect.catchAll((error) => Effect.logError("[FileSync] Heartbeat tick failed", { error }))
+        )
+
+        const loop = Effect.forever(
+          Effect.gen(function*() {
+            yield* Effect.sleep(Duration.millis(intervalMs))
+            yield* tick
+          })
+        ).pipe(Effect.interruptible)
+
+        // Fork into the main scope so the heartbeat stays alive
+        const mainScope = yield* Ref.get(mainScopeRef)
+        if (!mainScope) return
+        const fiber = yield* Effect.forkIn(
+          loop.pipe(Effect.ensuring(Ref.set(heartbeatFiberRef, null))),
+          mainScope
+        )
+        yield* Ref.set(heartbeatFiberRef, fiber)
+      })
+
     // Service methods
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
@@ -1046,6 +1162,9 @@ export const makeFileSync = (
         // Watch for leadership changes
         const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
         yield* Ref.set(leaderWatcherFiberRef, watchFiber)
+
+        // Start heartbeat to monitor stream and executor liveness
+        yield* startHeartbeat()
       })
 
     const stop = (): Effect.Effect<void> =>
@@ -1062,7 +1181,8 @@ export const makeFileSync = (
           yield* Ref.set(leaderWatcherFiberRef, null)
         }
 
-        // Stop health check if running
+        // Stop heartbeat and health check if running
+        yield* stopHeartbeat()
         yield* stopHealthCheckLoop()
 
         yield* stopEventStream()
@@ -1275,6 +1395,15 @@ export const makeFileSync = (
         return retriedFileIds
       })
 
+    const _simulateStreamDeath = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const fiber = yield* Ref.get(eventStreamFiberRef)
+        if (fiber) {
+          yield* Fiber.interrupt(fiber)
+        }
+        yield* Ref.set(eventStreamFiberRef, null)
+      })
+
     return {
       start,
       stop,
@@ -1289,7 +1418,8 @@ export const makeFileSync = (
       isOnline,
       onEvent,
       getLocalFilesState,
-      retryErrors
+      retryErrors,
+      _simulateStreamDeath
     }
   })
 
