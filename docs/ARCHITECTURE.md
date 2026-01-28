@@ -665,16 +665,25 @@ When the event stream encounters an error:
 3. On successful recovery, a `sync:recovery` event is emitted
 4. If max attempts are reached, `sync:stream-exhausted` is emitted
 
-### Error State Auto-Retry
+### Stale Transfer Recovery
 
-On startup, files stuck in `error` state are automatically re-queued for retry:
+On cold start, transfers stuck in `inProgress` or `error` state are automatically recovered:
 
+- Files with `uploadStatus: "inProgress"` are reset to `queued`
+- Files with `downloadStatus: "inProgress"` are reset to `queued`
 - Files with `uploadStatus: "error"` are reset to `queued`
 - Files with `downloadStatus: "error"` are reset to `queued`
-- `lastSyncError` is cleared when retrying
+- `lastSyncError` is cleared when retrying error state files
 - A `sync:error-retry-start` event is emitted with the file IDs being retried
 
-This handles cases where a page was closed during a failed transfer.
+**Important**: This recovery runs **once per `start()` lifecycle**, at the beginning of
+`startSyncLoop()` when the tab becomes leader. It does **not** run on mid-session stream
+restarts (e.g., `syncNow()`, heartbeat recoveries), which preserves legitimate `inProgress`
+transfers that are actively running.
+
+This handles cases where:
+- A page was refreshed while a transfer was in progress (stale `inProgress`)
+- A previous transfer failed with an error (auto-retry)
 
 ### Manual Error Retry
 

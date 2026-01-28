@@ -283,6 +283,9 @@ export const makeFileSync = (
     // Stuck-queue detection: consecutive heartbeats where items are queued but nothing is inflight
     const stuckCounterRef = yield* Ref.make(0)
 
+    // Stale recovery gating: ensures recoverStaleTransfers runs only once per start() lifecycle
+    const staleRecoveryDoneRef = yield* Ref.make(false)
+
     // Main scope ref - stores the scope from start() for use in setOnline/health check
     const mainScopeRef = yield* Ref.make<Scope.Scope | null>(null)
 
@@ -899,13 +902,21 @@ export const makeFileSync = (
         }
       })
 
+    // Gated wrapper: run recoverStaleTransfers only once per start() lifecycle
+    const maybeRecoverStaleTransfers = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const done = yield* Ref.get(staleRecoveryDoneRef)
+        if (done) return
+        yield* recoverStaleTransfers()
+        yield* Ref.set(staleRecoveryDoneRef, true)
+      })
+
     const startEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
         if (!isLeader) return
 
         yield* stopEventStream()
-        yield* recoverStaleTransfers()
         const upstreamCursor = yield* getUpstreamHeadCursor()
         yield* bootstrapFromTables()
         if (upstreamCursor) {
@@ -1002,6 +1013,9 @@ export const makeFileSync = (
     // Start the sync loop (only called when we're the leader)
     const startSyncLoop = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
+        // Run one-time stale transfer recovery before any transfers begin
+        yield* maybeRecoverStaleTransfers()
+
         const isOnline = yield* Ref.get(onlineRef)
         if (isOnline) {
           yield* executor.resume()
