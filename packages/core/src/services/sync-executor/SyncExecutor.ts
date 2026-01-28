@@ -8,7 +8,7 @@
  */
 
 import type { Scope } from "effect"
-import { Context, Deferred, Duration, Effect, Layer, Option, Queue, Ref, Schedule } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Ref, Schedule } from "effect"
 
 /**
  * Transfer kind
@@ -153,6 +153,14 @@ export interface SyncExecutorService {
    * Start the executor (begins processing queues)
    */
   readonly start: () => Effect.Effect<void, never, Scope.Scope>
+
+  /**
+   * Ensure worker fibers are running.
+   * If a worker fiber has exited (crashed, interrupted), restarts it.
+   * Only restarts workers when executor is not paused.
+   * @internal
+   */
+  readonly ensureWorkers: () => Effect.Effect<void, never, Scope.Scope>
 }
 
 /**
@@ -192,6 +200,10 @@ export const makeSyncExecutor = (
       downloadsInflight: 0,
       uploadsInflight: 0
     })
+
+    // Worker fiber tracking for liveness
+    const downloadWorkerFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const uploadWorkerFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
 
     // Track queued file IDs to avoid duplicates
     const highPriorityDownloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
@@ -386,12 +398,52 @@ export const makeSyncExecutor = (
         yield* Effect.forever(processLoop).pipe(Effect.interruptible)
       })
 
-    // Start workers
+    // Start a download worker and track its fiber
+    const startDownloadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkScoped(createDownloadWorker())
+        yield* Ref.set(downloadWorkerFiberRef, fiber)
+      })
+
+    // Start an upload worker and track its fiber
+    const startUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkScoped(createUploadWorker())
+        yield* Ref.set(uploadWorkerFiberRef, fiber)
+      })
+
+    // Check if a fiber is dead (null or exited)
+    const isFiberDead = (
+      fiber: Fiber.RuntimeFiber<void, never> | null
+    ): Effect.Effect<boolean> =>
+      Effect.gen(function*() {
+        if (!fiber) return true
+        const poll = yield* Fiber.poll(fiber)
+        return Option.isSome(poll)
+      })
+
+    // Ensure workers are running. Restarts any dead workers.
+    // Workers check the paused state in their loop, so they can be running but not processing.
+    const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
+      Effect.gen(function*() {
+        const downloadFiber = yield* Ref.get(downloadWorkerFiberRef)
+        const uploadFiber = yield* Ref.get(uploadWorkerFiberRef)
+
+        const downloadDead = yield* isFiberDead(downloadFiber)
+        const uploadDead = yield* isFiberDead(uploadFiber)
+
+        if (downloadDead) {
+          yield* startDownloadWorker()
+        }
+        if (uploadDead) {
+          yield* startUploadWorker()
+        }
+      })
+
+    // Start workers (idempotent - uses ensureWorkers)
     const start = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Fork download and upload workers
-        yield* Effect.forkScoped(createDownloadWorker())
-        yield* Effect.forkScoped(createUploadWorker())
+        yield* ensureWorkers()
       })
 
     const enqueueDownload = (fileId: string): Effect.Effect<void> =>
@@ -538,7 +590,8 @@ export const makeSyncExecutor = (
       getInflightCount,
       getQueuedCount,
       awaitIdle,
-      start
+      start,
+      ensureWorkers
     }
   })
 

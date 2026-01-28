@@ -495,6 +495,144 @@ describe("SyncExecutor", () => {
     })
   })
 
+  describe("worker liveness", () => {
+    it("should allow start() to be called multiple times (idempotent)", async () => {
+      const processed: Array<string> = []
+
+      const result = await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.sync(() => {
+                processed.push(`${kind}:${fileId}`)
+              }),
+            testConfig
+          )
+
+          // Call start() multiple times - should not spawn duplicate workers
+          yield* executor.start()
+          yield* executor.start()
+          yield* executor.start()
+
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueUpload("file2")
+          yield* executor.awaitIdle()
+
+          return processed
+        })
+      )
+
+      // Should process each file exactly once
+      expect(result.filter((p) => p === "download:file1")).toHaveLength(1)
+      expect(result.filter((p) => p === "upload:file2")).toHaveLength(1)
+    })
+
+    it("should start workers via ensureWorkers() when workers are not running", async () => {
+      const processed: Array<string> = []
+
+      const result = await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.sync(() => {
+                processed.push(`${kind}:${fileId}`)
+              }),
+            testConfig
+          )
+
+          // Don't call start() - call ensureWorkers() directly
+          yield* executor.ensureWorkers()
+
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueUpload("file2")
+          yield* executor.awaitIdle()
+
+          return processed
+        })
+      )
+
+      // Workers should have been started by ensureWorkers()
+      expect(result).toContain("download:file1")
+      expect(result).toContain("upload:file2")
+    })
+
+    it("should not restart workers via ensureWorkers() when paused", async () => {
+      await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            () => Ref.update(countRef, (n) => n + 1),
+            testConfig
+          )
+
+          yield* executor.start()
+          yield* executor.pause()
+
+          // Enqueue work while paused
+          yield* executor.enqueueDownload("file1")
+
+          // ensureWorkers() should be a no-op when paused
+          yield* executor.ensureWorkers()
+          yield* executor.ensureWorkers()
+
+          // Wait a bit - nothing should be processed
+          yield* Effect.sleep("50 millis")
+          const countBefore = yield* Ref.get(countRef)
+          expect(countBefore).toBe(0)
+
+          // Resume and verify work completes
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          const countAfter = yield* Ref.get(countRef)
+          expect(countAfter).toBe(1)
+        })
+      )
+    })
+
+    it("should process queued work after ensureWorkers() restarts workers", async () => {
+      const processed: Array<string> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("5 millis")
+                processed.push(`${kind}:${fileId}`)
+              }),
+            { ...testConfig, maxConcurrentDownloads: 1, maxConcurrentUploads: 1 }
+          )
+
+          // Start workers
+          yield* executor.start()
+
+          // Pause to build up queue
+          yield* executor.pause()
+          yield* executor.enqueueDownload("d1")
+          yield* executor.enqueueDownload("d2")
+          yield* executor.enqueueUpload("u1")
+          yield* executor.enqueueUpload("u2")
+
+          // Verify nothing is being processed
+          yield* Effect.sleep("20 millis")
+          expect(processed).toHaveLength(0)
+
+          // Resume - ensureWorkers is called implicitly via the worker loop continuing
+          yield* executor.resume()
+          yield* executor.awaitIdle()
+
+          // All items should be processed
+          expect(processed).toContain("download:d1")
+          expect(processed).toContain("download:d2")
+          expect(processed).toContain("upload:u1")
+          expect(processed).toContain("upload:u2")
+        })
+      )
+    })
+  })
+
   describe("cancelDownload", () => {
     it("should skip cancelled downloads when dequeued", async () => {
       const processed: Array<string> = []

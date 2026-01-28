@@ -24,6 +24,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
   short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
 
 - `SyncExecutor` (internal): manages upload/download queues with concurrency limits and retry/backoff logic.
+  Worker fibers are tracked and can be restarted via `ensureWorkers()` if they exit unexpectedly.
 
 - `FileSync`: orchestration service and primary CRUD API. Tracks online state, consumes the
   LiveStore event stream for file events, updates local state incrementally, schedules transfers
@@ -760,7 +761,7 @@ initFileSync(store, {
 Every heartbeat interval, the following checks run (only when the current tab is the leader):
 
 1. **Event stream liveness**: If the stream fiber is dead (null ref or exited), it is restarted via the same `startEventStream()` path, which interrupts any stale fiber first to prevent duplicates.
-2. **Stuck queue detection**: If there are queued items with nothing inflight for 2 consecutive heartbeats (and the executor is not paused and is online), the executor is resumed to unblock processing.
+2. **Stuck queue detection**: If there are queued items with nothing inflight for 2 consecutive heartbeats (and the executor is not paused and is online), the executor's worker fibers are verified and restarted if dead via `ensureWorkers()`, then resumed to unblock processing. This handles cases where worker fibers may have silently died.
 
 Recovery actions emit a `sync:heartbeat-recovery` event with a `reason` field (`"stream-dead"` or `"stuck-queue"`).
 
