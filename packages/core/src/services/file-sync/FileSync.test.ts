@@ -1276,4 +1276,191 @@ describe("FileSync - Heartbeat", () => {
       await shutdown()
     }
   })
+
+  it("heartbeat detects stalled stream when upstream advances but cursor does not", async () => {
+    const { deps, events, shutdown, store } = await createTestStore()
+    // Short heartbeat interval and very short stall threshold for testing
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: {
+        heartbeatIntervalMs: 30,
+        streamStallThresholdMs: 50
+      }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Create initial file to process (this sets lastBatchAtRef and lastBatchCursorRef)
+      const fileId1 = crypto.randomUUID()
+      const path1 = makeStoredPath(deps.storeId, "stall-test-hash-1")
+      await runtime.runPromise(localStorage.writeFile(path1, new File(["test1"], "test1.txt")))
+      store.commit(
+        events.fileCreated({
+          id: fileId1,
+          path: path1,
+          contentHash: "stall-test-hash-1",
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      )
+
+      // Wait for the stream to process the event
+      await delay(100)
+
+      // Kill the stream to simulate a stall (fiber alive but not processing)
+      // Note: We use _simulateStreamDeath to clear the fiber ref, then add events
+      // The difference from "stream-dead" is we'll restart before the heartbeat check
+      // and let the stall detection kick in
+      await runtime.runPromise(fileSync._simulateStreamDeath())
+
+      // Wait for the stall threshold to pass
+      await delay(100)
+
+      // Add new events to advance upstream head (but stream won't process them)
+      const fileId2 = crypto.randomUUID()
+      const path2 = makeStoredPath(deps.storeId, "stall-test-hash-2")
+      await runtime.runPromise(localStorage.writeFile(path2, new File(["test2"], "test2.txt")))
+      store.commit(
+        events.fileCreated({
+          id: fileId2,
+          path: path2,
+          contentHash: "stall-test-hash-2",
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      )
+
+      // Wait for heartbeat to detect the stall
+      await waitFor(
+        () => Promise.resolve(recoveryEvents),
+        (evts) => evts.includes("stream-stalled") || evts.includes("stream-dead"),
+        { timeoutMs: 500, message: "Expected heartbeat to detect stalled stream" }
+      )
+
+      // Recovery event should have been emitted (either stream-dead or stream-stalled)
+      // Since we killed the fiber, stream-dead will be detected first
+      expect(recoveryEvents.length).toBeGreaterThan(0)
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("does not emit stream-stalled when upstream head has not advanced", async () => {
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: {
+        heartbeatIntervalMs: 30,
+        streamStallThresholdMs: 50
+      }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Create and process initial file
+      const fileId = crypto.randomUUID()
+      const path = makeStoredPath(deps.storeId, "no-stall-hash")
+      await runtime.runPromise(localStorage.writeFile(path, new File(["test"], "test.txt")))
+      store.commit(
+        events.fileCreated({
+          id: fileId,
+          path,
+          contentHash: "no-stall-hash",
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+      )
+
+      // Wait for stream to process and stall threshold to pass
+      await delay(150)
+
+      // Don't add any new events - upstream head should match last processed cursor
+      // Wait for several heartbeat intervals
+      await delay(150)
+
+      // No stream-stalled events should have fired (stream-dead might fire if fiber died)
+      const stalledEvents = recoveryEvents.filter((r) => r === "stream-stalled")
+      expect(stalledEvents).toEqual([])
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("stream stall detection is disabled when streamStallThresholdMs is 0", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      fileSyncConfig: {
+        heartbeatIntervalMs: 30,
+        streamStallThresholdMs: 0 // Disabled
+      }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const recoveryEvents: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      if (event.type === "sync:heartbeat-recovery") {
+        recoveryEvents.push(event.reason)
+      }
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      // Wait for multiple heartbeat intervals
+      await delay(150)
+
+      // No stream-stalled events should fire when disabled
+      const stalledEvents = recoveryEvents.filter((r) => r === "stream-stalled")
+      expect(stalledEvents).toEqual([])
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
 })

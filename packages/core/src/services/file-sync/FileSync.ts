@@ -222,6 +222,15 @@ export interface FileSyncConfig {
   readonly streamRecoveryMaxDelayMs?: number
 
   /**
+   * Threshold in ms for detecting a stalled stream.
+   * If the upstream head advances but no events have been processed for this
+   * duration, the stream is considered stalled and will be restarted.
+   * Set to 0 to disable stall detection.
+   * @default 30000
+   */
+  readonly streamStallThresholdMs?: number
+
+  /**
    * Map of MIME type patterns to preprocessor functions.
    * Files matching a pattern are transformed before saving.
    *
@@ -249,7 +258,8 @@ export const defaultFileSyncConfig: FileSyncConfig = {
   autoPrioritizeOnResolve: true,
   maxStreamRecoveryAttempts: 5,
   streamRecoveryBaseDelayMs: 1000,
-  streamRecoveryMaxDelayMs: 60000
+  streamRecoveryMaxDelayMs: 60000,
+  streamStallThresholdMs: 30000
 }
 
 /**
@@ -294,6 +304,10 @@ export const makeFileSync = (
 
     // Stuck-queue detection: consecutive heartbeats where items are queued but nothing is inflight
     const stuckCounterRef = yield* Ref.make(0)
+
+    // Stream stall detection: track last processed batch time and cursor
+    const lastBatchAtRef = yield* Ref.make(0)
+    const lastBatchCursorRef = yield* Ref.make("")
 
     // Stale recovery gating: ensures recoverStaleTransfers runs only once per start() lifecycle
     const staleRecoveryDoneRef = yield* Ref.make(false)
@@ -845,6 +859,10 @@ export const makeFileSync = (
         yield* Ref.set(cursorRef, nextCursor)
         yield* persistCursor(nextCursor)
 
+        // Update stall detection refs
+        yield* Ref.set(lastBatchCursorRef, nextCursor)
+        yield* Ref.set(lastBatchAtRef, Date.now())
+
         yield* emit({ type: "sync:complete" })
       }).pipe(
         Effect.catchAll((error) =>
@@ -1137,6 +1155,36 @@ export const makeFileSync = (
         }
       })
 
+    // Check if stream is stalled (alive but not advancing while upstream moves ahead)
+    const checkStreamStall = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const thresholdMs = config.streamStallThresholdMs ?? 30000
+        if (thresholdMs <= 0) return
+
+        const online = yield* Ref.get(onlineRef)
+        if (!online) return
+
+        const lastBatchAt = yield* Ref.get(lastBatchAtRef)
+        // Skip if we haven't processed any batches yet
+        if (lastBatchAt === 0) return
+
+        const timeSinceLastBatch = Date.now() - lastBatchAt
+        if (timeSinceLastBatch < thresholdMs) return
+
+        const lastBatchCursor = yield* Ref.get(lastBatchCursorRef)
+        const upstreamHead = yield* getUpstreamHeadCursor()
+
+        // Only consider stalled if upstream has advanced beyond our last processed cursor
+        if (upstreamHead === lastBatchCursor) return
+
+        yield* Effect.logWarning(
+          `[FileSync] Heartbeat: stream stalled - upstream at ${upstreamHead}, ` +
+            `last batch at ${lastBatchCursor}, ${timeSinceLastBatch}ms since last batch`
+        )
+        yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-stalled" })
+        yield* startEventStream()
+      })
+
     const startHeartbeat = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const intervalMs = config.heartbeatIntervalMs ?? 15000
@@ -1154,6 +1202,7 @@ export const makeFileSync = (
 
           yield* checkEventStreamLiveness()
           yield* checkStuckQueue()
+          yield* checkStreamStall()
         }).pipe(
           Effect.catchAll((error) => Effect.logError("[FileSync] Heartbeat tick failed", { error }))
         )

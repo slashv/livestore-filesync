@@ -762,12 +762,13 @@ Every heartbeat interval, the following checks run (only when the current tab is
 
 1. **Event stream liveness**: If the stream fiber is dead (null ref or exited), it is restarted via the same `startEventStream()` path, which interrupts any stale fiber first to prevent duplicates.
 2. **Stuck queue detection**: If there are queued items with nothing inflight for 2 consecutive heartbeats (and the executor is not paused and is online), the executor's worker fibers are verified and restarted if dead via `ensureWorkers()`, then resumed to unblock processing. This handles cases where worker fibers may have silently died.
+3. **Stream stall detection**: If the stream fiber is alive but hasn't processed any events while upstream head has advanced beyond the last processed cursor, and the stall threshold has been exceeded, the stream is restarted. This handles the case where the stream is technically alive but no longer advancing. See [STABILITY.md](./STABILITY.md) for details.
 
-Recovery actions emit a `sync:heartbeat-recovery` event with a `reason` field (`"stream-dead"` or `"stuck-queue"`).
+Recovery actions emit a `sync:heartbeat-recovery` event with a `reason` field (`"stream-dead"`, `"stuck-queue"`, or `"stream-stalled"`).
 
 | Event | Fields | Description |
 |-------|--------|-------------|
-| `sync:heartbeat-recovery` | `reason` | Heartbeat detected and recovered a dead stream or stuck queue |
+| `sync:heartbeat-recovery` | `reason` | Heartbeat detected and recovered a dead stream, stuck queue, or stalled stream |
 
 ## Download Prioritization
 

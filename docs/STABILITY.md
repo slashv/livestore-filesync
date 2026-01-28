@@ -51,11 +51,14 @@ initFileSync(store, {
 
 2. **Stuck queue detection**: If there are queued items with nothing inflight for 2 consecutive heartbeats (and the executor is not paused and is online), the executor is resumed to unblock processing.
 
+3. **Stream stall detection**: If the stream fiber is alive but hasn't processed any events while upstream head has advanced beyond the last processed cursor, and the stall threshold has been exceeded, the stream is restarted. This handles the case where the stream is technically alive but no longer advancing.
+
 **Recovery events:**
 | Event | Reason | Description |
 |-------|--------|-------------|
 | `sync:heartbeat-recovery` | `stream-dead` | Heartbeat detected and restarted a dead event stream |
 | `sync:heartbeat-recovery` | `stuck-queue` | Heartbeat detected and recovered a stuck queue |
+| `sync:heartbeat-recovery` | `stream-stalled` | Heartbeat detected a stalled stream (alive but not advancing) |
 
 **Files changed:**
 - `packages/core/src/services/file-sync/FileSync.ts` - Heartbeat implementation
@@ -64,7 +67,45 @@ initFileSync(store, {
 
 ---
 
-### 3. Executor Worker Liveness (ensureWorkers)
+### 3. Stream Stall Watchdog
+
+**Problem:** The event stream fiber could be alive but no longer advancing. The heartbeat liveness check only detects dead fibers, not stalled streams. If the stream keeps running but stops emitting events (e.g., due to a subtle bug or race condition), sync can stall with no recovery.
+
+**Solution:** Track the last processed batch timestamp and cursor. On each heartbeat tick, check if:
+- The upstream head has advanced beyond the last processed cursor
+- Enough time has passed since the last processed batch (exceeds threshold)
+
+If both conditions are met, the stream is considered stalled and is restarted.
+
+**Configuration:**
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: { signerBaseUrl: '/api' },
+  options: {
+    streamStallThresholdMs: 30000 // Default: 30000 (30 seconds). Set to 0 to disable.
+  }
+})
+```
+
+**Implementation details:**
+- `lastBatchAtRef` tracks when the last event batch was processed (epoch ms)
+- `lastBatchCursorRef` tracks the cursor after the last processed batch
+- `checkStreamStall()` runs on each heartbeat tick (only when running, leader, and online)
+- Skip stall checks when:
+  - Stall detection is disabled (`streamStallThresholdMs <= 0`)
+  - We're offline
+  - No batches have been processed yet (`lastBatchAt === 0`)
+  - Time since last batch is below threshold
+  - Upstream head equals last processed cursor (no new work)
+
+**Files changed:**
+- `packages/core/src/services/file-sync/FileSync.ts` - Added stall detection logic
+- `packages/core/src/types/index.ts` - Added `stream-stalled` reason to heartbeat recovery event
+
+---
+
+### 4. Executor Worker Liveness (ensureWorkers)
 
 **Related task:** `02_stability_executor-worker-liveness.md`
 
@@ -137,6 +178,33 @@ const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
 
 ---
 
+### Task 3: Stream Stall Watchdog
+
+**File:** `tasks/03_stability_stream-stall-watchdog.md`  
+**Status:** DONE
+
+**Goal:** Detect when the event stream is alive but no longer advancing while upstream head moves, and restart the stream automatically to recover from a stalled cursor.
+
+**Implementation summary:**
+- Added `lastBatchAtRef` and `lastBatchCursorRef` refs to track last processed batch (`FileSync.ts:309-310`)
+- Updated `handleEventBatch()` to set these refs after cursor persistence (`FileSync.ts:861-862`)
+- Created `checkStreamStall()` function that runs on each heartbeat tick (`FileSync.ts:1159-1191`)
+- Added `streamStallThresholdMs` config option with 30 second default (`FileSync.ts:222-230`, `FileSync.ts:266`)
+- Added `stream-stalled` reason to `sync:heartbeat-recovery` event type (`types/index.ts:105`)
+
+**Edge cases handled:**
+- Only checks when running, isLeader, and online
+- Skips stall checks when upstream head equals cursor (no new work)
+- Skips stall checks when no batches have been processed yet
+- Disabled when `streamStallThresholdMs` is set to 0
+
+**Tests added:**
+- Heartbeat detects stalled stream when upstream advances but cursor does not
+- No false positives when upstream head has not advanced
+- Stream stall detection is disabled when `streamStallThresholdMs` is 0
+
+---
+
 ## Architecture Integration
 
 These stability features integrate with the existing FileSync architecture:
@@ -151,10 +219,13 @@ These stability features integrate with the existing FileSync architecture:
     |                          +-- Stream error recovery (exponential backoff)
     |                          +-- Fiber ref tracking for heartbeat
     |
+    +-- handleEventBatch() ──> updates lastBatchAtRef, lastBatchCursorRef
+    |
     +-- startHeartbeat() ──> periodic tick (every 15s by default)
                                 |
-                                +-- Check stream fiber liveness
-                                +-- Check stuck queue (2 consecutive intervals)
+                                +-- Check stream fiber liveness (stream-dead)
+                                +-- Check stuck queue (stuck-queue)
+                                +-- Check stream stall (stream-stalled)
                                 +-- Emit sync:heartbeat-recovery events
                                 |
                                 +──> executor.resume() / startEventStream()
