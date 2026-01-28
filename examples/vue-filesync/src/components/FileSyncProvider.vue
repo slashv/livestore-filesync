@@ -8,6 +8,7 @@ const props = defineProps<{
   signerBaseUrl?: string
   headers?: Record<string, string>
   authToken?: string
+  healthCheckIntervalMs?: number
 }>()
 
 const { store } = useStore()
@@ -18,7 +19,8 @@ const dispose = initFileSync(store, {
     signerBaseUrl: props.signerBaseUrl ?? '/api',
     headers: props.headers,
     authToken: props.authToken
-  }
+  },
+  ...(props.healthCheckIntervalMs !== undefined ? { options: { healthCheckIntervalMs: props.healthCheckIntervalMs } } : {})
 })
 
 onUnmounted(() => {

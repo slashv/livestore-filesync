@@ -9,6 +9,7 @@ type FileSyncProviderProps = {
   headers?: Record<string, string>
   authHeaders?: () => Record<string, string>
   authToken?: string
+  healthCheckIntervalMs?: number
   children?: ReactNode
 }
 
@@ -17,6 +18,7 @@ const FileSyncProviderInner = ({
   authToken,
   children,
   headers,
+  healthCheckIntervalMs,
   signerBaseUrl = "/api"
 }: FileSyncProviderProps) => {
   const store = useStore(reactStoreOptions)
@@ -30,7 +32,8 @@ const FileSyncProviderInner = ({
         signerBaseUrl,
         ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
         ...(authToken ? { authToken } : {})
-      }
+      },
+      ...(healthCheckIntervalMs !== undefined ? { options: { healthCheckIntervalMs } } : {})
     })
 
     // Mark as ready on next tick to ensure initFileSync has fully completed
@@ -38,7 +41,7 @@ const FileSyncProviderInner = ({
     setReady(true)
 
     return () => void dispose()
-  }, [store, signerBaseUrl, headers, authHeaders, authToken])
+  }, [store, signerBaseUrl, headers, authHeaders, authToken, healthCheckIntervalMs])
 
   return ready ? <>{children}</> : null
 }

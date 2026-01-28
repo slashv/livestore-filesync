@@ -433,7 +433,22 @@ export const makeFileSync = (
         )
       })
 
-    // Health check loop while offline
+    // Re-enqueue transfers that are in "queued" state in the state manager
+    // but may not have corresponding entries in the executor queues (e.g. after goOffline reset)
+    const reEnqueueQueuedTransfers = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const state = yield* stateManager.getState()
+        for (const [fileId, localFile] of Object.entries(state)) {
+          if (localFile.uploadStatus === "queued") {
+            yield* executor.enqueueUpload(fileId)
+          }
+          if (localFile.downloadStatus === "queued") {
+            yield* executor.enqueueDownload(fileId)
+          }
+        }
+      })
+
+    // Continuous health check loop — runs always, detects connectivity changes
     const stopHealthCheckLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const existing = yield* Ref.get(healthCheckFiberRef)
@@ -449,25 +464,94 @@ export const makeFileSync = (
 
         const intervalMs = config.healthCheckIntervalMs ?? 10000
 
-        const loop: Effect.Effect<void> = Effect.gen(function*() {
-          const isHealthy = yield* remoteStorage.checkHealth()
-          if (isHealthy) {
-            yield* Ref.set(onlineRef, true)
-            yield* emit({ type: "online" })
-            yield* executor.resume()
-            // Note: Don't restart the event stream - it was never stopped
-            return
-          }
+        const loop = Effect.forever(
+          Effect.gen(function*() {
+            yield* Effect.sleep(Duration.millis(intervalMs))
+            const wasOnline = yield* Ref.get(onlineRef)
+            const isHealthy = yield* remoteStorage.checkHealth()
 
-          yield* Effect.sleep(`${intervalMs} millis`)
-          yield* loop
-        })
+            if (isHealthy && !wasOnline) {
+              // Recovered: transition offline → online
+              yield* Ref.set(onlineRef, true)
+              yield* emit({ type: "online" })
+              yield* executor.resume()
+              // Re-enqueue transfers that were reset to queued while offline
+              yield* reEnqueueQueuedTransfers()
+            } else if (!isHealthy && wasOnline) {
+              // Lost connectivity: transition online → offline
+              yield* goOffline()
+            }
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.logWarning("[FileSync] Health check tick failed", { error }).pipe(Effect.asVoid)
+            )
+          )
+        ).pipe(Effect.interruptible)
 
-        const fiber = yield* Effect.fork(
-          loop.pipe(Effect.ensuring(Ref.set(healthCheckFiberRef, null)))
+        // Fork into the main scope so the health check fiber stays alive
+        const mainScope = yield* Ref.get(mainScopeRef)
+        if (!mainScope) return
+        const fiber = yield* Effect.forkIn(
+          loop.pipe(Effect.ensuring(Ref.set(healthCheckFiberRef, null))),
+          mainScope
         )
 
         yield* Ref.set(healthCheckFiberRef, fiber)
+      })
+
+    // On transfer failure, verify connectivity before going offline.
+    // The transfer may have failed for legitimate reasons (e.g. bad file) while backend is still reachable.
+    const checkConnectivityOnFailure = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const isHealthy = yield* remoteStorage.checkHealth()
+        if (!isHealthy) {
+          yield* goOffline()
+        }
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.logWarning("[FileSync] Connectivity check after transfer failure failed", { error }).pipe(
+            Effect.asVoid
+          )
+        )
+      )
+
+    // Shared offline transition logic — used by health check and connectivity check
+    const goOffline = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const wasOnline = yield* Ref.get(onlineRef)
+        if (!wasOnline) return
+
+        yield* Ref.set(onlineRef, false)
+        yield* emit({ type: "offline" })
+        yield* executor.pause()
+
+        // Reset inProgress and error transfers to queued since they can't complete while offline
+        // Error transfers are reset because they failed due to connectivity loss
+        yield* stateManager.atomicUpdate((state) => {
+          let hasChanges = false
+          const nextState = { ...state }
+          for (const [fileId, localFile] of Object.entries(nextState)) {
+            let updated = false
+            const updatedFile = { ...localFile }
+
+            if (localFile.uploadStatus === "inProgress" || localFile.uploadStatus === "error") {
+              updatedFile.uploadStatus = "queued"
+              updatedFile.lastSyncError = ""
+              updated = true
+            }
+            if (localFile.downloadStatus === "inProgress" || localFile.downloadStatus === "error") {
+              updatedFile.downloadStatus = "queued"
+              updatedFile.lastSyncError = ""
+              updated = true
+            }
+
+            if (updated) {
+              nextState[fileId] = updatedFile
+              hasChanges = true
+            }
+          }
+          return hasChanges ? nextState : state
+        })
       })
 
     // Download a file from remote to local
@@ -539,6 +623,10 @@ export const makeFileSync = (
             )
 
             yield* emit({ type: "download:error", fileId, error })
+
+            // Check if backend is still reachable — go offline only if not
+            yield* checkConnectivityOnFailure()
+
             return yield* Effect.fail(error)
           })
         )
@@ -634,6 +722,10 @@ export const makeFileSync = (
               String(error)
             )
             yield* emit({ type: "upload:error", fileId, error })
+
+            // Check if backend is still reachable — go offline only if not
+            yield* checkConnectivityOnFailure()
+
             return yield* Effect.fail(error)
           })
         )
@@ -1254,6 +1346,9 @@ export const makeFileSync = (
 
         // Start heartbeat to monitor stream and executor liveness
         yield* startHeartbeat()
+
+        // Start continuous health check to detect connectivity changes
+        yield* startHealthCheckLoop()
       })
 
     const stop = (): Effect.Effect<void> =>
@@ -1403,43 +1498,12 @@ export const makeFileSync = (
         const wasOnline = yield* Ref.get(onlineRef)
         if (online === wasOnline) return
 
-        yield* Ref.set(onlineRef, online)
-
         if (online) {
+          yield* Ref.set(onlineRef, true)
           yield* emit({ type: "online" })
           yield* executor.resume()
-          yield* stopHealthCheckLoop()
-          yield* restartEventStream()
         } else {
-          yield* emit({ type: "offline" })
-          yield* executor.pause()
-
-          // Reset inProgress transfers to queued since they can't complete while offline
-          yield* stateManager.atomicUpdate((state) => {
-            let hasChanges = false
-            const nextState = { ...state }
-            for (const [fileId, localFile] of Object.entries(nextState)) {
-              let updated = false
-              const updatedFile = { ...localFile }
-
-              if (localFile.uploadStatus === "inProgress") {
-                updatedFile.uploadStatus = "queued"
-                updated = true
-              }
-              if (localFile.downloadStatus === "inProgress") {
-                updatedFile.downloadStatus = "queued"
-                updated = true
-              }
-
-              if (updated) {
-                nextState[fileId] = updatedFile
-                hasChanges = true
-              }
-            }
-            return hasChanges ? nextState : state
-          })
-
-          yield* startHealthCheckLoop()
+          yield* goOffline()
         }
       })
 

@@ -1426,6 +1426,66 @@ describe("FileSync - Heartbeat", () => {
     }
   })
 
+  it("health check loop auto-recovers when remote becomes healthy", async () => {
+    // This test verifies that the health check loop (started when going offline)
+    // automatically detects when the remote is reachable again and brings the
+    // system back online WITHOUT a manual setOnline(true) call.
+    //
+    // BUG: The health check fiber is forked with Effect.fork (scoped to the
+    // generator) instead of Effect.forkIn(mainScope), so it dies immediately
+    // after startHealthCheckLoop returns.
+    const { deps, shutdown } = await createTestStore()
+    const { optionsRef, runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { offline: false },
+      fileSyncConfig: { healthCheckIntervalMs: 50, heartbeatIntervalMs: 0 }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const events: Array<string> = []
+    const unsubscribe = fileSync.onEvent((event) => {
+      events.push(event.type)
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Simulate going offline — this starts the health check loop
+      await Effect.runPromise(Ref.set(optionsRef, { offline: true }))
+      await runtime.runPromise(fileSync.setOnline(false))
+      expect(events).toContain("offline")
+
+      // Verify we are offline
+      const isOnlineBefore = await runtime.runPromise(fileSync.isOnline())
+      expect(isOnlineBefore).toBe(false)
+
+      // Now simulate remote becoming reachable again (but do NOT call setOnline(true))
+      await Effect.runPromise(Ref.set(optionsRef, { offline: false }))
+
+      // The health check loop should detect this and bring us back online
+      await waitFor(
+        () => runtime.runPromise(fileSync.isOnline()),
+        (online) => online === true,
+        { timeoutMs: 2000, message: "Health check loop did not auto-recover online state" }
+      )
+
+      // Verify the online event was emitted by the health check loop
+      // (not by a manual setOnline call — we never called setOnline(true))
+      const onlineEvents = events.filter((e) => e === "online")
+      expect(onlineEvents.length).toBeGreaterThanOrEqual(1)
+    } finally {
+      unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
   it("stream stall detection is disabled when streamStallThresholdMs is 0", async () => {
     const { deps, shutdown } = await createTestStore()
     const { runtime } = await createRuntimeWithConfig(deps, {

@@ -12,7 +12,10 @@ import { schema, SyncPayload } from "./livestore/schema.ts"
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
-const storeId = urlParams.get("storeId") || "react_filesync_store_4"
+const storeId = urlParams.get("storeId") || "react_filesync_store_5"
+const healthCheckIntervalMs = urlParams.get("healthCheckIntervalMs")
+  ? Number(urlParams.get("healthCheckIntervalMs"))
+  : undefined
 
 const adapter = makePersistedAdapter({
   storage: { type: "opfs" },
@@ -41,7 +44,7 @@ export const reactStoreOptions = storeOptions({
 
 export const App = () => (
   <StoreRegistryProvider storeRegistry={storeRegistry}>
-    <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken}>
+    <FileSyncProvider authHeaders={getAuthHeaders} authToken={authToken} healthCheckIntervalMs={healthCheckIntervalMs}>
       <div className="app-layout">
         <div className="main">
           <Gallery />

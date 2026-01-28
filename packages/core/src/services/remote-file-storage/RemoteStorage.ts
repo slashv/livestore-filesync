@@ -461,6 +461,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
           headers: makeHeaders(),
           ...fetchOptions
         })
+        console.log("checkHealth", response.ok)
         return response.ok
       },
       catch: () => false

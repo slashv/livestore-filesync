@@ -13,6 +13,7 @@ import SyncStatus from './components/SyncStatus.vue'
 const urlParams = new URLSearchParams(window.location.search)
 // Bump default storeId when schema changes to avoid loading an incompatible persisted db in dev.
 const storeId = urlParams.get('storeId') || 'vue_filesync_store_v10'
+const healthCheckIntervalMs = urlParams.get('healthCheckIntervalMs') ? Number(urlParams.get('healthCheckIntervalMs')) : undefined
 
 const adapter = makePersistedAdapter({
   storage: { type: 'opfs' },
@@ -34,7 +35,7 @@ const storeOptions = {
   <Suspense>
     <template #default>
       <LiveStoreProvider :options="storeOptions">
-        <FileSyncProvider :auth-token="authToken">
+        <FileSyncProvider :auth-token="authToken" :health-check-interval-ms="healthCheckIntervalMs">
           <div class="layout">
             <div class="main">
               <Gallery />

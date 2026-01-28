@@ -831,7 +831,7 @@ test.describe('File Sync', () => {
 test.describe('File Sync - Offline/Online Recovery', () => {
   test('should resume uploads when going from offline to online', async ({ browser }) => {
     const storeId = generateStoreId()
-    const url = `/?storeId=${storeId}`
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
 
     // Create a new context so we can control offline state
     const context = await browser.newContext()
@@ -893,7 +893,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
 
   test('should resume downloads when going from offline to online', async ({ browser }) => {
     const storeId = generateStoreId()
-    const url = `/?storeId=${storeId}`
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
 
     // First, upload a file with context1 (online)
     const context1 = await browser.newContext()
@@ -976,7 +976,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // - Files added after going online also get uploaded (the original bug)
 
     const storeId = generateStoreId()
-    const url = `/?storeId=${storeId}`
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
 
     const context = await browser.newContext()
     const page = await context.newPage()
@@ -1088,7 +1088,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // 6. Verify file syncs to Browser 1 and displays correctly
 
     const storeId = generateStoreId()
-    const url = `/?storeId=${storeId}`
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
 
     // Create two separate browser contexts (simulates two different users/browsers)
     const context1 = await browser.newContext()
@@ -1161,6 +1161,50 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     await context2.close()
   })
 
+  test('should auto-recover via health check when network comes back', async ({ browser }) => {
+    // The health check loop should autonomously detect when the remote becomes
+    // reachable and resume uploads — no browser online/offline events involved.
+    // (The online/offline window listeners in createFileSync are disabled for this test.)
+
+    const storeId = generateStoreId()
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
+
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    await page.goto(url)
+    await waitForLiveStoreAndSync(page)
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    // 1. Go offline
+    await context.setOffline(true)
+    await page.waitForTimeout(500)
+
+    // 2. Add a file while offline
+    const testImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+
+    // 3. Verify it stays queued (can't upload while offline)
+    const uploadStatus = page.locator('[data-testid="file-upload-status"]')
+    await expect(uploadStatus).toHaveText('queued', { timeout: 5000 })
+
+    // 4. Restore network — health check loop should detect and resume
+    await context.setOffline(false)
+
+    // 5. Wait for upload to complete via health check auto-recovery
+    await expect(uploadStatus).toHaveText('done', { timeout: 30000 })
+
+    // 6. Verify remote key is set
+    const remoteKey = page.locator('[data-testid="file-remote-key"]')
+    await expect.poll(
+      async () => (await remoteKey.textContent())?.trim() || '',
+      { timeout: 15000 }
+    ).not.toBe('')
+
+    await context.close()
+  })
+
   test('should upload multiple files added while offline after going back online', async ({ browser }) => {
     // Bug: When adding multiple files while offline, then going back online,
     // some uploads fail with FileNotFoundError even though files were saved to OPFS.
@@ -1174,7 +1218,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     // and increase the likelihood of hitting timing issues.
 
     const storeId = generateStoreId()
-    const url = `/?storeId=${storeId}`
+    const url = `/?storeId=${storeId}&healthCheckIntervalMs=1000`
     const fileCount = 8
 
     const context = await browser.newContext()
