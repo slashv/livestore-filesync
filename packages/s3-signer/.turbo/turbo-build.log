@@ -1,4 +1,0 @@
-
-> @livestore-filesync/s3-signer@0.3.1 build /Users/victornyberg/Developer/livestore-turbo-filesync/libs/livestore-filesync/packages/s3-signer
-> tsc -b tsconfig.build.json
-

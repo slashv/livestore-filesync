@@ -28,9 +28,21 @@
       "types": "./dist/preprocessor/index.d.ts",
       "import": "./dist/preprocessor/index.js"
     },
+    "./preprocessor/canvas": {
+      "types": "./dist/preprocessor/canvas-preprocessor.d.ts",
+      "import": "./dist/preprocessor/canvas-preprocessor.js"
+    },
     "./processor": {
       "types": "./dist/processor/index.d.ts",
       "import": "./dist/processor/index.js"
+    },
+    "./processor/canvas": {
+      "types": "./dist/processor/canvas.d.ts",
+      "import": "./dist/processor/canvas.js"
+    },
+    "./processor/vips": {
+      "types": "./dist/processor/vips.d.ts",
+      "import": "./dist/processor/vips.js"
     },
     "./thumbnails": {
       "types": "./dist/thumbnails/index.d.ts",

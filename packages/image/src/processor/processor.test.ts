@@ -81,24 +81,24 @@ describe("createVipsProcessor", () => {
 })
 
 describe("createImageProcessor", () => {
-  it("creates vips processor when type is vips", () => {
-    const processor = createImageProcessor("vips")
+  it("creates vips processor when type is vips", async () => {
+    const processor = await createImageProcessor("vips")
     expect(processor.type).toBe("buffer")
     expect(processor.capabilities.preservesIccProfile).toBe(true)
   })
 
-  it("creates canvas processor when type is canvas", () => {
-    const processor = createImageProcessor("canvas")
+  it("creates canvas processor when type is canvas", async () => {
+    const processor = await createImageProcessor("canvas")
     expect(processor.type).toBe("buffer")
     expect(processor.capabilities.preservesIccProfile).toBe(false)
   })
 
-  it("throws for expo processor (not yet implemented)", () => {
-    expect(() => createImageProcessor("expo")).toThrow("not yet implemented")
+  it("throws for expo processor (not yet implemented)", async () => {
+    await expect(createImageProcessor("expo")).rejects.toThrow("not yet implemented")
   })
 
-  it("passes vipsOptions to vips processor", () => {
-    const processor = createImageProcessor("vips", {
+  it("passes vipsOptions to vips processor", async () => {
+    const processor = await createImageProcessor("vips", {
       vipsOptions: {
         locateFile: (path: string) => `/wasm/${path}`
       }
