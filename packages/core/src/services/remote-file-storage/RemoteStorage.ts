@@ -27,9 +27,11 @@ export interface RemoteStorageConfig {
   readonly signerBaseUrl: string
 
   /**
-   * Optional authorization token
+   * Optional authorization token.
+   * Can be a static string or a getter function that returns the current token,
+   * which is useful when tokens may change (e.g. after logout/re-login).
    */
-  readonly authToken?: string
+  readonly authToken?: string | (() => string | null)
 
   /**
    * Optional custom headers
@@ -162,8 +164,9 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     const headers: Record<string, string> = {
       ...config.headers
     }
-    if (config.authToken) {
-      headers["Authorization"] = `Bearer ${config.authToken}`
+    const token = typeof config.authToken === 'function' ? config.authToken() : config.authToken
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
     }
     return headers
   }
