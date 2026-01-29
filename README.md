@@ -4,6 +4,8 @@ File sync for LiveStore apps. This missing piece for local-first apps that need 
 
 **[!]** This is still under active development and not yet fully tested or ready. Generally the sync functionality on web and desktop (electron) is in a functional state while the expo (mobile) and image packages are less mature.
 
+**[!]** This project targets LiveStore 0.4 which is in active development. The LiveStore source is included as a git submodule (on the `dev` branch) so that we develop against the latest version rather than a pre-release from npm. See [Getting Started](#getting-started) for clone instructions.
+
 - **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
 - **Background sync**: Files as synced in background by reacting to LiveStore events.
@@ -24,6 +26,38 @@ File sync for LiveStore apps. This missing piece for local-first apps that need 
 | `@livestore-filesync/r2` | Cloudflare R2 storage handler (Worker-proxied) |
 | `@livestore-filesync/s3-signer` | S3-compatible presigned URL signer (direct-to-storage) |
 | `@livestore-filesync/image` | Image preprocessing and thumbnail generation |
+
+## Getting Started
+
+This repo uses a git submodule for LiveStore. You must clone with `--recursive` to pull it in:
+
+```bash
+git clone --recursive https://github.com/<org>/livestore-filesync.git
+cd livestore-filesync
+```
+
+If you already cloned without `--recursive`, or are using this repo as a submodule in another project, initialize it with:
+
+```bash
+git submodule update --init --recursive
+```
+
+Then install dependencies:
+
+```bash
+pnpm install
+```
+
+### Updating LiveStore
+
+To pull the latest LiveStore `dev` branch:
+
+```bash
+cd libs/livestore
+git pull origin dev
+cd ../..
+pnpm install
+```
 
 ## Install
 

@@ -11,12 +11,12 @@
     "url": "https://github.com/slashv/livestore-filesync"
   },
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "pnpm -r --filter '!./libs/**' build",
     "build:packages": "pnpm --filter '@livestore-filesync/*' build",
-    "check": "pnpm -r check",
-    "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\" --ignore-pattern \"**/reference/**\"",
+    "check": "pnpm -r --filter '!./libs/**' check",
+    "lint": "eslint \"**/{src,test,examples,scripts}/**/*.{ts,tsx,mjs}\" --ignore-pattern \"**/reference/**\" --ignore-pattern \"**/libs/**\"",
     "lint-fix": "pnpm lint --fix",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --filter '!./libs/**' test",
     "test:unit": "pnpm --filter @livestore-filesync/core test",
     "test:e2e": "pnpm --filter e2e-tests test",
     "dev": "pnpm -r --parallel dev",
