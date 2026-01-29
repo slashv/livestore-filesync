@@ -307,7 +307,7 @@ export const makeFileSync = (
 
     // Stream stall detection: track last processed batch time and cursor
     const lastBatchAtRef = yield* Ref.make(0)
-    const lastBatchCursorRef = yield* Ref.make("")
+    const lastBatchCursorRef = yield* Ref.make<EventSequenceNumber.Client.Composite | null>(null)
 
     // Stale recovery gating: ensures recoverStaleTransfers runs only once per start() lifecycle
     const staleRecoveryDoneRef = yield* Ref.make(false)
@@ -411,7 +411,11 @@ export const makeFileSync = (
         const storedCursor = yield* readCursor()
         yield* persistCursor(upstreamCursor)
         yield* Ref.set(cursorRef, upstreamCursor)
-        if (storedCursor && storedCursor !== upstreamCursor) {
+        // Compare only the global component — local events and rebase generations
+        // should not cause a misleading "overriding" log message
+        const storedGlobal = storedCursor ? resolveCursor(storedCursor).global : null
+        const upstreamGlobal = resolveCursor(upstreamCursor).global
+        if (storedGlobal !== null && storedGlobal !== upstreamGlobal) {
           yield* Effect.logInfo("[FileSync] Overriding stored cursor after bootstrap", {
             storedCursor,
             upstreamCursor
@@ -959,7 +963,7 @@ export const makeFileSync = (
         yield* persistCursor(nextCursor)
 
         // Update stall detection refs
-        yield* Ref.set(lastBatchCursorRef, nextCursor)
+        yield* Ref.set(lastBatchCursorRef, lastEvent.seqNum)
         yield* Ref.set(lastBatchAtRef, Date.now())
 
         yield* emit({ type: "sync:complete" })
@@ -1271,14 +1275,18 @@ export const makeFileSync = (
         if (timeSinceLastBatch < thresholdMs) return
 
         const lastBatchCursor = yield* Ref.get(lastBatchCursorRef)
-        const upstreamHead = yield* getUpstreamHeadCursor()
+        if (!lastBatchCursor) return
 
-        // Only consider stalled if upstream has advanced beyond our last processed cursor
-        if (upstreamHead === lastBatchCursor) return
+        const upstreamState = yield* Effect.orDie(clientSession.leaderThread.syncState)
+        const upstreamHead = upstreamState.upstreamHead
+
+        // Compare only the global (synced) component — local events and rebase generations
+        // should not affect stall detection since the upstream head only tracks synced events
+        if (upstreamHead.global === lastBatchCursor.global) return
 
         yield* Effect.logWarning(
-          `[FileSync] Heartbeat: stream stalled - upstream at ${upstreamHead}, ` +
-            `last batch at ${lastBatchCursor}, ${timeSinceLastBatch}ms since last batch`
+          `[FileSync] Heartbeat: stream stalled - upstream at ${EventSequenceNumber.Client.toString(upstreamHead)}, ` +
+            `last batch at ${EventSequenceNumber.Client.toString(lastBatchCursor)}, ${timeSinceLastBatch}ms since last batch`
         )
         yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-stalled" })
         yield* startEventStream()
