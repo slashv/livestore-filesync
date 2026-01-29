@@ -3,6 +3,7 @@ import {
   createTestImage,
   createMultipleTestImages,
   waitForLiveStore,
+  waitForLiveStoreAndSync,
   waitForImageLoaded,
   getRemoteKey,
   toRemoteUrl,
@@ -378,6 +379,140 @@ test.describe('Page Refresh Recovery', () => {
     // - "done" (retry completed very quickly)
     // But NEVER stuck at "inProgress" without an active transfer
     expect(['pending', 'queued', 'done']).toContain(uploadStatus)
+
+    await context.close()
+  })
+
+  test('should not re-download already synced files on page refresh', async ({ browser }) => {
+    /**
+     * Regression test: When a file is fully synced (uploaded + downloaded,
+     * localHash matches contentHash, remoteKey set), refreshing the page
+     * should NOT trigger a re-download.
+     *
+     * The bug manifests specifically when:
+     * 1. Upload file, fully synced, refresh — OK (no re-download)
+     * 2. Delete the file
+     * 3. Upload the SAME file again, fully synced, refresh — BUG (re-downloads)
+     *
+     * This may be caused by stale localFileState from the deleted file
+     * interfering with the re-uploaded file (same content hash / OPFS path).
+     */
+    const storeId = generateStoreId('refresh_no_redownload')
+    const url = `/?storeId=${storeId}`
+
+    const context = await browser.newContext()
+    const page = await context.newPage()
+
+    await page.goto(url)
+    await waitForLiveStore(page)
+
+    // === PHASE 1: Upload, verify, refresh (baseline) ===
+
+    const testImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('done', {
+      timeout: 15000,
+    })
+    await expect(page.locator('[data-testid="file-download-status"]')).toHaveText('done', {
+      timeout: 15000,
+    })
+
+    const remoteKey1 = await getRemoteKey(page)
+    const localHash1 = await page.locator('[data-testid="file-local-hash"]').textContent()
+    expect(localHash1).not.toBe('')
+    expect(localHash1).not.toBeNull()
+    console.log(`Phase 1 - uploaded. remoteKey: ${remoteKey1}, localHash: ${localHash1}`)
+
+    // Track download requests
+    let downloadRequestCount = 0
+    await page.route('**/livestore-filesync-files/**', async (route) => {
+      if (route.request().method() === 'GET') {
+        downloadRequestCount++
+        console.log(`Download request #${downloadRequestCount}: ${route.request().url()}`)
+      }
+      await route.continue()
+    })
+
+    // Refresh and verify no re-download
+    await page.reload()
+    await waitForLiveStore(page)
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await page.waitForTimeout(3000)
+
+    expect(downloadRequestCount).toBe(0)
+    await expect(page.locator('[data-testid="file-download-status"]')).toHaveText('done')
+    const localHashAfterRefresh1 = await page
+      .locator('[data-testid="file-local-hash"]')
+      .textContent()
+    expect(localHashAfterRefresh1).toBe(localHash1)
+    console.log(`Phase 1 - refresh OK, no re-download. downloadRequests: ${downloadRequestCount}`)
+
+    // === PHASE 2: Delete the file ===
+
+    // Clear route handlers before delete (avoid intercepting DELETE-related GETs)
+    await page.unroute('**/livestore-filesync-files/**')
+
+    await page.locator('[data-testid="delete-button"]').click()
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(0, { timeout: 5000 })
+
+    // Wait for delete to fully propagate (remote deletion, event processing)
+    await page.waitForTimeout(2000)
+    console.log('Phase 2 - file deleted')
+
+    // === PHASE 3: Upload the SAME file again ===
+
+    // Use the same test image (same content, same hash)
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('done', {
+      timeout: 30000,
+    })
+    await expect(page.locator('[data-testid="file-download-status"]')).toHaveText('done', {
+      timeout: 30000,
+    })
+
+    const remoteKey2 = await getRemoteKey(page)
+    const localHash2 = await page.locator('[data-testid="file-local-hash"]').textContent()
+    expect(localHash2).not.toBe('')
+    expect(localHash2).not.toBeNull()
+    console.log(`Phase 3 - re-uploaded. remoteKey: ${remoteKey2}, localHash: ${localHash2}`)
+
+    // === PHASE 4: Refresh and verify no re-download ===
+
+    downloadRequestCount = 0
+    await page.route('**/livestore-filesync-files/**', async (route) => {
+      if (route.request().method() === 'GET') {
+        downloadRequestCount++
+        console.log(
+          `UNEXPECTED download request #${downloadRequestCount}: ${route.request().url()}`
+        )
+      }
+      await route.continue()
+    })
+
+    console.log('Phase 4 - refreshing page after re-upload...')
+    await page.reload()
+    await waitForLiveStore(page)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 10000 })
+    await page.waitForTimeout(3000)
+
+    // CRITICAL ASSERTIONS for phase 4:
+    const downloadStatusFinal = await page
+      .locator('[data-testid="file-download-status"]')
+      .textContent()
+    const localHashFinal = await page.locator('[data-testid="file-local-hash"]').textContent()
+
+    console.log(
+      `Phase 4 - after refresh: downloadStatus=${downloadStatusFinal}, localHash=${localHashFinal}, downloadRequests=${downloadRequestCount}`
+    )
+
+    expect(downloadRequestCount).toBe(0)
+    expect(downloadStatusFinal).toBe('done')
+    expect(localHashFinal).toBe(localHash2)
 
     await context.close()
   })

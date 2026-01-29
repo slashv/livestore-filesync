@@ -888,7 +888,14 @@ export const makeFileSync = (
         const path = localPath ?? file?.path
 
         if (path) {
-          yield* localStorage.deleteFile(path).pipe(Effect.ignore)
+          // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
+          const allFiles = store.query<Array<FileRecord>>(queryDb(tables.files.select()))
+          const otherActiveFileWithSamePath = allFiles.some(
+            (f) => f.id !== payload.id && !f.deletedAt && f.path === path
+          )
+          if (!otherActiveFileWithSamePath) {
+            yield* localStorage.deleteFile(path).pipe(Effect.ignore)
+          }
         }
 
         // Cancel any pending download for this file
