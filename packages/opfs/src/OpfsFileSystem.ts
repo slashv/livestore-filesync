@@ -563,10 +563,29 @@ export const makeOpfsFileSystem = (
 }
 
 /**
- * Layer that provides the OPFS FileSystem implementation
+ * Request persistent storage so the browser won't evict OPFS data under storage pressure.
+ * Fire-and-forget — a rejection or `false` result is non-critical.
+ *
+ * @see https://developer.mozilla.org/en-US/docs/Web/API/StorageManager/persist
+ */
+const requestPersistentStorage: Effect.Effect<void> = Effect.sync(() => {
+  if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+    navigator.storage.persist().catch(() => {})
+  }
+})
+
+/**
+ * Layer that provides the OPFS FileSystem implementation.
+ *
+ * On construction this also requests persistent storage via
+ * `navigator.storage.persist()` to prevent the browser from
+ * evicting OPFS data under storage pressure.
  */
 export const layer = (options: OpfsFileSystemOptions = {}): Layer.Layer<FS.FileSystem> =>
-  Layer.succeed(FileSystem, makeOpfsFileSystem(options))
+  Layer.merge(
+    Layer.succeed(FileSystem, makeOpfsFileSystem(options)),
+    Layer.effectDiscard(requestPersistentStorage)
+  )
 
 /**
  * Default OPFS FileSystem layer (no base directory)
