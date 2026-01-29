@@ -1,4 +1,0 @@
-[submodule "libs/livestore"]
-	path = libs/livestore
-	url = https://github.com/livestorejs/livestore.git
-	branch = dev

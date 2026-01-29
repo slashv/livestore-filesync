@@ -7,9 +7,9 @@
     "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
     "@livestore-filesync/core": "workspace:*",
-    "@livestore/adapter-node": "workspace:*",
-    "@livestore/livestore": "workspace:*",
-    "@livestore/sync-cf": "workspace:*",
+    "@livestore/adapter-node": "catalog:",
+    "@livestore/livestore": "catalog:",
+    "@livestore/sync-cf": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
