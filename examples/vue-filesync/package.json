@@ -1,6 +1,6 @@
 {
   "name": "livestore-filesync-vue-example",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "type": "module",
   "private": true,
   "dependencies": {
