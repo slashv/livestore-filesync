@@ -10,7 +10,6 @@ import { type FilePreprocessor, MemoryFile } from "@livestore-filesync/core"
 
 import { createCanvasProcessor } from "../processor/canvas.js"
 import type { BufferImageProcessor } from "../processor/types.js"
-import { createVipsProcessor } from "../processor/vips.js"
 import { type VipsInitOptions } from "../vips.js"
 
 /**
@@ -172,10 +171,20 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
 
   const targetMimeType = getMimeType(format)
 
-  // Create the appropriate processor
-  const processor: BufferImageProcessor = processorType === "canvas"
-    ? createCanvasProcessor()
-    : createVipsProcessor(vipsOptions)
+  // Create the appropriate processor lazily
+  let processor: BufferImageProcessor | undefined
+
+  const getProcessor = async (): Promise<BufferImageProcessor> => {
+    if (!processor) {
+      if (processorType === "canvas") {
+        processor = createCanvasProcessor()
+      } else {
+        const { createVipsProcessor } = await import("../processor/vips.js")
+        processor = createVipsProcessor(vipsOptions)
+      }
+    }
+    return processor
+  }
 
   return async (file: File): Promise<File> => {
     // Skip if below size threshold
@@ -194,23 +203,16 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
     // Read file into buffer for dimension check
     const arrayBuffer = await file.arrayBuffer()
 
+    // Get or create the processor (lazy init, dynamic import for vips)
+    const proc = await getProcessor()
+
     // Initialize processor if needed
-    if (!processor.isInitialized()) {
-      await processor.init()
+    if (!proc.isInitialized()) {
+      await proc.init()
     }
 
-    // For dimension checking, we need to decode the image
-    // Use the processor to check dimensions by attempting to process
-    // If within bounds and correct format, return original file
-    // This is handled by the processor's process method which respects maxDimension
-
-    // Check if image needs processing by getting dimensions
-    // For canvas, we can use createImageBitmap to check dimensions without full processing
-    // For vips, we'd need to load the image anyway
-    // To avoid loading twice, we'll just process and check the result
-
     // Process the image
-    const result = await processor.process(arrayBuffer, {
+    const result = await proc.process(arrayBuffer, {
       maxDimension,
       format,
       quality,
@@ -261,10 +263,20 @@ export function createResizeOnlyPreprocessor(
 ): FilePreprocessor {
   const processorType = options?.processor ?? "vips"
 
-  // Create the appropriate processor
-  const processor: BufferImageProcessor = processorType === "canvas"
-    ? createCanvasProcessor()
-    : createVipsProcessor(options?.vipsOptions)
+  // Create the appropriate processor lazily
+  let processor: BufferImageProcessor | undefined
+
+  const getProcessor = async (): Promise<BufferImageProcessor> => {
+    if (!processor) {
+      if (processorType === "canvas") {
+        processor = createCanvasProcessor()
+      } else {
+        const { createVipsProcessor } = await import("../processor/vips.js")
+        processor = createVipsProcessor(options?.vipsOptions)
+      }
+    }
+    return processor
+  }
 
   return async (file: File): Promise<File> => {
     // Determine output format from input MIME type
@@ -290,13 +302,16 @@ export function createResizeOnlyPreprocessor(
       return file
     }
 
+    // Get or create the processor (lazy init, dynamic import for vips)
+    const proc = await getProcessor()
+
     // Initialize processor if needed
-    if (!processor.isInitialized()) {
-      await processor.init()
+    if (!proc.isInitialized()) {
+      await proc.init()
     }
 
     // Process the image
-    const result = await processor.process(arrayBuffer, {
+    const result = await proc.process(arrayBuffer, {
       maxDimension,
       format,
       quality: 90,

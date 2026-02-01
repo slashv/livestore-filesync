@@ -49,4 +49,6 @@ export {
   type ImageProcessorBackend
 } from "./preprocessor.js"
 
-export { getVipsInstance, initVips, isVipsInitialized, type VipsInitOptions } from "../vips.js"
+// Vips utilities are available via @livestore-filesync/image directly
+// They are not re-exported here to avoid pulling wasm-vips into canvas-only bundles
+export type { VipsInitOptions } from "../vips.js"

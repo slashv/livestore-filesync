@@ -13,7 +13,6 @@
 // Import for factory function
 import { createCanvasProcessor } from "./canvas.js"
 import type { ImageProcessor, ImageProcessorType } from "./types.js"
-import { createVipsProcessor, type VipsProcessorOptions } from "./vips.js"
 
 export type {
   BufferImageProcessor,
@@ -39,7 +38,7 @@ export interface CreateImageProcessorOptions {
   /**
    * Vips-specific options (only used when type is 'vips')
    */
-  vipsOptions?: VipsProcessorOptions
+  vipsOptions?: import("./vips.js").VipsProcessorOptions
 }
 
 /**
@@ -60,13 +59,16 @@ export interface CreateImageProcessorOptions {
  * const canvasProcessor = createImageProcessor('canvas')
  * ```
  */
-export function createImageProcessor(
+export async function createImageProcessor(
   type: ImageProcessorType,
   options: CreateImageProcessorOptions = {}
-): ImageProcessor {
+): Promise<ImageProcessor> {
   switch (type) {
-    case "vips":
+    case "vips": {
+      // Dynamic import to avoid bundling wasm-vips when not used
+      const { createVipsProcessor } = await import("./vips.js")
       return createVipsProcessor(options.vipsOptions)
+    }
     case "canvas":
       return createCanvasProcessor()
     case "expo":

@@ -1,4 +1,0 @@
-
-> @livestore-filesync/r2@0.3.1 build /Users/victornyberg/Developer/livestore-turbo-filesync/libs/livestore-filesync/packages/r2
-> tsc -b tsconfig.build.json
-
