@@ -888,16 +888,13 @@ describe("FileSync - Error State Recovery", () => {
       // Manually inject error state into localFileState
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId]: {
-              path,
-              localHash: "error-test-hash",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "Simulated error"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId,
+          path,
+          localHash: "error-test-hash",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "Simulated error"
         })
       )
 
@@ -960,23 +957,23 @@ describe("FileSync - Error State Recovery", () => {
       // Inject error states
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId1]: {
-              path: path1,
-              localHash: "retry-hash-1",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "Upload failed"
-            },
-            [fileId2]: {
-              path: path2,
-              localHash: "retry-hash-2",
-              uploadStatus: "done",
-              downloadStatus: "error",
-              lastSyncError: "Download failed"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId: fileId1,
+          path: path1,
+          localHash: "retry-hash-1",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "Upload failed"
+        })
+      )
+      store.commit(
+        schema.events.localFileStateUpsert({
+          fileId: fileId2,
+          path: path2,
+          localHash: "retry-hash-2",
+          uploadStatus: "done",
+          downloadStatus: "error",
+          lastSyncError: "Download failed"
         })
       )
 
@@ -1056,16 +1053,13 @@ describe("FileSync - Error State Recovery", () => {
 
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId]: {
-              path,
-              localHash: "clear-error-hash",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "This error should be cleared"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId,
+          path,
+          localHash: "clear-error-hash",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "This error should be cleared"
         })
       )
 

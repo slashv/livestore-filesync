@@ -18,6 +18,7 @@ import type {
   FileSyncTables,
   FileUpdatedPayloadSchema,
   LocalFilesStateSchema,
+  LocalFileStateRowSchema,
   LocalFileStateSchema,
   TransferStatusSchema
 } from "../schema/index.js"
@@ -40,6 +41,11 @@ export type LocalFileState = typeof LocalFileStateSchema.Type
  * Local file state - mutable variant for internal sync operations
  */
 export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFileStateSchema>>>
+
+/**
+ * Local file state row - includes fileId, used for SQLite table operations
+ */
+export type LocalFileStateRow = typeof LocalFileStateRowSchema.Type
 
 /**
  * Map of file IDs to local file states (readonly)
