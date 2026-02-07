@@ -1,6 +1,14 @@
-import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
+import {
+  deleteFile,
+  getFileDisplayState,
+  readFile,
+  resolveFileUrl,
+  rowsToLocalFilesState,
+  updateFile
+} from "@livestore-filesync/core"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 import type { FileType } from "../types"
@@ -8,10 +16,11 @@ import type { FileType } from "../types"
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState)
+  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
+  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
   const displayState = getFileDisplayState(
     file,
-    localFileState?.localFiles ?? {}
+    localFilesState
   )
   const { canDisplay, isUploading, localState: localFile } = displayState
 

@@ -6,9 +6,11 @@ import {
   getFileDisplayState,
   readFile,
   resolveFileUrl,
+  rowsToLocalFilesState,
   updateFile,
 } from '@livestore-filesync/core'
-import { useStore } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
+import { useStore, useQuery } from 'vue-livestore'
 import type { FileType } from '../types'
 import { invertImageFile } from '../utils/image.utils'
 
@@ -18,11 +20,12 @@ const props = defineProps<{
 
 const { store } = useStore()
 
-const { localFiles } = store.useClientDocument(tables.localFileState)
-const localFile = computed(() => localFiles.value[props.file.id])
+const localFileStateRows = useQuery(queryDb(tables.localFileState.select()))
+const localFilesState = computed(() => rowsToLocalFilesState(localFileStateRows.value))
+const localFile = computed(() => localFilesState.value[props.file.id])
 
 const displayState = computed(() =>
-  getFileDisplayState(props.file, localFiles.value)
+  getFileDisplayState(props.file, localFilesState.value)
 )
 const canDisplay = computed(() => displayState.value.canDisplay)
 const isUploading = computed(() => displayState.value.isUploading)

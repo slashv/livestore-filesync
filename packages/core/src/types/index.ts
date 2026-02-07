@@ -315,8 +315,12 @@ export interface FileDisplayState {
  * @example
  * ```typescript
  * // In a React component
- * const [localFileState] = store.useClientDocument(tables.localFileState)
- * const displayState = getFileDisplayState(file, localFileState?.localFiles ?? {})
+ * import { rowsToLocalFilesState } from '@livestore-filesync/core'
+ * import { queryDb } from '@livestore/livestore'
+ *
+ * const rows = store.useQuery(queryDb(tables.localFileState.select()))
+ * const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
+ * const displayState = getFileDisplayState(file, localFilesState)
  *
  * return displayState.canDisplay
  *   ? <img src={`/${file.path}`} />
@@ -324,7 +328,7 @@ export interface FileDisplayState {
  * ```
  *
  * @param file - The file record from the files table
- * @param localFilesState - The local files state map from the client document
+ * @param localFilesState - The local files state map (use rowsToLocalFilesState to convert query results)
  * @returns The display state for the file
  */
 export function getFileDisplayState(

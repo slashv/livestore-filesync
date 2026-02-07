@@ -1,4 +1,6 @@
-import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
+import { deleteFile, getFileDisplayState, readFile, rowsToLocalFilesState, updateFile } from "@livestore-filesync/core"
+import { rowsToThumbnailFilesState } from "@livestore-filesync/image/thumbnails"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
 import React, { useMemo } from "react"
 import { reactStoreOptions } from "../App.tsx"
@@ -9,16 +11,18 @@ import { FileSyncImage } from "./FileSyncImage.tsx"
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState)
+  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
+  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
   const displayState = getFileDisplayState(
     file,
-    localFileState?.localFiles ?? {}
+    localFilesState
   )
   const { canDisplay, localState: localFile } = displayState
 
-  // Thumbnail state from LiveStore client document (for debug display)
-  const [thumbnailStateDoc] = store.useClientDocument(tables.thumbnailState)
-  const thumbnailState = thumbnailStateDoc?.files?.[file.id]
+  // Thumbnail state from LiveStore SQLite table (for debug display)
+  const thumbnailStateRows = store.useQuery(queryDb(tables.thumbnailState.select()))
+  const thumbnailFiles = useMemo(() => rowsToThumbnailFilesState(thumbnailStateRows), [thumbnailStateRows])
+  const thumbnailState = thumbnailFiles[file.id]
   const smallThumbnailStatus = useMemo(
     () => thumbnailState?.sizes?.["small"]?.status ?? "pending",
     [thumbnailState]

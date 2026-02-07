@@ -6,12 +6,15 @@ import {
   getFileDisplayState,
   readFile,
   resolveFileUrl,
+  rowsToLocalFilesState,
   updateFile,
 } from '@livestore-filesync/core'
 import {
   resolveThumbnailUrl,
+  rowsToThumbnailFilesState,
 } from '@livestore-filesync/image/thumbnails'
-import { useStore } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
+import { useStore, useQuery } from 'vue-livestore'
 import type { FileType } from '../types'
 
 const props = defineProps<{
@@ -20,17 +23,19 @@ const props = defineProps<{
 
 const { store } = useStore()
 
-const { localFiles } = store.useClientDocument(tables.localFileState)
-const localFile = computed(() => localFiles.value[props.file.id])
+const localFileStateRows = useQuery(queryDb(tables.localFileState.select()))
+const localFilesState = computed(() => rowsToLocalFilesState(localFileStateRows.value))
+const localFile = computed(() => localFilesState.value[props.file.id])
 
 const displayState = computed(() =>
-  getFileDisplayState(props.file, localFiles.value)
+  getFileDisplayState(props.file, localFilesState.value)
 )
 const canDisplay = computed(() => displayState.value.canDisplay)
 const isUploading = computed(() => displayState.value.isUploading)
 
-// Thumbnail state - read from LiveStore client document for reactivity
-const { files: thumbnailFiles } = store.useClientDocument(tables.thumbnailState)
+// Thumbnail state from LiveStore SQLite table
+const thumbnailStateRows = useQuery(queryDb(tables.thumbnailState.select()))
+const thumbnailFiles = computed(() => rowsToThumbnailFilesState(thumbnailStateRows.value))
 const thumbnailState = computed(() => thumbnailFiles.value[props.file.id])
 const smallThumbnailStatus = computed(() => thumbnailState.value?.sizes?.['small']?.status ?? 'pending')
 

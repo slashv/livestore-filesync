@@ -233,11 +233,13 @@ See `examples/react-filesync` or `examples/vue-filesync` for complete implementa
 When files sync across clients, the file metadata may arrive before the file content is uploaded. Use `getFileDisplayState()` to determine if a file can be displayed:
 
 ```typescript
-import { getFileDisplayState } from '@livestore-filesync/core'
+import { getFileDisplayState, rowsToLocalFilesState } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
 
-// In your component
-const [localFileState] = store.useClientDocument(tables.localFileState)
-const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.localFiles ?? {})
+// In your React component
+const rows = store.useQuery(queryDb(tables.localFileState.select()))
+const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
+const { canDisplay, isUploading } = getFileDisplayState(file, localFilesState)
 
 // canDisplay is true when:
 // - The file exists locally (originating client can display immediately)

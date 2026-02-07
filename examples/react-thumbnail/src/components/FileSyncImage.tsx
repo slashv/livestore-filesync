@@ -1,7 +1,8 @@
-import { getFileDisplayState, resolveFileUrl } from "@livestore-filesync/core"
-import { resolveThumbnailUrl } from "@livestore-filesync/image/thumbnails"
+import { getFileDisplayState, resolveFileUrl, rowsToLocalFilesState } from "@livestore-filesync/core"
+import { resolveThumbnailUrl, rowsToThumbnailFilesState } from "@livestore-filesync/image/thumbnails"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 
@@ -26,21 +27,23 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
 }) => {
   const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState)
-  const [thumbnailStateDoc] = store.useClientDocument(tables.thumbnailState)
+  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
+  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
+  const thumbnailStateRows = store.useQuery(queryDb(tables.thumbnailState.select()))
+  const thumbnailFiles = useMemo(() => rowsToThumbnailFilesState(thumbnailStateRows), [thumbnailStateRows])
   const file = store.useQuery(tables.files.select().where({ id: fileId }).first())
 
-  if (!file || !localFileState || !thumbnailStateDoc) {
+  if (!file) {
     return null
   }
 
-  const displayState = getFileDisplayState(file, localFileState.localFiles)
+  const displayState = getFileDisplayState(file, localFilesState)
   const { canDisplay, isUploading } = displayState
 
   const selectedSize = size ?? "full"
   const thumbnailStatus = selectedSize === "full"
     ? null
-    : thumbnailStateDoc.files[fileId]?.sizes[selectedSize]?.status ?? "pending"
+    : thumbnailFiles[fileId]?.sizes?.[selectedSize]?.status ?? "pending"
 
   const [src, setSrc] = useState<string | null>(null)
   const [isUsingThumbnail, setIsUsingThumbnail] = useState(false)

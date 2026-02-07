@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useStore } from 'vue-livestore'
+import { useStore, useQuery } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
 import {
   getSyncStatus,
+  rowsToLocalFilesState,
   onFileSyncEvent,
   createActiveTransferProgress,
   updateActiveTransfers,
@@ -13,10 +15,10 @@ import {
 import { tables } from '../livestore/schema'
 
 const { store } = useStore()
-const { localFiles } = store.useClientDocument(tables.localFileState)
+const localFileStateRows = useQuery(queryDb(tables.localFileState.select()))
 
 const syncStatus = computed(() => {
-  return getSyncStatus(localFiles.value ?? {})
+  return getSyncStatus(rowsToLocalFilesState(localFileStateRows.value))
 })
 
 // Track active transfer progress

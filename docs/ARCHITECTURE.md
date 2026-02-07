@@ -340,8 +340,12 @@ const displayState = getFileDisplayState(file, localFilesState)
 
 ```tsx
 // React example
-const [localFileState] = store.useClientDocument(tables.localFileState)
-const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.localFiles ?? {})
+import { getFileDisplayState, rowsToLocalFilesState } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
+
+const rows = store.useQuery(queryDb(tables.localFileState.select()))
+const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
+const { canDisplay, isUploading } = getFileDisplayState(file, localFilesState)
 
 return canDisplay
   ? <img src={`/${file.path}`} />
@@ -446,11 +450,13 @@ const status = getSyncStatus(localFilesState)
 **React:**
 
 ```tsx
-import { getSyncStatus } from '@livestore-filesync/core'
+import { getSyncStatus, rowsToLocalFilesState } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
 
 function SyncIndicator() {
-  const [localFileState] = store.useClientDocument(tables.localFileState)
-  const status = getSyncStatus(localFileState?.localFiles ?? {})
+  const rows = store.useQuery(queryDb(tables.localFileState.select()))
+  const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
+  const status = getSyncStatus(localFilesState)
 
   if (status.isSyncing) {
     return (
@@ -473,12 +479,13 @@ function SyncIndicator() {
 ```vue
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useClientDocument } from 'vue-livestore'
-import { getSyncStatus } from '@livestore-filesync/core'
+import { useQuery } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
+import { getSyncStatus, rowsToLocalFilesState } from '@livestore-filesync/core'
 import { tables } from './schema'
 
-const localFileState = useClientDocument(tables.localFileState)
-const syncStatus = computed(() => getSyncStatus(localFileState.value?.localFiles ?? {}))
+const rows = useQuery(queryDb(tables.localFileState.select()))
+const syncStatus = computed(() => getSyncStatus(rowsToLocalFilesState(rows.value)))
 </script>
 
 <template>

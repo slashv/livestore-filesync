@@ -10,34 +10,53 @@
 import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncError, SyncStatus } from "../types/index.js"
 
 /**
- * Compute aggregate sync status from local files state
+ * Convert an array of localFileState rows into a LocalFilesState map.
  *
- * This is a pure function that derives sync status from the localFileState
- * client document. Use with store.subscribe or framework-specific hooks
- * like useClientDocument.
+ * Use this when reading the localFileState SQLite table (which returns rows)
+ * and you need the map format expected by {@link getSyncStatus} or
+ * `getFileDisplayState`.
  *
  * @example
  * ```typescript
+ * const rows = store.query(queryDb(tables.localFileState.select()))
+ * const localFilesState = rowsToLocalFilesState(rows)
+ * const status = getSyncStatus(localFilesState)
+ * ```
+ */
+export function rowsToLocalFilesState(
+  rows: ReadonlyArray<{ readonly fileId: string; readonly [key: string]: unknown }>
+): LocalFilesState {
+  const map: Record<string, unknown> = {}
+  for (const row of rows) {
+    map[row.fileId] = row
+  }
+  return map as LocalFilesState
+}
+
+/**
+ * Compute aggregate sync status from local files state
+ *
+ * This is a pure function that derives sync status from the localFileState
+ * SQLite table. Use {@link rowsToLocalFilesState} to convert query results
+ * into the expected map format, then pass to this function.
+ *
+ * @example
+ * ```typescript
+ * // With React useQuery
+ * const rows = store.useQuery(queryDb(tables.localFileState.select()))
+ * const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
+ * const status = getSyncStatus(localFilesState)
+ *
+ * // With Vue useQuery
+ * const rows = useQuery(queryDb(tables.localFileState.select()))
+ * const status = computed(() => getSyncStatus(rowsToLocalFilesState(rows.value)))
+ *
  * // With store.query (one-time read)
- * const localState = store.query(queryDb(tables.localFileState.get()))
- * const status = getSyncStatus(localState.localFiles)
- *
- * // With React useClientDocument
- * const [localFileState] = store.useClientDocument(tables.localFileState)
- * const status = getSyncStatus(localFileState?.localFiles ?? {})
- *
- * // With Vue useClientDocument
- * const localFileState = useClientDocument(tables.localFileState)
- * const status = computed(() => getSyncStatus(localFileState.value?.localFiles ?? {}))
- *
- * // With store.subscribe (vanilla JS)
- * store.subscribe(queryDb(tables.localFileState.get()), (state) => {
- *   const status = getSyncStatus(state.localFiles)
- *   console.log('Uploading:', status.uploadingCount)
- * })
+ * const rows = store.query(queryDb(tables.localFileState.select()))
+ * const status = getSyncStatus(rowsToLocalFilesState(rows))
  * ```
  *
- * @param localFilesState - The localFiles map from the localFileState client document
+ * @param localFilesState - Map of file IDs to local file state objects
  * @returns Aggregate sync status with counts and file ID lists
  */
 export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
