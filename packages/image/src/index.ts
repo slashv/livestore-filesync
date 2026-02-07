@@ -130,7 +130,7 @@ export type {
   ThumbnailGenerationStatus,
   ThumbnailSizes,
   ThumbnailSizeState,
-  ThumbnailStateDocument,
+  ThumbnailStateRow,
   ThumbnailWorkerRequest,
   ThumbnailWorkerResponse
 } from "./thumbnails/types/index.js"

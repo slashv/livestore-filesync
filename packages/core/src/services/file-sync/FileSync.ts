@@ -1286,7 +1286,9 @@ export const makeFileSync = (
 
         yield* Effect.logWarning(
           `[FileSync] Heartbeat: stream stalled - upstream at ${EventSequenceNumber.Client.toString(upstreamHead)}, ` +
-            `last batch at ${EventSequenceNumber.Client.toString(lastBatchCursor)}, ${timeSinceLastBatch}ms since last batch`
+            `last batch at ${
+              EventSequenceNumber.Client.toString(lastBatchCursor)
+            }, ${timeSinceLastBatch}ms since last batch`
         )
         yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-stalled" })
         yield* startEventStream()

@@ -859,8 +859,9 @@ image resizing.
 3. **Content-hash based storage**: Thumbnails are stored at `thumbnails/{contentHash}/{sizeName}.{format}`.
    This means if two files have identical content, they share the same thumbnails.
 
-4. **State in client document**: Thumbnail generation state is stored in a `thumbnailState` client
-   document. This persists across page refreshes and allows the UI to show generation progress.
+4. **State in SQLite tables**: Thumbnail generation state is stored in `thumbnailState` and
+   `thumbnailConfig` tables via client-only events. This persists across page refreshes, syncs
+   across local tabs, and avoids Schema.Record rebase conflicts.
 
 ### Services
 
@@ -885,7 +886,7 @@ image resizing.
 [LocalThumbnailStorageLive] <----- Layer.provide(FileSystemLive)
                                             |
                                             v
-[ThumbnailServiceLive(store, tables, config)] <--- Layer.provide(BaseLayer)
+[ThumbnailServiceLive(store, tables, events, config)] <--- Layer.provide(BaseLayer)
 ```
 
 ### API Usage
@@ -896,12 +897,14 @@ Like the core package, the thumbnails package provides both singleton and instan
 
 ```typescript
 import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image/thumbnails'
+import { tables } from './schema'
 
 initThumbnails(store, {
   sizes: { small: 128, medium: 256 },
   format: 'webp',
   fileSystem: opfsLayer(),
-  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
+  schema: { tables }
 })
 
 const url = await resolveThumbnailUrl(fileId, 'small')
@@ -915,6 +918,7 @@ import { createThumbnails } from '@livestore-filesync/image/thumbnails'
 const thumbnails = createThumbnails({
   store,
   tables: thumbnailSchema.tables,
+  events: thumbnailSchema.events,
   fileSystem: opfsLayer(),
   workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
   sizes: { small: 128, medium: 256 }

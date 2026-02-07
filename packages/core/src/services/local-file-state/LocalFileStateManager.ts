@@ -119,7 +119,7 @@ export class LocalFileStateManager extends Context.Tag("LocalFileStateManager")<
 export const makeLocalFileStateManager = (
   deps: LiveStoreDeps
 ): Effect.Effect<LocalFileStateManagerService> =>
-  Effect.gen(function*() {
+  Effect.sync(() => {
     const { schema, store } = deps
     const { events, queryDb, tables } = schema
 
@@ -186,8 +186,7 @@ export const makeLocalFileStateManager = (
     const setFileState = (
       fileId: string,
       state: LocalFileState
-    ): Effect.Effect<void> =>
-      Effect.sync(() => commitUpsert(fileId, state))
+    ): Effect.Effect<void> => Effect.sync(() => commitUpsert(fileId, state))
 
     // Update transfer status for a file
     const setTransferStatus = (
@@ -199,10 +198,9 @@ export const makeLocalFileStateManager = (
         const existing = readFileState(fileId)
         if (!existing) return // No-op if file doesn't exist
 
-        const updatedState: LocalFileState =
-          action === "upload"
-            ? { ...existing, uploadStatus: status }
-            : { ...existing, downloadStatus: status }
+        const updatedState: LocalFileState = action === "upload"
+          ? { ...existing, uploadStatus: status }
+          : { ...existing, downloadStatus: status }
 
         commitUpsert(fileId, updatedState)
       })
@@ -218,17 +216,15 @@ export const makeLocalFileStateManager = (
         const existing = readFileState(fileId)
         if (!existing) return // No-op if file doesn't exist
 
-        const updatedState: LocalFileState =
-          action === "upload"
-            ? { ...existing, uploadStatus: status, lastSyncError: error }
-            : { ...existing, downloadStatus: status, lastSyncError: error }
+        const updatedState: LocalFileState = action === "upload"
+          ? { ...existing, uploadStatus: status, lastSyncError: error }
+          : { ...existing, downloadStatus: status, lastSyncError: error }
 
         commitUpsert(fileId, updatedState)
       })
 
     // Remove a file's state
-    const removeFile = (fileId: string): Effect.Effect<void> =>
-      Effect.sync(() => commitRemove(fileId))
+    const removeFile = (fileId: string): Effect.Effect<void> => Effect.sync(() => commitRemove(fileId))
 
     // Merge files into state
     const mergeFiles = (patch: LocalFilesState): Effect.Effect<void> =>
@@ -260,8 +256,7 @@ export const makeLocalFileStateManager = (
       })
 
     // Get current state (read-only)
-    const getState = (): Effect.Effect<LocalFilesState> =>
-      Effect.sync(readState)
+    const getState = (): Effect.Effect<LocalFilesState> => Effect.sync(readState)
 
     // Apply a custom updater function
     const atomicUpdate = (

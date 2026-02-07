@@ -44,7 +44,7 @@ export type {
   ThumbnailQualitySettings,
   ThumbnailSizes,
   ThumbnailSizeState,
-  ThumbnailStateDocument,
+  ThumbnailStateRow,
   ThumbnailWorkerRequest,
   ThumbnailWorkerResponse
 } from "./types/index.js"

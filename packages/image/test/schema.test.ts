@@ -14,7 +14,10 @@ describe("Thumbnail Schema", () => {
       const schema = createThumbnailSchema()
 
       expect(schema.events).toBeDefined()
-      expect(schema.events.thumbnailStateSet).toBeDefined()
+      expect(schema.events.thumbnailStateUpsert).toBeDefined()
+      expect(schema.events.thumbnailStateRemove).toBeDefined()
+      expect(schema.events.thumbnailStateClear).toBeDefined()
+      expect(schema.events.thumbnailConfigSet).toBeDefined()
     })
 
     it("should create schema with schemas export", () => {
@@ -25,7 +28,8 @@ describe("Thumbnail Schema", () => {
       expect(schema.schemas.ThumbnailSizeStateSchema).toBeDefined()
       expect(schema.schemas.FileThumbnailStateSchema).toBeDefined()
       expect(schema.schemas.ThumbnailFilesStateSchema).toBeDefined()
-      expect(schema.schemas.ThumbnailStateDocumentSchema).toBeDefined()
+      expect(schema.schemas.ThumbnailStateRowSchema).toBeDefined()
+      expect(schema.schemas.ThumbnailConfigRowSchema).toBeDefined()
     })
 
     it("should create functional independent schema instances", () => {

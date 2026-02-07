@@ -266,8 +266,7 @@ export function createFileSyncSchema() {
       appTables.localFileState.delete().where({ fileId }),
       appTables.localFileState.insert({ fileId, path, localHash, downloadStatus, uploadStatus, lastSyncError })
     ],
-    "v1.LocalFileStateRemove": ({ fileId }: { fileId: string }) =>
-      appTables.localFileState.delete().where({ fileId }),
+    "v1.LocalFileStateRemove": ({ fileId }: { fileId: string }) => appTables.localFileState.delete().where({ fileId }),
     "v1.LocalFileStateClear": () => appTables.localFileState.delete()
   })
 

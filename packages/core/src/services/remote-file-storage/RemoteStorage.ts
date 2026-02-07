@@ -164,7 +164,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     const headers: Record<string, string> = {
       ...config.headers
     }
-    const token = typeof config.authToken === 'function' ? config.authToken() : config.authToken
+    const token = typeof config.authToken === "function" ? config.authToken() : config.authToken
     if (token) {
       headers["Authorization"] = `Bearer ${token}`
     }

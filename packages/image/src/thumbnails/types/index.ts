@@ -13,7 +13,7 @@ import type {
   ThumbnailGenerationStatusSchema,
   ThumbnailSchema,
   ThumbnailSizeStateSchema,
-  ThumbnailStateDocumentSchema
+  ThumbnailStateRowSchema
 } from "../schema/index.js"
 
 // ============================================
@@ -48,9 +48,9 @@ export type FileThumbnailState = typeof FileThumbnailStateSchema.Type
 export type ThumbnailFilesState = typeof ThumbnailFilesStateSchema.Type
 
 /**
- * Root thumbnail state document
+ * Row type for thumbnail state table
  */
-export type ThumbnailStateDocument = typeof ThumbnailStateDocumentSchema.Type
+export type ThumbnailStateRow = typeof ThumbnailStateRowSchema.Type
 
 /**
  * Thumbnail tables type
@@ -199,11 +199,6 @@ export type ThumbnailWorkerResponse =
 export type ThumbnailWorkerRequest = ThumbnailGenerateRequest
 
 /**
- * A queryDb function from the app's schema
- */
-export type QueryDbFn = (query: any) => any
-
-/**
  * Files table type (from @livestore-filesync/core)
  */
 export interface FilesTable {
@@ -310,12 +305,6 @@ export interface InitThumbnailsConfig {
    * ```
    */
   schema?: { tables: TablesWithFiles }
-
-  /**
-   * @deprecated Use `schema: { tables }` instead for simpler configuration.
-   * The queryDb function from livestore.
-   */
-  queryDb?: QueryDbFn
 
   /**
    * @deprecated Use `schema: { tables }` instead for simpler configuration.
