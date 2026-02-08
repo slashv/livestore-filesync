@@ -746,6 +746,9 @@ onFileSyncEvent((event) => {
     case 'sync:error-retry-start':
       console.log(`Retrying ${event.fileIds.length} files`)
       break
+    case 'transfer:exhausted':
+      console.error(`${event.kind} for ${event.fileId} failed after all retries:`, event.error)
+      break
   }
 })
 ```
@@ -754,12 +757,13 @@ onFileSyncEvent((event) => {
 
 | Event | Fields | Description |
 |-------|--------|-------------|
-| `sync:error` | `error`, `context?` | General sync error (batch processing, bootstrap, etc.) |
+| `sync:error` | `error`, `context?` | General sync error (batch processing, bootstrap, start, etc.) |
 | `sync:stream-error` | `error`, `attempt?` | Event stream error with retry attempt number |
 | `sync:stream-exhausted` | `error`, `attempts` | Max recovery attempts reached |
 | `sync:recovery` | `from` | Successful recovery ("stream-error" or "error-retry") |
 | `sync:error-retry-start` | `fileIds` | Files being retried from error state |
 | `sync:heartbeat-recovery` | `reason` | Heartbeat recovered dead stream or stuck queue |
+| `transfer:exhausted` | `kind`, `fileId`, `error` | Transfer failed after all retries exhausted |
 
 ### Heartbeat Monitoring
 

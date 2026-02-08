@@ -347,9 +347,10 @@ describe("FileSync - Offline Transition", () => {
       expect(state[fileId1]?.lastSyncError).toBe("File too large")
       expect(state[fileId2]?.uploadStatus).toBe("queued")
 
-      // Go online then offline — this triggers the goOffline path
+      // Go online then immediately offline — this triggers the goOffline path.
+      // No delay between to avoid the executor picking up the error file and
+      // overwriting the manually-set lastSyncError.
       await runtime.runPromise(fileSync.setOnline(true))
-      await delay(20)
       await runtime.runPromise(fileSync.setOnline(false))
       await delay(20)
 
