@@ -10,7 +10,7 @@ This document describes the stability and self-healing mechanisms implemented in
 
 **Problem:** `recoverStaleTransfers()` was running every time `startEventStream()` was called. Mid-session stream restarts (from `syncNow()`, heartbeat recoveries, etc.) could incorrectly flip legitimate `inProgress` transfers back to `queued`, causing state corruption when `applyFileState()` keeps `queued` even if the file is already in sync.
 
-**Solution:** 
+**Solution:**
 - Added `staleRecoveryDoneRef` boolean to track whether recovery has run
 - Created `maybeRecoverStaleTransfers()` wrapper that checks the flag before running
 - Moved recovery from `startEventStream()` to `startSyncLoop()`
@@ -140,7 +140,7 @@ const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
 
 ### Task 1: Stale Transfer Recovery Gating
 
-**File:** `tasks/01_stability_stale-recovery-gating.md`  
+**File:** `tasks/01_stability_stale-recovery-gating.md`
 **Status:** DONE
 
 **Goal:** Avoid resetting legitimate `inProgress` transfers to `queued` during mid-session stream restarts while preserving safety on cold start.
@@ -160,7 +160,7 @@ const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
 
 ### Task 2: Executor Worker Liveness
 
-**File:** `tasks/02_stability_executor-worker-liveness.md`  
+**File:** `tasks/02_stability_executor-worker-liveness.md`
 **Status:** DONE (implemented as part of heartbeat v1)
 
 **Goal:** Ensure download/upload workers cannot silently die and leave the queue stuck. Provide a way to re-create workers when the executor is resumed or when heartbeat detects a stuck queue.
@@ -180,7 +180,7 @@ const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
 
 ### Task 3: Stream Stall Watchdog
 
-**File:** `tasks/03_stability_stream-stall-watchdog.md`  
+**File:** `tasks/03_stability_stream-stall-watchdog.md`
 **Status:** DONE
 
 **Goal:** Detect when the event stream is alive but no longer advancing while upstream head moves, and restart the stream automatically to recover from a stalled cursor.

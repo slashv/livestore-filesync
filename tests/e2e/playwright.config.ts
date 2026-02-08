@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // Select framework via E2E_FRAMEWORK env var (default: vue)
-const framework = process.env.E2E_FRAMEWORK || 'vue'
+const framework = process.env.E2E_FRAMEWORK || 'react'
 
 const frameworkConfig: Record<string, { cwd: string; port: number; testMatch?: string }> = {
   vue: {
