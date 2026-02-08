@@ -181,11 +181,18 @@ interface ExecutorState {
 }
 
 /**
+ * Callback invoked after each task completes (success or failure after all retries exhausted).
+ * Errors thrown by the callback are caught and logged — they won't crash the executor.
+ */
+export type TaskCompleteCallback = (result: TransferResult) => Effect.Effect<void, unknown>
+
+/**
  * Create a SyncExecutor service
  */
 export const makeSyncExecutor = (
   handler: TransferHandler,
-  config: SyncExecutorConfig = defaultConfig
+  config: SyncExecutorConfig = defaultConfig,
+  onTaskComplete?: TaskCompleteCallback
 ): Effect.Effect<SyncExecutorService, never, Scope.Scope> =>
   Effect.gen(function*() {
     // Create queues for downloads and uploads
@@ -297,6 +304,21 @@ export const makeSyncExecutor = (
           Effect.map(() => ({ kind, fileId, success: true as const })),
           Effect.catchAll((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
         )
+
+        // Log and notify when retries are exhausted
+        if (!result.success) {
+          yield* Effect.logWarning(
+            `Transfer failed after ${config.maxRetries} retries`,
+            { kind, fileId, error: result.error }
+          )
+        }
+
+        // Notify caller of task completion (success or failure)
+        if (onTaskComplete) {
+          yield* onTaskComplete(result).pipe(
+            Effect.catchAll((callbackError) => Effect.logWarning("onTaskComplete callback failed", { callbackError }))
+          )
+        }
 
         // Update inflight count
         yield* Ref.update(stateRef, (s) => ({
@@ -606,9 +628,10 @@ export const makeSyncExecutor = (
  */
 export const makeSyncExecutorLayer = (
   handler: TransferHandler,
-  config: SyncExecutorConfig = defaultConfig
+  config: SyncExecutorConfig = defaultConfig,
+  onTaskComplete?: TaskCompleteCallback
 ): Layer.Layer<SyncExecutor, never, Scope.Scope> =>
   Layer.scoped(
     SyncExecutor,
-    makeSyncExecutor(handler, config)
+    makeSyncExecutor(handler, config, onTaskComplete)
   )

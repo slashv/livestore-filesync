@@ -449,7 +449,10 @@ describe("FileSync - Preprocessor integration", () => {
 
       // Second call (update) fails in preprocessor
       const result = runtime.runPromise(
-        Scope.extend(fileSync.updateFile(saved.fileId, new File(["updated"], "test.txt", { type: "text/plain" })), scope)
+        Scope.extend(
+          fileSync.updateFile(saved.fileId, new File(["updated"], "test.txt", { type: "text/plain" })),
+          scope
+        )
       )
 
       await expect(result).rejects.toThrow("Preprocessor failed for test.txt: Preprocessor exploded on update")

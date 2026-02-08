@@ -818,4 +818,85 @@ describe("SyncExecutor", () => {
       )
     })
   })
+
+  describe("onTaskComplete callback", () => {
+    it("should call onTaskComplete with failure result when retries are exhausted", async () => {
+      const results: Array<{ kind: string; fileId: string; success: boolean; error?: unknown }> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) => Effect.fail(new Error("Always fails")),
+            testConfig,
+            (result) =>
+              Effect.sync(() => {
+                results.push(result)
+              })
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueDownload("file1")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.kind).toBe("download")
+      expect(results[0]!.fileId).toBe("file1")
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toBeInstanceOf(Error)
+    })
+
+    it("should call onTaskComplete with success result on successful transfer", async () => {
+      const results: Array<{ kind: string; fileId: string; success: boolean }> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.void,
+            testConfig,
+            (result) =>
+              Effect.sync(() => {
+                results.push(result)
+              })
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueUpload("file1")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.kind).toBe("upload")
+      expect(results[0]!.fileId).toBe("file1")
+      expect(results[0]!.success).toBe(true)
+    })
+
+    it("should not crash the executor if onTaskComplete throws", async () => {
+      const processed: Array<string> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.sync(() => {
+                processed.push(`${kind}:${fileId}`)
+              }),
+            testConfig,
+            () => Effect.fail(new Error("Callback exploded"))
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueDownload("file2")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      // Both files should still be processed despite the callback failing
+      expect(processed).toContain("download:file1")
+      expect(processed).toContain("download:file2")
+    })
+  })
 })

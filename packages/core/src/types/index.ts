@@ -131,6 +131,12 @@ export type FileSyncEvent =
   | { readonly type: "upload:progress"; readonly fileId: string; readonly progress: TransferProgress }
   | { readonly type: "upload:complete"; readonly fileId: string }
   | { readonly type: "upload:error"; readonly fileId: string; readonly error: unknown }
+  | {
+    readonly type: "transfer:exhausted"
+    readonly kind: "upload" | "download"
+    readonly fileId: string
+    readonly error: unknown
+  }
   | { readonly type: "online" }
   | { readonly type: "offline" }
 

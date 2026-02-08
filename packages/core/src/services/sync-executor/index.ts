@@ -11,6 +11,7 @@ export {
   SyncExecutor,
   type SyncExecutorConfig,
   type SyncExecutorService,
+  type TaskCompleteCallback,
   type TransferHandler,
   type TransferKind,
   type TransferResult,

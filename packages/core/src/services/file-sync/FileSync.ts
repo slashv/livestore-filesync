@@ -752,8 +752,22 @@ export const makeFileSync = (
         }
       })
 
-    // Create sync executor
-    const executor = yield* makeSyncExecutor(transferHandler, executorConfig)
+    // Create sync executor with task completion callback
+    const onTaskComplete = (
+      result: { kind: "upload" | "download"; fileId: string; success: boolean; error?: unknown }
+    ) =>
+      Effect.gen(function*() {
+        if (!result.success) {
+          yield* emit({
+            type: "transfer:exhausted",
+            kind: result.kind,
+            fileId: result.fileId,
+            error: result.error
+          })
+        }
+      })
+
+    const executor = yield* makeSyncExecutor(transferHandler, executorConfig, onTaskComplete)
 
     // Two-pass reconciliation of local file state
     const activeTransferStatuses = ["queued", "inProgress"] as const
@@ -1437,10 +1451,11 @@ export const makeFileSync = (
         // instead of a defect that crashes the fiber
         const processedFile = yield* Effect.tryPromise({
           try: () => applyPreprocessor(config.preprocessors, file),
-          catch: (err) => new StorageError({
-            message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
-            cause: err
-          })
+          catch: (err) =>
+            new StorageError({
+              message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err
+            })
         })
 
         const id = crypto.randomUUID()
@@ -1467,10 +1482,11 @@ export const makeFileSync = (
         // Apply preprocessor if configured for this file type
         const processedFile = yield* Effect.tryPromise({
           try: () => applyPreprocessor(config.preprocessors, file),
-          catch: (err) => new StorageError({
-            message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
-            cause: err
-          })
+          catch: (err) =>
+            new StorageError({
+              message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err
+            })
         })
 
         const contentHash = yield* doHashFile(processedFile)

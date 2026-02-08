@@ -312,12 +312,18 @@ describe("FileSync - Offline Transition", () => {
       await runtime.runPromise(localStorage.writeFile(path2, new File(["data2"], "test2.txt")))
 
       store.commit(events.fileCreated({
-        id: fileId1, path: path1, contentHash: "hash1",
-        createdAt: new Date(), updatedAt: new Date()
+        id: fileId1,
+        path: path1,
+        contentHash: "hash1",
+        createdAt: new Date(),
+        updatedAt: new Date()
       }))
       store.commit(events.fileCreated({
-        id: fileId2, path: path2, contentHash: "hash2",
-        createdAt: new Date(), updatedAt: new Date()
+        id: fileId2,
+        path: path2,
+        contentHash: "hash2",
+        createdAt: new Date(),
+        updatedAt: new Date()
       }))
 
       // Start offline so uploads queue but don't run
@@ -327,7 +333,9 @@ describe("FileSync - Offline Transition", () => {
 
       // Manually set file1 to "error" state (simulating a non-network failure)
       const stateManager = await runtime.runPromise(
-        Effect.gen(function*() { return yield* LocalFileStateManager })
+        Effect.gen(function*() {
+          return yield* LocalFileStateManager
+        })
       )
       await runtime.runPromise(
         stateManager.setTransferError(fileId1, "upload", "error", "File too large")
@@ -1231,12 +1239,18 @@ describe("FileSync - Per-Event Error Handling", () => {
 
       // Commit events before start
       store.commit(events.fileCreated({
-        id: fileId1, path: path1, contentHash: "hash1",
-        createdAt: new Date(), updatedAt: new Date()
+        id: fileId1,
+        path: path1,
+        contentHash: "hash1",
+        createdAt: new Date(),
+        updatedAt: new Date()
       }))
       store.commit(events.fileCreated({
-        id: fileId2, path: path2, contentHash: "hash2",
-        createdAt: new Date(), updatedAt: new Date()
+        id: fileId2,
+        path: path2,
+        contentHash: "hash2",
+        createdAt: new Date(),
+        updatedAt: new Date()
       }))
 
       await runtime.runPromise(fileSync.setOnline(false))
