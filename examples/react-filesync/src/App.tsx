@@ -12,7 +12,7 @@ import { schema, SyncPayload } from "./livestore/schema.ts"
 
 // Allow storeId to be set via query param for testing isolation
 const urlParams = new URLSearchParams(window.location.search)
-const storeId = urlParams.get("storeId") || "react_filesync_store_7"
+const storeId = urlParams.get("storeId") || "react_filesync_store_8"
 const healthCheckIntervalMs = urlParams.get("healthCheckIntervalMs")
   ? Number(urlParams.get("healthCheckIntervalMs"))
   : undefined
