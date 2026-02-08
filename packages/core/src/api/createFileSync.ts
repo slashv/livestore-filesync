@@ -338,6 +338,9 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
         await runEffect(Scope.extend(fileSync.start(), scope))
       } catch (error) {
         console.error("[createFileSync] Error during start:", error)
+        // Surface initialization failures to event listeners so callers
+        // can detect and handle them (not just console.error)
+        options.onEvent?.({ type: "sync:error", error, context: "start" })
       }
     })()
   }
