@@ -396,6 +396,70 @@ describe("FileSync - Preprocessor integration", () => {
     }
   })
 
+  it("catches preprocessor errors as StorageError instead of crashing the fiber", async () => {
+    const preprocessors: PreprocessorMap = {
+      "text/*": async () => {
+        throw new Error("Preprocessor exploded")
+      }
+    }
+
+    const { deps, shutdown } = await createTestStore()
+    const runtime = createRuntime(deps, { preprocessors })
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      const result = runtime.runPromise(
+        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
+      )
+
+      // Should fail with a typed StorageError, not crash the runtime with a defect
+      await expect(result).rejects.toThrow("Preprocessor failed for test.txt: Preprocessor exploded")
+    } finally {
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("catches preprocessor errors on updateFile as StorageError", async () => {
+    let callCount = 0
+    const preprocessors: PreprocessorMap = {
+      "text/*": async (file) => {
+        callCount++
+        if (callCount > 1) throw new Error("Preprocessor exploded on update")
+        return file
+      }
+    }
+
+    const { deps, shutdown } = await createTestStore()
+    const runtime = createRuntime(deps, { preprocessors })
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      // First save succeeds
+      const saved = await runtime.runPromise(
+        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
+      )
+
+      // Second call (update) fails in preprocessor
+      const result = runtime.runPromise(
+        Scope.extend(fileSync.updateFile(saved.fileId, new File(["updated"], "test.txt", { type: "text/plain" })), scope)
+      )
+
+      await expect(result).rejects.toThrow("Preprocessor failed for test.txt: Preprocessor exploded on update")
+    } finally {
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
   it("works correctly without preprocessors configured", async () => {
     // No preprocessors - should work like before
     const { deps, shutdown, store, tables } = await createTestStore()

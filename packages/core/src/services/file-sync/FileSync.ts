@@ -1417,7 +1417,15 @@ export const makeFileSync = (
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
       Effect.gen(function*() {
         // Apply preprocessor if configured for this file type
-        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+        // Use tryPromise so rejected/throwing preprocessors produce a caught error
+        // instead of a defect that crashes the fiber
+        const processedFile = yield* Effect.tryPromise({
+          try: () => applyPreprocessor(config.preprocessors, file),
+          catch: (err) => new StorageError({
+            message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err
+          })
+        })
 
         const id = crypto.randomUUID()
         const contentHash = yield* doHashFile(processedFile)
@@ -1441,7 +1449,13 @@ export const makeFileSync = (
         }
 
         // Apply preprocessor if configured for this file type
-        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+        const processedFile = yield* Effect.tryPromise({
+          try: () => applyPreprocessor(config.preprocessors, file),
+          catch: (err) => new StorageError({
+            message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err
+          })
+        })
 
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)

@@ -25,4 +25,7 @@ scratchpad/*
 .turbo/
 
 # Generated service worker (copied from core package)
-examples/react-filesync/public/file-sync-sw.js.agents/
+examples/react-filesync/public/file-sync-sw.js
+
+# Agent reference repos
+.agents/
