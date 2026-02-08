@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/image",
-  "version": "0.4.2",
+  "version": "0.5.2",
   "type": "module",
   "license": "MIT",
   "description": "Image preprocessing and thumbnail generation for livestore-filesync using wasm-vips",

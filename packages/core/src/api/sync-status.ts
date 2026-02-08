@@ -1,7 +1,7 @@
 /**
  * Sync Status Utilities
  *
- * Pure functions for deriving aggregate sync status from LocalFilesState.
+ * Pure functions for deriving aggregate sync status from localFileState rows.
  * Framework-agnostic - works with any subscription mechanism.
  *
  * @module
@@ -10,37 +10,49 @@
 import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncError, SyncStatus } from "../types/index.js"
 
 /**
- * Compute aggregate sync status from local files state
+ * Shape of a localFileState row as returned by `useQuery` / `store.query`.
+ * Only the fields needed for sync status computation are required.
+ */
+interface LocalFileStateRowLike {
+  readonly fileId: string
+  readonly uploadStatus?: string
+  readonly downloadStatus?: string
+  readonly lastSyncError?: string
+  readonly [key: string]: unknown
+}
+
+/**
+ * Compute aggregate sync status from localFileState table rows.
  *
- * This is a pure function that derives sync status from the localFileState
- * client document. Use with store.subscribe or framework-specific hooks
- * like useClientDocument.
+ * Pass the result of `useQuery(queryDb(tables.localFileState.select()))` directly.
  *
  * @example
  * ```typescript
- * // With store.query (one-time read)
- * const localState = store.query(queryDb(tables.localFileState.get()))
- * const status = getSyncStatus(localState.localFiles)
+ * // React
+ * const rows = store.useQuery(queryDb(tables.localFileState.select()))
+ * const status = useMemo(() => getSyncStatus(rows), [rows])
  *
- * // With React useClientDocument
- * const [localFileState] = store.useClientDocument(tables.localFileState)
- * const status = getSyncStatus(localFileState?.localFiles ?? {})
+ * // Vue
+ * const rows = useQuery(queryDb(tables.localFileState.select()))
+ * const status = computed(() => getSyncStatus(rows.value))
  *
- * // With Vue useClientDocument
- * const localFileState = useClientDocument(tables.localFileState)
- * const status = computed(() => getSyncStatus(localFileState.value?.localFiles ?? {}))
- *
- * // With store.subscribe (vanilla JS)
- * store.subscribe(queryDb(tables.localFileState.get()), (state) => {
- *   const status = getSyncStatus(state.localFiles)
- *   console.log('Uploading:', status.uploadingCount)
- * })
+ * // One-time read
+ * const rows = store.query(queryDb(tables.localFileState.select()))
+ * const status = getSyncStatus(rows)
  * ```
  *
- * @param localFilesState - The localFiles map from the localFileState client document
+ * Also accepts a `LocalFilesState` map (Record<fileId, state>) for backward
+ * compatibility with internal code.
+ *
+ * @param input - Array of localFileState rows, or a LocalFilesState map
  * @returns Aggregate sync status with counts and file ID lists
  */
-export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
+export function getSyncStatus(input: ReadonlyArray<LocalFileStateRowLike> | LocalFilesState): SyncStatus {
+  // Normalize input: convert map to entries, or use rows as-is
+  const entries: ReadonlyArray<readonly [string, LocalFileStateRowLike]> = Array.isArray(input)
+    ? input.map((row) => [row.fileId, row] as const)
+    : Object.entries(input)
+
   const uploadingFileIds: Array<string> = []
   const downloadingFileIds: Array<string> = []
   const queuedUploadFileIds: Array<string> = []
@@ -50,7 +62,7 @@ export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
   const errors: Array<SyncError> = []
   const seenErrorFileIds = new Set<string>()
 
-  for (const [fileId, state] of Object.entries(localFilesState)) {
+  for (const [fileId, state] of entries) {
     // Upload status
     switch (state.uploadStatus) {
       case "inProgress":

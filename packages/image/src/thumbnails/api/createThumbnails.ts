@@ -10,7 +10,7 @@ import type { FileSystem } from "@effect/platform/FileSystem"
 import type { Store } from "@livestore/livestore"
 import { Effect, Layer, ManagedRuntime } from "effect"
 
-import type { ThumbnailTables } from "../schema/index.js"
+import type { ThumbnailEvents, ThumbnailTables } from "../schema/index.js"
 import {
   type LocalThumbnailStorage,
   LocalThumbnailStorageLive,
@@ -23,7 +23,6 @@ import type {
   FilesTable,
   FileThumbnailState,
   InitThumbnailsConfig,
-  QueryDbFn,
   ThumbnailFormat,
   ThumbnailQualitySettings,
   ThumbnailSizes
@@ -90,6 +89,8 @@ export interface ThumbnailInstance {
 export interface CreateThumbnailsConfig {
   store: Store<any>
   tables: ThumbnailTables
+  /** Thumbnail events from createThumbnailSchema() */
+  events: ThumbnailEvents
   fileSystem: Layer.Layer<FileSystem>
   /** URL to the thumbnail worker (use workerUrl OR worker, not both) */
   workerUrl?: URL | string
@@ -101,7 +102,6 @@ export interface CreateThumbnailsConfig {
   supportedMimeTypes?: Array<string> | undefined
   onEvent?: InitThumbnailsConfig["onEvent"] | undefined
   qualitySettings?: ThumbnailQualitySettings | undefined
-  queryDb?: QueryDbFn | undefined
   filesTable?: FilesTable | undefined
 }
 
@@ -116,6 +116,7 @@ export interface CreateThumbnailsConfig {
  * const thumbnails = createThumbnails({
  *   store,
  *   tables: thumbnailSchema.tables,
+ *   events: thumbnailSchema.events,
  *   fileSystem: opfsLayer(),
  *   workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
  *   sizes: { small: 128, medium: 256, large: 512 }
@@ -129,12 +130,12 @@ export interface CreateThumbnailsConfig {
 export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInstance => {
   const {
     concurrency = 2,
+    events,
     fileSystem,
     filesTable,
     format = "webp",
     onEvent,
     qualitySettings,
-    queryDb,
     sizes,
     store,
     supportedMimeTypes = [...SUPPORTED_IMAGE_MIME_TYPES],
@@ -156,7 +157,6 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
     supportedMimeTypes,
     ...(onEvent !== undefined ? { onEvent } : {}),
     ...(qualitySettings !== undefined ? { qualitySettings } : {}),
-    ...(queryDb !== undefined ? { queryDb } : {}),
     ...(filesTable !== undefined ? { filesTable } : {})
   }
 
@@ -166,7 +166,7 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
   const StorageLayer = Layer.provide(FileSystemLive)(LocalThumbnailStorageLive)
   const ServiceLayer = Layer.provide(
     Layer.mergeAll(WorkerClientLayer, StorageLayer, FileSystemLive)
-  )(ThumbnailServiceLive(store, tables, serviceConfig))
+  )(ThumbnailServiceLive(store, tables, events, serviceConfig))
 
   const MainLayer = Layer.mergeAll(ServiceLayer, WorkerClientLayer, StorageLayer, FileSystemLive)
 

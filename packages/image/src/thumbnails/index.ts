@@ -44,7 +44,7 @@ export type {
   ThumbnailQualitySettings,
   ThumbnailSizes,
   ThumbnailSizeState,
-  ThumbnailStateDocument,
+  ThumbnailStateRow,
   ThumbnailWorkerRequest,
   ThumbnailWorkerResponse
 } from "./types/index.js"
@@ -94,6 +94,9 @@ export {
   startThumbnails,
   stopThumbnails
 } from "./api/singleton.js"
+
+// Utilities
+export { parseThumbnailSizes } from "./utils/index.js"
 
 // Worker setup - for creating custom worker entry points
 export { setupThumbnailWorker } from "./worker-core.js"

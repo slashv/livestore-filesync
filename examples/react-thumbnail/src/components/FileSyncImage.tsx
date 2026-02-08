@@ -1,7 +1,8 @@
 import { getFileDisplayState, resolveFileUrl } from "@livestore-filesync/core"
-import { resolveThumbnailUrl } from "@livestore-filesync/image/thumbnails"
+import { parseThumbnailSizes, resolveThumbnailUrl } from "@livestore-filesync/image/thumbnails"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 
@@ -26,21 +27,27 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
 }) => {
   const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState)
-  const [thumbnailStateDoc] = store.useClientDocument(tables.thumbnailState)
+  // Per-file queries
+  const localFileState = store.useQuery(
+    queryDb(tables.localFileState.where({ fileId }).first())
+  )
+  const thumbRow = store.useQuery(
+    queryDb(tables.thumbnailState.where({ fileId }).first())
+  )
   const file = store.useQuery(tables.files.select().where({ id: fileId }).first())
 
-  if (!file || !localFileState || !thumbnailStateDoc) {
+  if (!file) {
     return null
   }
 
-  const displayState = getFileDisplayState(file, localFileState.localFiles)
+  const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, isUploading } = displayState
 
   const selectedSize = size ?? "full"
+  const sizes = useMemo(() => parseThumbnailSizes(thumbRow?.sizesJson), [thumbRow?.sizesJson])
   const thumbnailStatus = selectedSize === "full"
     ? null
-    : thumbnailStateDoc.files[fileId]?.sizes[selectedSize]?.status ?? "pending"
+    : sizes[selectedSize]?.status ?? "pending"
 
   const [src, setSrc] = useState<string | null>(null)
   const [isUsingThumbnail, setIsUsingThumbnail] = useState(false)

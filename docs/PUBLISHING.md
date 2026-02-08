@@ -161,6 +161,9 @@ pnpm -r publish --access public
 # 8. Push commits and tags
 git push origin main
 git push origin "v$VERSION"
+
+# 9. Create GitHub release
+gh release create "v$VERSION" --title "v$VERSION" --generate-notes --target main
 ```
 
 ### Quick Release Script
@@ -174,7 +177,10 @@ git add . && \
 git commit -m "chore: release $(node -p "require('./packages/core/package.json').version")" && \
 git tag -a "v$(node -p "require('./packages/core/package.json').version")" -m "Release v$(node -p "require('./packages/core/package.json').version")" && \
 pnpm -r publish --access public && \
-git push origin main --tags
+git push origin main --tags && \
+gh release create "v$(node -p "require('./packages/core/package.json').version")" \
+  --title "v$(node -p "require('./packages/core/package.json').version")" \
+  --generate-notes --target main
 ```
 
 ## Troubleshooting

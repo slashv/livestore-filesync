@@ -5,30 +5,34 @@
  * - Watches files table for image files
  * - Queues generation jobs to worker
  * - Stores generated thumbnails in local storage
- * - Updates thumbnail state client document
+ * - Updates thumbnail state in SQLite tables
  * - Handles cleanup when files are deleted
  *
  * Only runs on the leader tab (via LiveStore's leader election).
+ *
+ * ARCHITECTURE NOTE: Uses SQLite tables with clientOnly events instead of
+ * clientDocument with Schema.Record to prevent rebase conflicts during
+ * concurrent multi-tab operations.
+ * See: https://github.com/livestorejs/livestore/issues/998
  *
  * @module
  */
 
 import { FileSystem } from "@effect/platform/FileSystem"
+import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import { Context, Effect, Fiber, Layer, Queue, Ref } from "effect"
 
-import type { ThumbnailTables } from "../schema/index.js"
+import type { ThumbnailEvents, ThumbnailTables } from "../schema/index.js"
 import type {
   FilesTable,
   FileThumbnailState,
-  QueryDbFn,
   ThumbnailEvent,
   ThumbnailFormat,
   ThumbnailGenerationStatus,
   ThumbnailQualitySettings,
   ThumbnailSizes,
-  ThumbnailSizeState,
-  ThumbnailStateDocument
+  ThumbnailSizeState
 } from "../types/index.js"
 import { isSupportedImageMimeType } from "../types/index.js"
 import { LocalThumbnailStorage } from "./LocalThumbnailStorage.js"
@@ -51,6 +55,25 @@ export interface FileRecord {
 }
 
 /**
+ * Row type for the thumbnailState table
+ */
+interface ThumbnailStateTableRow {
+  fileId: string
+  contentHash: string
+  mimeType: string
+  sizesJson: string
+}
+
+/**
+ * Row type for the thumbnailConfig table
+ */
+interface ThumbnailConfigTableRow {
+  id: string
+  configHash: string
+  sizesJson: string
+}
+
+/**
  * ThumbnailService configuration
  */
 export interface ThumbnailServiceConfig {
@@ -68,11 +91,6 @@ export interface ThumbnailServiceConfig {
    * Quality settings for thumbnail generation.
    */
   qualitySettings?: ThumbnailQualitySettings | undefined
-  /**
-   * The queryDb function from the app's schema.
-   * Required for querying files.
-   */
-  queryDb?: QueryDbFn | undefined
   /**
    * The files table from @livestore-filesync/core.
    * Required for querying files.
@@ -231,6 +249,7 @@ const getMimeTypeFromBytes = (data: ArrayBuffer): string | null => {
 export const makeThumbnailService = (
   store: Store<any>,
   tables: ThumbnailTables,
+  events: ThumbnailEvents,
   config: ThumbnailServiceConfig
 ): Effect.Effect<
   ThumbnailServiceService,
@@ -252,45 +271,126 @@ export const makeThumbnailService = (
       config.onEvent?.(event)
     }
 
-    // Helper to read thumbnail state
-    const readThumbnailState = (): ThumbnailStateDocument => {
-      const result = store.query(tables.thumbnailState.get())
-      return result ?? { files: {} }
+    /**
+     * Parse sizes JSON from a table row
+     */
+    const parseSizesJson = (sizesJson: string): Record<string, ThumbnailSizeState> => {
+      try {
+        return JSON.parse(sizesJson) as Record<string, ThumbnailSizeState>
+      } catch {
+        return {}
+      }
     }
 
-    // Helper to update thumbnail state
-    const updateThumbnailState = (
-      updater: (state: ThumbnailStateDocument) => ThumbnailStateDocument
-    ): void => {
-      const currentState = readThumbnailState()
-      const newState = updater(currentState)
-      // Use the .set event directly, passing the value contents (not wrapped in { value: ... })
-      store.commit(tables.thumbnailState.set(newState))
+    /**
+     * Read a single file's thumbnail state from the table
+     */
+    const readFileThumbnailState = (fileId: string): FileThumbnailState | undefined => {
+      const rows = store.query<Array<ThumbnailStateTableRow>>(
+        queryDb(tables.thumbnailState.where({ fileId }))
+      )
+      if (rows.length === 0) return undefined
+      const row = rows[0]!
+      return {
+        fileId: row.fileId,
+        contentHash: row.contentHash,
+        mimeType: row.mimeType,
+        sizes: parseSizesJson(row.sizesJson)
+      }
     }
 
-    // Helper to update a single file's thumbnail state
+    /**
+     * Read all file thumbnail states from the table
+     */
+    const readAllFileThumbnailStates = (): Record<string, FileThumbnailState> => {
+      const rows = store.query<Array<ThumbnailStateTableRow>>(
+        queryDb(tables.thumbnailState.select())
+      )
+      const result: Record<string, FileThumbnailState> = {}
+      for (const row of rows) {
+        result[row.fileId] = {
+          fileId: row.fileId,
+          contentHash: row.contentHash,
+          mimeType: row.mimeType,
+          sizes: parseSizesJson(row.sizesJson)
+        }
+      }
+      return result
+    }
+
+    /**
+     * Read the config from the config table
+     */
+    const readConfig = (): { configHash: string; sizes: ThumbnailSizes } | undefined => {
+      const rows = store.query<Array<ThumbnailConfigTableRow>>(
+        queryDb(tables.thumbnailConfig.where({ id: "global" }))
+      )
+      if (rows.length === 0) return undefined
+      const row = rows[0]!
+      return {
+        configHash: row.configHash,
+        sizes: JSON.parse(row.sizesJson) as ThumbnailSizes
+      }
+    }
+
+    /**
+     * Read the full thumbnail state document (for backwards compatibility)
+     * Prefixed with underscore since currently unused but kept for potential future use
+     */
+    const _readThumbnailState = (): {
+      config: { configHash: string; sizes: ThumbnailSizes } | undefined
+      files: Record<string, FileThumbnailState>
+    } => {
+      const files = readAllFileThumbnailStates()
+      const configData = readConfig()
+      return {
+        config: configData,
+        files
+      }
+      // Suppress "declared but never used" warning
+      void _readThumbnailState
+    }
+
+    /**
+     * Commit an upsert for a single file's thumbnail state
+     */
+    const commitFileThumbnailState = (state: FileThumbnailState): void => {
+      store.commit(
+        events.thumbnailStateUpsert({
+          fileId: state.fileId,
+          contentHash: state.contentHash,
+          mimeType: state.mimeType,
+          sizesJson: JSON.stringify(state.sizes)
+        })
+      )
+    }
+
+    /**
+     * Commit a remove for a single file's thumbnail state
+     */
+    const commitRemoveFileThumbnailState = (fileId: string): void => {
+      store.commit(events.thumbnailStateRemove({ fileId }))
+    }
+
+    /**
+     * Helper to update a single file's thumbnail state
+     */
     const updateFileThumbnailState = (
       fileId: string,
       updater: (state: FileThumbnailState | undefined) => FileThumbnailState | undefined
     ): void => {
-      updateThumbnailState((state) => {
-        const fileState = state.files[fileId]
-        const newFileState = updater(fileState)
+      const currentState = readFileThumbnailState(fileId)
+      const newState = updater(currentState)
 
-        if (newFileState === undefined) {
-          // Remove the file state
-          const { [fileId]: _, ...rest } = state.files
-          return { ...state, files: rest }
+      if (newState === undefined) {
+        // Remove the file state
+        if (currentState !== undefined) {
+          commitRemoveFileThumbnailState(fileId)
         }
-
-        return {
-          ...state,
-          files: {
-            ...state.files,
-            [fileId]: newFileState
-          }
-        }
-      })
+      } else {
+        // Upsert the file state
+        commitFileThumbnailState(newState)
+      }
     }
 
     // Generate a hash of the current config for change detection
@@ -313,8 +413,8 @@ export const makeThumbnailService = (
     const checkAndHandleConfigChange = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const currentHash = generateConfigHash()
-        const state = readThumbnailState()
-        const storedHash = state.config?.configHash
+        const storedConfig = readConfig()
+        const storedHash = storedConfig?.configHash
 
         if (storedHash === currentHash) {
           // Config unchanged, nothing to do
@@ -326,18 +426,25 @@ export const makeThumbnailService = (
           console.log("[ThumbnailService] Config changed, clearing all thumbnails...")
 
           // Delete all thumbnail files from storage
-          for (const fileState of Object.values(state.files)) {
+          const allStates = readAllFileThumbnailStates()
+          for (const fileState of Object.values(allStates)) {
             yield* storage.deleteThumbnails(fileState.contentHash).pipe(
               Effect.catchAll(() => Effect.void)
             )
           }
+
+          // Clear all file states
+          store.commit(events.thumbnailStateClear({}))
         }
 
-        // Reset state with new config hash and sizes
-        store.commit(tables.thumbnailState.set({
-          config: { configHash: currentHash, sizes: config.sizes },
-          files: {}
-        }))
+        // Set new config
+        store.commit(
+          events.thumbnailConfigSet({
+            id: "global",
+            configHash: currentHash,
+            sizesJson: JSON.stringify(config.sizes)
+          })
+        )
       })
 
     // Helper to read local file
@@ -499,7 +606,7 @@ export const makeThumbnailService = (
     const queueFile = (file: FileRecord): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Check if thumbnails already exist with matching content hash
-        const existingState = readThumbnailState().files[file.id]
+        const existingState = readFileThumbnailState(file.id)
         if (existingState && existingState.contentHash === file.contentHash) {
           // Check if all sizes are in a final or in-progress state
           // Skip if already queued/generating/done/skipped (don't re-queue)
@@ -570,14 +677,14 @@ export const makeThumbnailService = (
     // TODO: Wire this up to file deletion events from LiveStore
     const _cleanupFile = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const state = readThumbnailState().files[fileId]
+        const state = readFileThumbnailState(fileId)
         if (!state) return
 
         // Delete thumbnail files
         yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catchAll(() => Effect.void))
 
         // Remove from state
-        updateFileThumbnailState(fileId, () => undefined)
+        commitRemoveFileThumbnailState(fileId)
 
         emitEvent({
           type: "thumbnail:cleanup",
@@ -589,14 +696,14 @@ export const makeThumbnailService = (
     const scanExistingFiles = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Query all non-deleted files from the files table
-        if (!config.queryDb || !config.filesTable) {
-          // Can't query files without queryDb and filesTable
+        if (!config.filesTable) {
+          // Can't query files without filesTable
           return
         }
 
         try {
           const files = store.query<Array<FileRecord>>(
-            config.queryDb(config.filesTable.select())
+            queryDb(config.filesTable.select())
           )
 
           for (const file of files) {
@@ -612,7 +719,7 @@ export const makeThumbnailService = (
     // Service methods
     const resolveThumbnailUrl: ThumbnailServiceService["resolveThumbnailUrl"] = (fileId, size) =>
       Effect.gen(function*() {
-        const state = readThumbnailState().files[fileId]
+        const state = readFileThumbnailState(fileId)
         if (!state) return null
 
         const sizeState = state.sizes[size]
@@ -627,24 +734,24 @@ export const makeThumbnailService = (
       })
 
     const getThumbnailState: ThumbnailServiceService["getThumbnailState"] = (fileId) =>
-      Effect.sync(() => readThumbnailState().files[fileId] ?? null)
+      Effect.sync(() => readFileThumbnailState(fileId) ?? null)
 
     const regenerate: ThumbnailServiceService["regenerate"] = (fileId) =>
       Effect.gen(function*() {
-        if (!config.queryDb || !config.filesTable) {
+        if (!config.filesTable) {
           return
         }
 
         // Get the file record
         try {
           const files = store.query<Array<FileRecord>>(
-            config.queryDb(config.filesTable.where({ id: fileId }))
+            queryDb(config.filesTable.where({ id: fileId }))
           )
 
           const file = files.find((f) => !f.deletedAt)
           if (!file) return
 
-          const state = readThumbnailState().files[fileId]
+          const state = readFileThumbnailState(fileId)
 
           // Delete existing thumbnails if content hash changed
           if (state && state.contentHash !== file.contentHash) {
@@ -728,6 +835,7 @@ export const makeThumbnailService = (
 export const ThumbnailServiceLive = (
   store: Store<any>,
   tables: ThumbnailTables,
+  events: ThumbnailEvents,
   config: ThumbnailServiceConfig
 ): Layer.Layer<ThumbnailService, never, ThumbnailWorkerClient | LocalThumbnailStorage | FileSystem> =>
-  Layer.effect(ThumbnailService, makeThumbnailService(store, tables, config))
+  Layer.effect(ThumbnailService, makeThumbnailService(store, tables, events, config))

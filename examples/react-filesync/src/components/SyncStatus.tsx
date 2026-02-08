@@ -1,13 +1,14 @@
 import { getSyncStatus } from "@livestore-filesync/core"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
-import React, { useCallback, useEffect, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
 
 export const SyncStatus: React.FC = () => {
   const store = useStore(reactStoreOptions)
-  const [localFileState] = store.useClientDocument(tables.localFileState)
-  const syncStatus = getSyncStatus(localFileState?.localFiles ?? {})
+  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
+  const syncStatus = useMemo(() => getSyncStatus(localFileStateRows), [localFileStateRows])
 
   // Network status (browser's navigator.onLine)
   const [isOnline, setIsOnline] = useState(

@@ -320,12 +320,18 @@ export const makeFileSync = (
       ...config.executorConfig
     }
 
-    // Emit an event
+    // Emit an event — individual callback errors are caught to prevent one bad
+    // subscriber from crashing the sync engine or preventing other subscribers
+    // from receiving events.
     const emit = (event: FileSyncEvent): Effect.Effect<void> =>
       Effect.gen(function*() {
         const callbacks = yield* Ref.get(eventCallbacks)
         for (const callback of callbacks) {
-          callback(event)
+          try {
+            callback(event)
+          } catch (err) {
+            yield* Effect.logWarning("[FileSync] Event callback threw an error", { event: event.type, error: err })
+          }
         }
       })
 
@@ -529,8 +535,11 @@ export const makeFileSync = (
         yield* emit({ type: "offline" })
         yield* executor.pause()
 
-        // Reset inProgress and error transfers to queued since they can't complete while offline
-        // Error transfers are reset because they failed due to connectivity loss
+        // Only reset inProgress transfers to queued — these are actively running and
+        // will fail due to network loss, so they need to be re-queued when back online.
+        // Do NOT reset error transfers: they may have failed for non-network reasons
+        // (corrupt file, permission denied, too large) and blindly retrying would
+        // create infinite retry loops.
         yield* stateManager.atomicUpdate((state) => {
           let hasChanges = false
           const nextState = { ...state }
@@ -538,14 +547,12 @@ export const makeFileSync = (
             let updated = false
             const updatedFile = { ...localFile }
 
-            if (localFile.uploadStatus === "inProgress" || localFile.uploadStatus === "error") {
+            if (localFile.uploadStatus === "inProgress") {
               updatedFile.uploadStatus = "queued"
-              updatedFile.lastSyncError = ""
               updated = true
             }
-            if (localFile.downloadStatus === "inProgress" || localFile.downloadStatus === "error") {
+            if (localFile.downloadStatus === "inProgress") {
               updatedFile.downloadStatus = "queued"
-              updatedFile.lastSyncError = ""
               updated = true
             }
 
@@ -745,8 +752,22 @@ export const makeFileSync = (
         }
       })
 
-    // Create sync executor
-    const executor = yield* makeSyncExecutor(transferHandler, executorConfig)
+    // Create sync executor with task completion callback
+    const onTaskComplete = (
+      result: { kind: "upload" | "download"; fileId: string; success: boolean; error?: unknown }
+    ) =>
+      Effect.gen(function*() {
+        if (!result.success) {
+          yield* emit({
+            type: "transfer:exhausted",
+            kind: result.kind,
+            fileId: result.fileId,
+            error: result.error
+          })
+        }
+      })
+
+    const executor = yield* makeSyncExecutor(transferHandler, executorConfig, onTaskComplete)
 
     // Two-pass reconciliation of local file state
     const activeTransferStatuses = ["queued", "inProgress"] as const
@@ -943,27 +964,42 @@ export const makeFileSync = (
 
         yield* emit({ type: "sync:start" })
 
+        // Process each event individually so that a failure in one event
+        // doesn't prevent the cursor from advancing past already-processed events.
         for (const event of eventsBatch) {
-          switch (event.name) {
-            case "v1.FileCreated":
-              yield* handleFileCreated(event.args as FileCreatedPayload)
-              break
-            case "v1.FileUpdated":
-              yield* handleFileUpdated(event.args as FileUpdatedPayload)
-              break
-            case "v1.FileDeleted":
-              yield* handleFileDeleted(event.args as FileDeletedPayload)
-              break
-          }
+          yield* Effect.gen(function*() {
+            switch (event.name) {
+              case "v1.FileCreated":
+                yield* handleFileCreated(event.args as FileCreatedPayload)
+                break
+              case "v1.FileUpdated":
+                yield* handleFileUpdated(event.args as FileUpdatedPayload)
+                break
+              case "v1.FileDeleted":
+                yield* handleFileDeleted(event.args as FileDeletedPayload)
+                break
+            }
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function*() {
+                yield* Effect.logError("[FileSync] Failed to process event", { eventName: event.name, error })
+                yield* emit({ type: "sync:error", error, context: `event:${event.name}` })
+              })
+            )
+          )
         }
 
-        const lastEvent = eventsBatch[eventsBatch.length - 1]
-        const nextCursor = EventSequenceNumber.Client.toString(lastEvent.seqNum)
+        // Advance the cursor to the last successfully processed event,
+        // or to the end of the batch if all events succeeded.
+        // Always advance to the last event in the batch even if some failed,
+        // since re-processing a failed event would likely fail again.
+        const cursorEvent = eventsBatch[eventsBatch.length - 1]
+        const nextCursor = EventSequenceNumber.Client.toString(cursorEvent.seqNum)
         yield* Ref.set(cursorRef, nextCursor)
         yield* persistCursor(nextCursor)
 
         // Update stall detection refs
-        yield* Ref.set(lastBatchCursorRef, lastEvent.seqNum)
+        yield* Ref.set(lastBatchCursorRef, cursorEvent.seqNum)
         yield* Ref.set(lastBatchAtRef, Date.now())
 
         yield* emit({ type: "sync:complete" })
@@ -1162,6 +1198,30 @@ export const makeFileSync = (
     const stopSyncLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         yield* executor.pause()
+
+        // Interrupt in-flight transfers so they don't commit conflicting state
+        // after this tab has lost leadership. Reset their statuses to queued
+        // so the new leader can pick them up.
+        const interrupted = yield* executor.interruptInflight()
+        if (interrupted.length > 0) {
+          yield* Effect.logDebug("[FileSync] Interrupted in-flight transfers on leadership loss", {
+            count: interrupted.length,
+            fileIds: interrupted.map((t) => t.fileId)
+          })
+          yield* stateManager.atomicUpdate((state) => {
+            const nextState = { ...state }
+            for (const task of interrupted) {
+              const existing = nextState[task.fileId]
+              if (!existing) continue
+              const statusField = task.kind === "download" ? "downloadStatus" : "uploadStatus"
+              if (existing[statusField] === "inProgress") {
+                nextState[task.fileId] = { ...existing, [statusField]: "queued" }
+              }
+            }
+            return nextState
+          })
+        }
+
         yield* stopEventStream()
       })
 
@@ -1286,7 +1346,9 @@ export const makeFileSync = (
 
         yield* Effect.logWarning(
           `[FileSync] Heartbeat: stream stalled - upstream at ${EventSequenceNumber.Client.toString(upstreamHead)}, ` +
-            `last batch at ${EventSequenceNumber.Client.toString(lastBatchCursor)}, ${timeSinceLastBatch}ms since last batch`
+            `last batch at ${
+              EventSequenceNumber.Client.toString(lastBatchCursor)
+            }, ${timeSinceLastBatch}ms since last batch`
         )
         yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-stalled" })
         yield* startEventStream()
@@ -1409,7 +1471,16 @@ export const makeFileSync = (
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
       Effect.gen(function*() {
         // Apply preprocessor if configured for this file type
-        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+        // Use tryPromise so rejected/throwing preprocessors produce a caught error
+        // instead of a defect that crashes the fiber
+        const processedFile = yield* Effect.tryPromise({
+          try: () => applyPreprocessor(config.preprocessors, file),
+          catch: (err) =>
+            new StorageError({
+              message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err
+            })
+        })
 
         const id = crypto.randomUUID()
         const contentHash = yield* doHashFile(processedFile)
@@ -1433,7 +1504,14 @@ export const makeFileSync = (
         }
 
         // Apply preprocessor if configured for this file type
-        const processedFile = yield* Effect.promise(() => applyPreprocessor(config.preprocessors, file))
+        const processedFile = yield* Effect.tryPromise({
+          try: () => applyPreprocessor(config.preprocessors, file),
+          catch: (err) =>
+            new StorageError({
+              message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err
+            })
+        })
 
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
@@ -1460,6 +1538,9 @@ export const makeFileSync = (
       Effect.gen(function*() {
         const existingFile = yield* getFile(fileId)
         if (!existingFile) return
+
+        // Cancel any pending download so it doesn't write the file back after deletion
+        yield* executor.cancelDownload(fileId)
 
         yield* deleteFileRecord(fileId)
 

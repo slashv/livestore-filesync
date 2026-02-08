@@ -18,7 +18,8 @@ export const events = {
 }
 
 const materializers = State.SQLite.materializers(events, {
-  ...fileSyncSchema.createMaterializers(tables)
+  ...fileSyncSchema.createMaterializers(tables),
+  ...thumbnailSchema.createMaterializers(tables)
 })
 
 const state = State.SQLite.makeState({ tables, materializers })

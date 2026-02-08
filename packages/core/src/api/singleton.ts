@@ -22,7 +22,9 @@ const REQUIRED_EVENTS = [
   "v1.FileCreated",
   "v1.FileUpdated",
   "v1.FileDeleted",
-  "localFileStateSet"
+  "v1.LocalFileStateUpsert",
+  "v1.LocalFileStateRemove",
+  "v1.LocalFileStateClear"
 ] as const
 
 type SchemaFallback = Pick<SyncSchema, "tables" | "events"> & {

@@ -9,9 +9,11 @@ import {
   updateFile,
 } from '@livestore-filesync/core'
 import {
+  parseThumbnailSizes,
   resolveThumbnailUrl,
 } from '@livestore-filesync/image/thumbnails'
-import { useStore } from 'vue-livestore'
+import { queryDb } from '@livestore/livestore'
+import { useStore, useQuery } from 'vue-livestore'
 import type { FileType } from '../types'
 
 const props = defineProps<{
@@ -20,19 +22,20 @@ const props = defineProps<{
 
 const { store } = useStore()
 
-const { localFiles } = store.useClientDocument(tables.localFileState)
-const localFile = computed(() => localFiles.value[props.file.id])
+// Per-file queries: only re-render when THIS file's state changes
+const localFileState = useQuery(queryDb(tables.localFileState.where({ fileId: props.file.id }).first()))
+const localFile = computed(() => localFileState.value)
 
 const displayState = computed(() =>
-  getFileDisplayState(props.file, localFiles.value)
+  getFileDisplayState(props.file, localFileState.value ?? undefined)
 )
 const canDisplay = computed(() => displayState.value.canDisplay)
 const isUploading = computed(() => displayState.value.isUploading)
 
-// Thumbnail state - read from LiveStore client document for reactivity
-const { files: thumbnailFiles } = store.useClientDocument(tables.thumbnailState)
-const thumbnailState = computed(() => thumbnailFiles.value[props.file.id])
-const smallThumbnailStatus = computed(() => thumbnailState.value?.sizes?.['small']?.status ?? 'pending')
+// Per-file thumbnail query
+const thumbRow = useQuery(queryDb(tables.thumbnailState.where({ fileId: props.file.id }).first()))
+const sizes = computed(() => parseThumbnailSizes(thumbRow.value?.sizesJson))
+const smallThumbnailStatus = computed(() => sizes.value['small']?.status ?? 'pending')
 
 const handleDelete = async () => {
   try {

@@ -155,6 +155,13 @@ export interface SyncExecutorService {
   readonly start: () => Effect.Effect<void, never, Scope.Scope>
 
   /**
+   * Interrupt all in-flight transfer fibers and reset inflight counts.
+   * Returns the file IDs that were interrupted, so the caller can
+   * reset their transfer statuses (e.g., inProgress → queued).
+   */
+  readonly interruptInflight: () => Effect.Effect<ReadonlyArray<{ kind: TransferKind; fileId: string }>>
+
+  /**
    * Ensure worker fibers are running.
    * If a worker fiber has exited (crashed, interrupted), restarts it.
    * Only restarts workers when executor is not paused.
@@ -181,11 +188,18 @@ interface ExecutorState {
 }
 
 /**
+ * Callback invoked after each task completes (success or failure after all retries exhausted).
+ * Errors thrown by the callback are caught and logged — they won't crash the executor.
+ */
+export type TaskCompleteCallback = (result: TransferResult) => Effect.Effect<void, unknown>
+
+/**
  * Create a SyncExecutor service
  */
 export const makeSyncExecutor = (
   handler: TransferHandler,
-  config: SyncExecutorConfig = defaultConfig
+  config: SyncExecutorConfig = defaultConfig,
+  onTaskComplete?: TaskCompleteCallback
 ): Effect.Effect<SyncExecutorService, never, Scope.Scope> =>
   Effect.gen(function*() {
     // Create queues for downloads and uploads
@@ -215,6 +229,11 @@ export const makeSyncExecutor = (
 
     // Track cancelled downloads to skip when dequeued (e.g., file was deleted)
     const cancelledDownloadsSet = yield* Ref.make<Set<string>>(new Set())
+
+    // Track in-flight task fibers for interruption on leadership loss
+    const inflightFibersRef = yield* Ref.make<
+      Map<string, { fiber: Fiber.RuntimeFiber<TransferResult, never>; kind: TransferKind; fileId: string }>
+    >(new Map())
 
     // Signal for idle waiting
     const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
@@ -298,6 +317,21 @@ export const makeSyncExecutor = (
           Effect.catchAll((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
         )
 
+        // Log and notify when retries are exhausted
+        if (!result.success) {
+          yield* Effect.logWarning(
+            `Transfer failed after ${config.maxRetries} retries`,
+            { kind, fileId, error: result.error }
+          )
+        }
+
+        // Notify caller of task completion (success or failure)
+        if (onTaskComplete) {
+          yield* onTaskComplete(result).pipe(
+            Effect.catchAll((callbackError) => Effect.logWarning("onTaskComplete callback failed", { callbackError }))
+          )
+        }
+
         // Update inflight count
         yield* Ref.update(stateRef, (s) => ({
           ...s,
@@ -309,6 +343,27 @@ export const makeSyncExecutor = (
         yield* checkIdle
 
         return result
+      })
+
+    // Fork a tracked task: starts processTask in a background fiber
+    // and registers/unregisters it in inflightFibersRef for interruption support
+    const forkTracked = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const trackedTask = processTask(kind, fileId).pipe(
+          Effect.ensuring(
+            Ref.update(inflightFibersRef, (map) => {
+              const newMap = new Map(map)
+              newMap.delete(`${kind}:${fileId}`)
+              return newMap
+            })
+          )
+        )
+        const fiber = yield* Effect.fork(trackedTask)
+        yield* Ref.update(inflightFibersRef, (map) => {
+          const newMap = new Map(map)
+          newMap.set(`${kind}:${fileId}`, { fiber, kind, fileId })
+          return newMap
+        })
       })
 
     // Worker that processes uploads (single queue)
@@ -335,8 +390,9 @@ export const makeSyncExecutor = (
             return
           }
 
-          // Process the task in the background
-          yield* Effect.fork(processTask("upload", maybeFileId.value))
+          // Process the task in the background and track the fiber
+          const fileId = maybeFileId.value
+          yield* forkTracked("upload", fileId)
         })
 
         yield* Effect.forever(processLoop).pipe(Effect.interruptible)
@@ -367,7 +423,7 @@ export const makeSyncExecutor = (
             const processed = yield* Ref.get(downloadProcessedSet)
             const cancelled = yield* Ref.get(cancelledDownloadsSet)
             if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* Effect.fork(processTask("download", fileId))
+              yield* forkTracked("download", fileId)
             } else {
               // Item was skipped - check if we're idle now
               yield* checkIdle
@@ -383,7 +439,7 @@ export const makeSyncExecutor = (
             const processed = yield* Ref.get(downloadProcessedSet)
             const cancelled = yield* Ref.get(cancelledDownloadsSet)
             if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* Effect.fork(processTask("download", fileId))
+              yield* forkTracked("download", fileId)
             } else {
               // Item was skipped - check if we're idle now
               yield* checkIdle
@@ -446,28 +502,31 @@ export const makeSyncExecutor = (
         yield* ensureWorkers()
       })
 
+    // Atomic check-and-set: Ref.modify returns [shouldEnqueue, newSet] in a single
+    // operation, preventing races where two fibers both see the fileId as absent
+    // and double-enqueue the same file.
     const enqueueDownload = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const queued = yield* Ref.get(downloadQueuedSet)
-        if (!queued.has(fileId)) {
-          yield* Ref.update(downloadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.add(fileId)
-            return newSet
-          })
+        const shouldEnqueue = yield* Ref.modify(downloadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return [true, newSet] as const
+        })
+        if (shouldEnqueue) {
           yield* Queue.offer(downloadQueue, fileId)
         }
       })
 
     const enqueueUpload = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const queued = yield* Ref.get(uploadQueuedSet)
-        if (!queued.has(fileId)) {
-          yield* Ref.update(uploadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.add(fileId)
-            return newSet
-          })
+        const shouldEnqueue = yield* Ref.modify(uploadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return [true, newSet] as const
+        })
+        if (shouldEnqueue) {
           yield* Queue.offer(uploadQueue, fileId)
         }
       })
@@ -478,20 +537,20 @@ export const makeSyncExecutor = (
         const processed = yield* Ref.get(downloadProcessedSet)
         if (processed.has(fileId)) return
 
-        const highQueued = yield* Ref.get(highPriorityDownloadQueuedSet)
-        if (highQueued.has(fileId)) return
-
         // Check if file is actually queued in normal queue (otherwise nothing to prioritize)
         const normalQueued = yield* Ref.get(downloadQueuedSet)
         if (!normalQueued.has(fileId)) return
 
-        // Add to high priority queue
-        yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
+        // Atomic check-and-set for the high priority queue set
+        const shouldEnqueue = yield* Ref.modify(highPriorityDownloadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
           const newSet = new Set(set)
           newSet.add(fileId)
-          return newSet
+          return [true, newSet] as const
         })
-        yield* Queue.offer(highPriorityDownloadQueue, fileId)
+        if (shouldEnqueue) {
+          yield* Queue.offer(highPriorityDownloadQueue, fileId)
+        }
 
         // Note: We don't remove from normal queue since Effect Queue doesn't support removal.
         // The worker will skip it when it reaches it in the normal queue because
@@ -579,6 +638,33 @@ export const makeSyncExecutor = (
         yield* Deferred.await(deferred)
       })
 
+    // Interrupt all in-flight transfer fibers and reset inflight counts.
+    // Returns metadata about interrupted tasks so the caller can reset state.
+    const interruptInflight = (): Effect.Effect<
+      ReadonlyArray<{ kind: TransferKind; fileId: string }>
+    > =>
+      Effect.gen(function*() {
+        const fibers = yield* Ref.getAndSet(inflightFibersRef, new Map())
+        const interrupted: Array<{ kind: TransferKind; fileId: string }> = []
+
+        for (const [, entry] of fibers) {
+          yield* Fiber.interrupt(entry.fiber)
+          interrupted.push({ kind: entry.kind, fileId: entry.fileId })
+        }
+
+        // Reset inflight counts to 0
+        yield* Ref.update(stateRef, (s) => ({
+          ...s,
+          downloadsInflight: 0,
+          uploadsInflight: 0
+        }))
+
+        // Signal idle if needed (queues may still have items but no inflight)
+        yield* checkIdle
+
+        return interrupted
+      })
+
     return {
       enqueueDownload,
       enqueueUpload,
@@ -590,6 +676,7 @@ export const makeSyncExecutor = (
       getInflightCount,
       getQueuedCount,
       awaitIdle,
+      interruptInflight,
       start,
       ensureWorkers
     }
@@ -603,9 +690,10 @@ export const makeSyncExecutor = (
  */
 export const makeSyncExecutorLayer = (
   handler: TransferHandler,
-  config: SyncExecutorConfig = defaultConfig
+  config: SyncExecutorConfig = defaultConfig,
+  onTaskComplete?: TaskCompleteCallback
 ): Layer.Layer<SyncExecutor, never, Scope.Scope> =>
   Layer.scoped(
     SyncExecutor,
-    makeSyncExecutor(handler, config)
+    makeSyncExecutor(handler, config, onTaskComplete)
   )

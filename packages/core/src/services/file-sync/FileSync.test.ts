@@ -7,7 +7,7 @@ import { getClientSession } from "../../livestore/types.js"
 import { HashServiceLive } from "../../services/hash/index.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
-import { LocalFileStateManagerLive } from "../local-file-state/index.js"
+import { LocalFileStateManager, LocalFileStateManagerLive } from "../local-file-state/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
 import {
   makeRemoteStorageMemoryWithRefs,
@@ -280,6 +280,85 @@ describe("FileSync", () => {
       expect(events).toContain("online")
     } finally {
       unsubscribe()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
+describe("FileSync - Offline Transition", () => {
+  it("resets inProgress transfers to queued but preserves error states when going offline", async () => {
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntime(deps, { offline: true })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      // Create two files with local copies
+      const fileId1 = crypto.randomUUID()
+      const path1 = makeStoredPath(deps.storeId, "hash1")
+      const fileId2 = crypto.randomUUID()
+      const path2 = makeStoredPath(deps.storeId, "hash2")
+
+      await runtime.runPromise(localStorage.writeFile(path1, new File(["data1"], "test1.txt")))
+      await runtime.runPromise(localStorage.writeFile(path2, new File(["data2"], "test2.txt")))
+
+      store.commit(events.fileCreated({
+        id: fileId1,
+        path: path1,
+        contentHash: "hash1",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }))
+      store.commit(events.fileCreated({
+        id: fileId2,
+        path: path2,
+        contentHash: "hash2",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }))
+
+      // Start offline so uploads queue but don't run
+      await runtime.runPromise(fileSync.setOnline(false))
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(50)
+
+      // Manually set file1 to "error" state (simulating a non-network failure)
+      const stateManager = await runtime.runPromise(
+        Effect.gen(function*() {
+          return yield* LocalFileStateManager
+        })
+      )
+      await runtime.runPromise(
+        stateManager.setTransferError(fileId1, "upload", "error", "File too large")
+      )
+
+      // Verify initial states
+      let state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[fileId1]?.uploadStatus).toBe("error")
+      expect(state[fileId1]?.lastSyncError).toBe("File too large")
+      expect(state[fileId2]?.uploadStatus).toBe("queued")
+
+      // Go online then immediately offline — this triggers the goOffline path.
+      // No delay between to avoid the executor picking up the error file and
+      // overwriting the manually-set lastSyncError.
+      await runtime.runPromise(fileSync.setOnline(true))
+      await runtime.runPromise(fileSync.setOnline(false))
+      await delay(20)
+
+      // Error state should be preserved (not blindly reset)
+      state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[fileId1]?.uploadStatus).toBe("error")
+      expect(state[fileId1]?.lastSyncError).toBe("File too large")
+    } finally {
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))
       await runtime.dispose()
@@ -888,16 +967,13 @@ describe("FileSync - Error State Recovery", () => {
       // Manually inject error state into localFileState
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId]: {
-              path,
-              localHash: "error-test-hash",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "Simulated error"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId,
+          path,
+          localHash: "error-test-hash",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "Simulated error"
         })
       )
 
@@ -960,23 +1036,23 @@ describe("FileSync - Error State Recovery", () => {
       // Inject error states
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId1]: {
-              path: path1,
-              localHash: "retry-hash-1",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "Upload failed"
-            },
-            [fileId2]: {
-              path: path2,
-              localHash: "retry-hash-2",
-              uploadStatus: "done",
-              downloadStatus: "error",
-              lastSyncError: "Download failed"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId: fileId1,
+          path: path1,
+          localHash: "retry-hash-1",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "Upload failed"
+        })
+      )
+      store.commit(
+        schema.events.localFileStateUpsert({
+          fileId: fileId2,
+          path: path2,
+          localHash: "retry-hash-2",
+          uploadStatus: "done",
+          downloadStatus: "error",
+          lastSyncError: "Download failed"
         })
       )
 
@@ -1056,16 +1132,13 @@ describe("FileSync - Error State Recovery", () => {
 
       const { schema, store } = deps
       store.commit(
-        schema.events.localFileStateSet({
-          localFiles: {
-            [fileId]: {
-              path,
-              localHash: "clear-error-hash",
-              uploadStatus: "error",
-              downloadStatus: "done",
-              lastSyncError: "This error should be cleared"
-            }
-          }
+        schema.events.localFileStateUpsert({
+          fileId,
+          path,
+          localHash: "clear-error-hash",
+          uploadStatus: "error",
+          downloadStatus: "done",
+          lastSyncError: "This error should be cleared"
         })
       )
 
@@ -1076,6 +1149,122 @@ describe("FileSync - Error State Recovery", () => {
       // Error message should be cleared
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
       expect(state[fileId]?.lastSyncError).toBe("")
+    } finally {
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
+describe("FileSync - Event Callback Safety", () => {
+  it("continues emitting to other subscribers when one callback throws", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { offline: true }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const receivedBySecond: Array<string> = []
+    const receivedByThird: Array<string> = []
+
+    // First subscriber throws on every event
+    const unsub1 = fileSync.onEvent(() => {
+      throw new Error("subscriber 1 blows up")
+    })
+    // Second subscriber should still receive events
+    const unsub2 = fileSync.onEvent((event) => {
+      receivedBySecond.push(event.type)
+    })
+    // Third subscriber should also still receive events
+    const unsub3 = fileSync.onEvent((event) => {
+      receivedByThird.push(event.type)
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      // setOnline(false) emits an "offline" event
+      await runtime.runPromise(fileSync.setOnline(false))
+      await delay(50)
+
+      // Both the second and third subscriber should have received the "offline"
+      // event despite the first subscriber throwing on every event
+      expect(receivedBySecond.length).toBeGreaterThan(0)
+      expect(receivedByThird.length).toBeGreaterThan(0)
+      expect(receivedBySecond).toContain("offline")
+      expect(receivedByThird).toContain("offline")
+    } finally {
+      unsub1()
+      unsub2()
+      unsub3()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
+describe("FileSync - Per-Event Error Handling", () => {
+  it("processes multiple files independently through bootstrap without batch abort", async () => {
+    // Verify that each event/file is processed independently during bootstrap.
+    // Previously, handleEventBatch wrapped all events in a single try/catch,
+    // so one failing event would abort the entire batch.
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { offline: true }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      // Create two files — both have local copies
+      const fileId1 = crypto.randomUUID()
+      const path1 = makeStoredPath(deps.storeId, "hash1")
+      const fileId2 = crypto.randomUUID()
+      const path2 = makeStoredPath(deps.storeId, "hash2")
+
+      await runtime.runPromise(localStorage.writeFile(path1, new File(["data1"], "test1.txt")))
+      await runtime.runPromise(localStorage.writeFile(path2, new File(["data2"], "test2.txt")))
+
+      // Commit events before start
+      store.commit(events.fileCreated({
+        id: fileId1,
+        path: path1,
+        contentHash: "hash1",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }))
+      store.commit(events.fileCreated({
+        id: fileId2,
+        path: path2,
+        contentHash: "hash2",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }))
+
+      await runtime.runPromise(fileSync.setOnline(false))
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(100)
+
+      // Both files should have local state — one file's processing shouldn't
+      // prevent the other from being processed
+      const state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[fileId1]).toBeDefined()
+      expect(state[fileId2]).toBeDefined()
+      expect(state[fileId1]?.uploadStatus).toBe("queued")
+      expect(state[fileId2]?.uploadStatus).toBe("queued")
     } finally {
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))

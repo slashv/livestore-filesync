@@ -7,6 +7,12 @@
  * Types are derived from these schemas in types/index.ts to ensure
  * a single source of truth.
  *
+ * ARCHITECTURE NOTE: localFileState uses a regular SQLite table with
+ * clientOnly events instead of a clientDocument with Schema.Record.
+ * This prevents rebase conflicts during concurrent tab operations by
+ * storing each file's state as a separate row rather than a single JSON blob.
+ * See: https://github.com/livestorejs/livestore/issues/998
+ *
  * @example
  * ```typescript
  * import { createFileSyncSchema } from 'livestore-filesync/schema'
@@ -39,7 +45,7 @@
  * @module
  */
 
-import { Events, EventSequenceNumber, Schema, SessionIdSymbol, State } from "@livestore/livestore"
+import { Events, EventSequenceNumber, Schema, State } from "@livestore/livestore"
 
 // ============================================
 // Schema Definitions (Source of Truth)
@@ -52,6 +58,7 @@ export const TransferStatusSchema = Schema.Literal("pending", "queued", "inProgr
 
 /**
  * Local file state schema - tracks sync status for a single file
+ * This is used for both the row type and the event payload.
  */
 export const LocalFileStateSchema = Schema.Struct({
   path: Schema.String,
@@ -62,7 +69,20 @@ export const LocalFileStateSchema = Schema.Struct({
 })
 
 /**
+ * Local file state row schema - includes the fileId for the table
+ */
+export const LocalFileStateRowSchema = Schema.Struct({
+  fileId: Schema.String,
+  path: Schema.String,
+  localHash: Schema.String,
+  downloadStatus: TransferStatusSchema,
+  uploadStatus: TransferStatusSchema,
+  lastSyncError: Schema.String
+})
+
+/**
  * Map of file IDs to local file states schema
+ * This type is kept for backwards compatibility with consumers.
  */
 export const LocalFilesStateSchema = Schema.Record({
   key: Schema.String,
@@ -119,6 +139,7 @@ export const FileDeletedPayloadSchema = Schema.Struct({
 type FileCreatedPayload = typeof FileCreatedPayloadSchema.Type
 type FileUpdatedPayload = typeof FileUpdatedPayloadSchema.Type
 type FileDeletedPayload = typeof FileDeletedPayloadSchema.Type
+type LocalFileStateRow = typeof LocalFileStateRowSchema.Type
 
 /**
  * Creates file sync schema components (tables, events, materializers)
@@ -145,16 +166,24 @@ export function createFileSyncSchema() {
         deletedAt: State.SQLite.integer({ nullable: true, schema: Schema.DateFromNumber })
       }
     }),
-    localFileState: State.SQLite.clientDocument({
+    /**
+     * Local file state table - stores sync status for each file as individual rows.
+     *
+     * This replaces the previous clientDocument approach which used Schema.Record
+     * to store all file states in a single JSON blob. The row-based approach:
+     * - Reduces rebase conflicts by isolating changes to individual rows
+     * - Works better with SQLite's changeset extension
+     * - Shares state across all tabs (no session isolation needed for OPFS)
+     */
+    localFileState: State.SQLite.table({
       name: "localFileState",
-      schema: Schema.Struct({
-        localFiles: LocalFilesStateSchema
-      }),
-      default: {
-        id: SessionIdSymbol,
-        value: {
-          localFiles: {}
-        }
+      columns: {
+        fileId: State.SQLite.text({ primaryKey: true }),
+        path: State.SQLite.text({ default: "" }),
+        localHash: State.SQLite.text({ default: "" }),
+        downloadStatus: State.SQLite.text({ default: "pending" }),
+        uploadStatus: State.SQLite.text({ default: "pending" }),
+        lastSyncError: State.SQLite.text({ default: "" })
       }
     }),
     fileSyncCursor: State.SQLite.clientDocument({
@@ -172,6 +201,7 @@ export function createFileSyncSchema() {
 
   // Events
   const events = {
+    // Synced events for file CRUD (sync to remote)
     fileCreated: Events.synced({
       name: "v1.FileCreated",
       schema: FileCreatedPayloadSchema
@@ -184,12 +214,29 @@ export function createFileSyncSchema() {
       name: "v1.FileDeleted",
       schema: FileDeletedPayloadSchema
     }),
-    localFileStateSet: tables.localFileState.set,
+
+    // Client-only events for local file state (sync between tabs, not to remote)
+    // These use individual row operations to avoid Schema.Record rebase conflicts
+    localFileStateUpsert: Events.clientOnly({
+      name: "v1.LocalFileStateUpsert",
+      schema: LocalFileStateRowSchema
+    }),
+    localFileStateRemove: Events.clientOnly({
+      name: "v1.LocalFileStateRemove",
+      schema: Schema.Struct({ fileId: Schema.String })
+    }),
+    localFileStateClear: Events.clientOnly({
+      name: "v1.LocalFileStateClear",
+      schema: Schema.Struct({})
+    }),
+
+    // Cursor for tracking sync progress (still uses clientDocument - single value, low conflict risk)
     fileSyncCursorSet: tables.fileSyncCursor.set
   }
 
   // Create materializers function
   const createMaterializers = <T extends typeof tables>(appTables: T) => ({
+    // File CRUD materializers
     "v1.FileCreated": ({
       contentHash,
       createdAt,
@@ -204,7 +251,23 @@ export function createFileSyncSchema() {
       remoteKey,
       updatedAt
     }: FileUpdatedPayload) => appTables.files.update({ path, remoteKey, contentHash, updatedAt }).where({ id }),
-    "v1.FileDeleted": ({ deletedAt, id }: FileDeletedPayload) => appTables.files.update({ deletedAt }).where({ id })
+    "v1.FileDeleted": ({ deletedAt, id }: FileDeletedPayload) => appTables.files.update({ deletedAt }).where({ id }),
+
+    // Local file state materializers - row-level operations
+    // Uses delete + insert pattern for upsert since LiveStore doesn't have native upsert
+    "v1.LocalFileStateUpsert": ({
+      downloadStatus,
+      fileId,
+      lastSyncError,
+      localHash,
+      path,
+      uploadStatus
+    }: LocalFileStateRow) => [
+      appTables.localFileState.delete().where({ fileId }),
+      appTables.localFileState.insert({ fileId, path, localHash, downloadStatus, uploadStatus, lastSyncError })
+    ],
+    "v1.LocalFileStateRemove": ({ fileId }: { fileId: string }) => appTables.localFileState.delete().where({ fileId }),
+    "v1.LocalFileStateClear": () => appTables.localFileState.delete()
   })
 
   return {
@@ -214,6 +277,7 @@ export function createFileSyncSchema() {
     schemas: {
       TransferStatusSchema,
       LocalFileStateSchema,
+      LocalFileStateRowSchema,
       LocalFilesStateSchema,
       FileSyncCursorSchema,
       FileCreatedPayloadSchema,

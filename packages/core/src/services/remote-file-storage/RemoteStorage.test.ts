@@ -464,5 +464,93 @@ describe("RemoteStorage", () => {
 
       expect(healthy).toBe(false)
     })
+
+    it("should reject upload signer response missing url", async () => {
+      globalThis.fetch = (async (url) => {
+        if (String(url) === "https://signer.local/v1/sign/upload") {
+          return {
+            ok: true,
+            json: async () => ({ method: "PUT" }) // missing url
+          } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }) as typeof fetch
+
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const exit = await Effect.runPromiseExit(
+        storage.upload(new File(["data"], "test.txt"), { key: "key" })
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(UploadError)
+        expect(exit.cause.error.message).toContain("Failed to sign upload")
+      }
+    })
+
+    it("should reject upload signer response with invalid method", async () => {
+      globalThis.fetch = (async (url) => {
+        if (String(url) === "https://signer.local/v1/sign/upload") {
+          return {
+            ok: true,
+            json: async () => ({ method: "GET", url: "https://s3.local/put" })
+          } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }) as typeof fetch
+
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const exit = await Effect.runPromiseExit(
+        storage.upload(new File(["data"], "test.txt"), { key: "key" })
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(UploadError)
+      }
+    })
+
+    it("should reject download signer response missing url", async () => {
+      globalThis.fetch = (async (url) => {
+        if (String(url) === "https://signer.local/v1/sign/download") {
+          return {
+            ok: true,
+            json: async () => ({}) // missing url
+          } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }) as typeof fetch
+
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const exit = await Effect.runPromiseExit(storage.download("some-key"))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(DownloadError)
+        expect(exit.cause.error.message).toContain("Failed to sign download")
+      }
+    })
+
+    it("should reject non-object signer response", async () => {
+      globalThis.fetch = (async (url) => {
+        if (String(url) === "https://signer.local/v1/sign/upload") {
+          return {
+            ok: true,
+            json: async () => "not an object"
+          } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }) as typeof fetch
+
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const exit = await Effect.runPromiseExit(
+        storage.upload(new File(["data"], "test.txt"), { key: "key" })
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+        expect(exit.cause.error).toBeInstanceOf(UploadError)
+      }
+    })
   })
 })

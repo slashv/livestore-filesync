@@ -234,10 +234,13 @@ When files sync across clients, the file metadata may arrive before the file con
 
 ```typescript
 import { getFileDisplayState } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
 
-// In your component
-const [localFileState] = store.useClientDocument(tables.localFileState)
-const { canDisplay, isUploading } = getFileDisplayState(file, localFileState?.localFiles ?? {})
+// In your React component — query only this file's local state for targeted reactivity
+const localFileState = store.useQuery(
+  queryDb(tables.localFileState.where({ fileId: file.id }).first())
+)
+const { canDisplay, isUploading } = getFileDisplayState(file, localFileState ?? undefined)
 
 // canDisplay is true when:
 // - The file exists locally (originating client can display immediately)
@@ -363,6 +366,7 @@ The `@livestore-filesync/image` package provides client-side thumbnail generatio
 import { createFileSyncSchema } from '@livestore-filesync/core/schema'
 import { createThumbnailSchema } from '@livestore-filesync/image/thumbnails/schema'
 import { initThumbnails, resolveThumbnailUrl } from '@livestore-filesync/image/thumbnails'
+import { State } from '@livestore/livestore'
 import { layer as opfsLayer } from '@livestore-filesync/opfs'
 
 // 1. Merge schemas
@@ -370,13 +374,20 @@ const fileSyncSchema = createFileSyncSchema()
 const thumbnailSchema = createThumbnailSchema()
 
 const tables = { ...fileSyncSchema.tables, ...thumbnailSchema.tables }
+const events = { ...fileSyncSchema.events, ...thumbnailSchema.events }
+
+const materializers = State.SQLite.materializers(events, {
+  ...fileSyncSchema.createMaterializers(tables),
+  ...thumbnailSchema.createMaterializers(tables)
+})
 
 // 2. Initialize (after FileSync is initialized)
 const dispose = initThumbnails(store, {
   sizes: { small: 128, medium: 256, large: 512 },
   format: 'webp',
   fileSystem: opfsLayer(),
-  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url)
+  workerUrl: new URL('./thumbnail.worker.ts', import.meta.url),
+  schema: { tables }
 })
 
 // 3. Create your worker file (thumbnail.worker.ts)

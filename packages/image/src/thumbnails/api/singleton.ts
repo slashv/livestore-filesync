@@ -7,11 +7,10 @@
  */
 
 import type { FileSystem } from "@effect/platform/FileSystem"
-import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
 
-import { createThumbnailSchema, type ThumbnailTables } from "../schema/index.js"
+import { createThumbnailSchema, type ThumbnailEvents, type ThumbnailTables } from "../schema/index.js"
 import type { FileThumbnailState, InitThumbnailsConfig, ThumbnailEvent } from "../types/index.js"
 import { createThumbnails, type ThumbnailInstance } from "./createThumbnails.js"
 
@@ -35,11 +34,17 @@ const requireThumbnails = (): ThumbnailInstance => {
 
 interface SchemaFallback {
   tables: ThumbnailTables
+  events: ThumbnailEvents
 }
 
-const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ThumbnailTables => {
+interface ResolvedSchema {
+  tables: ThumbnailTables
+  events: ThumbnailEvents
+}
+
+const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ResolvedSchema => {
   if (schema) {
-    return schema.tables
+    return { tables: schema.tables, events: schema.events }
   }
 
   // Validate store has thumbnailState table
@@ -49,11 +54,12 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ThumbnailTab
   if (!(tables instanceof Map) || !tables.has("thumbnailState")) {
     // Create default schema
     const defaults = createThumbnailSchema()
-    return defaults.tables
+    return { tables: defaults.tables, events: defaults.events }
   }
 
   // Use default schema
-  return createThumbnailSchema().tables
+  const defaults = createThumbnailSchema()
+  return { tables: defaults.tables, events: defaults.events }
 }
 
 // ============================================
@@ -122,22 +128,21 @@ export const initThumbnails = (
     throw new Error("Thumbnails requires either 'worker' (Worker constructor) or 'workerUrl' (URL/string)")
   }
 
-  const tables = resolveSchema(store)
+  const { events, tables } = resolveSchema(store)
 
-  // Resolve filesTable and queryDb from config
-  // Priority: schema.tables > legacy filesTable/queryDb options
+  // Resolve filesTable from config
+  // Priority: schema.tables > legacy filesTable option
   let resolvedFilesTable = config.filesTable
-  let resolvedQueryDb = config.queryDb
 
   if (config.schema?.tables?.files) {
-    // Use the new simplified API - extract files table and use standard queryDb
+    // Use the new simplified API - extract files table
     resolvedFilesTable = config.schema.tables.files
-    resolvedQueryDb = queryDb
   }
 
   singleton = createThumbnails({
     store,
     tables,
+    events,
     fileSystem: config.fileSystem as Layer.Layer<FileSystem>,
     ...(config.worker ? { worker: config.worker } : {}),
     ...(config.workerUrl ? { workerUrl: config.workerUrl } : {}),
@@ -147,7 +152,6 @@ export const initThumbnails = (
     ...(config.supportedMimeTypes !== undefined ? { supportedMimeTypes: config.supportedMimeTypes } : {}),
     ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
     ...(config.qualitySettings !== undefined ? { qualitySettings: config.qualitySettings } : {}),
-    ...(resolvedQueryDb !== undefined ? { queryDb: resolvedQueryDb } : {}),
     ...(resolvedFilesTable !== undefined ? { filesTable: resolvedFilesTable } : {})
   })
 

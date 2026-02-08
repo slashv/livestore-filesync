@@ -1,4 +1,5 @@
 import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
+import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
 import React, { useEffect, useState } from "react"
 import { reactStoreOptions } from "../App.tsx"
@@ -8,11 +9,11 @@ import type { FileType } from "../types"
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const store = useStore(reactStoreOptions)
 
-  const [localFileState] = store.useClientDocument(tables.localFileState)
-  const displayState = getFileDisplayState(
-    file,
-    localFileState?.localFiles ?? {}
+  // Per-file query: only re-renders when THIS file's local state changes
+  const localFileState = store.useQuery(
+    queryDb(tables.localFileState.where({ fileId: file.id }).first())
   )
+  const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, isUploading, localState: localFile } = displayState
 
   const [src, setSrc] = useState<string | null>(null)

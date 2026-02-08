@@ -125,6 +125,65 @@ describe("SyncExecutor", () => {
 
       expect(processCount).toBe(1)
     })
+
+    it("should not double-enqueue when concurrent fibers enqueue the same file", async () => {
+      const processCount = await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("10 millis")
+                yield* Ref.update(countRef, (n) => n + 1)
+              }),
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Fire 10 concurrent enqueues for the same fileId — the atomic
+          // Ref.modify in enqueueDownload should ensure only one gets through
+          yield* Effect.all(
+            Array.from({ length: 10 }, () => executor.enqueueDownload("same-file")),
+            { concurrency: 10 }
+          )
+          yield* executor.awaitIdle()
+
+          return yield* Ref.get(countRef)
+        })
+      )
+
+      expect(processCount).toBe(1)
+    })
+
+    it("should not double-enqueue uploads when concurrent fibers enqueue the same file", async () => {
+      const processCount = await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("10 millis")
+                yield* Ref.update(countRef, (n) => n + 1)
+              }),
+            testConfig
+          )
+
+          yield* executor.start()
+          yield* Effect.all(
+            Array.from({ length: 10 }, () => executor.enqueueUpload("same-file")),
+            { concurrency: 10 }
+          )
+          yield* executor.awaitIdle()
+
+          return yield* Ref.get(countRef)
+        })
+      )
+
+      expect(processCount).toBe(1)
+    })
   })
 
   describe("pause and resume", () => {
@@ -757,6 +816,154 @@ describe("SyncExecutor", () => {
           expect(processed).toContain("download:file2")
         })
       )
+    })
+  })
+
+  describe("onTaskComplete callback", () => {
+    it("should call onTaskComplete with failure result when retries are exhausted", async () => {
+      const results: Array<{ kind: string; fileId: string; success: boolean; error?: unknown }> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) => Effect.fail(new Error("Always fails")),
+            testConfig,
+            (result) =>
+              Effect.sync(() => {
+                results.push(result)
+              })
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueDownload("file1")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.kind).toBe("download")
+      expect(results[0]!.fileId).toBe("file1")
+      expect(results[0]!.success).toBe(false)
+      expect(results[0]!.error).toBeInstanceOf(Error)
+    })
+
+    it("should call onTaskComplete with success result on successful transfer", async () => {
+      const results: Array<{ kind: string; fileId: string; success: boolean }> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.void,
+            testConfig,
+            (result) =>
+              Effect.sync(() => {
+                results.push(result)
+              })
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueUpload("file1")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0]!.kind).toBe("upload")
+      expect(results[0]!.fileId).toBe("file1")
+      expect(results[0]!.success).toBe(true)
+    })
+
+    it("should not crash the executor if onTaskComplete throws", async () => {
+      const processed: Array<string> = []
+
+      await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            (kind, fileId) =>
+              Effect.sync(() => {
+                processed.push(`${kind}:${fileId}`)
+              }),
+            testConfig,
+            () => Effect.fail(new Error("Callback exploded"))
+          )
+
+          yield* executor.start()
+          yield* executor.enqueueDownload("file1")
+          yield* executor.enqueueDownload("file2")
+          yield* executor.awaitIdle()
+        })
+      )
+
+      // Both files should still be processed despite the callback failing
+      expect(processed).toContain("download:file1")
+      expect(processed).toContain("download:file2")
+    })
+  })
+
+  describe("interruptInflight", () => {
+    it("should interrupt in-flight transfers and return their metadata", async () => {
+      const result = await runScoped(
+        Effect.gen(function*() {
+          const gate = yield* Deferred.make<void>()
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) => Deferred.await(gate),
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Enqueue downloads and an upload that will block on the gate
+          yield* executor.enqueueDownload("d1")
+          yield* executor.enqueueUpload("u1")
+
+          // Wait for tasks to start
+          yield* Effect.sleep("30 millis")
+
+          // Verify they're in flight
+          const inflight = yield* executor.getInflightCount()
+          expect(inflight.downloads).toBe(1)
+          expect(inflight.uploads).toBe(1)
+
+          // Interrupt all in-flight
+          const interrupted = yield* executor.interruptInflight()
+
+          // Should have interrupted 2 tasks
+          expect(interrupted).toHaveLength(2)
+          expect(interrupted.map((t) => `${t.kind}:${t.fileId}`)).toContain("download:d1")
+          expect(interrupted.map((t) => `${t.kind}:${t.fileId}`)).toContain("upload:u1")
+
+          // Inflight counts should be reset to 0
+          const inflightAfter = yield* executor.getInflightCount()
+          expect(inflightAfter.downloads).toBe(0)
+          expect(inflightAfter.uploads).toBe(0)
+
+          return interrupted
+        })
+      )
+
+      expect(result).toHaveLength(2)
+    })
+
+    it("should return empty array when nothing is in-flight", async () => {
+      const result = await runScoped(
+        Effect.gen(function*() {
+          const executor = yield* makeSyncExecutor(
+            () => Effect.void,
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Nothing enqueued, nothing in-flight
+          const interrupted = yield* executor.interruptInflight()
+          expect(interrupted).toHaveLength(0)
+
+          return interrupted
+        })
+      )
+
+      expect(result).toHaveLength(0)
     })
   })
 })

@@ -18,6 +18,7 @@ import type {
   FileSyncTables,
   FileUpdatedPayloadSchema,
   LocalFilesStateSchema,
+  LocalFileStateRowSchema,
   LocalFileStateSchema,
   TransferStatusSchema
 } from "../schema/index.js"
@@ -40,6 +41,24 @@ export type LocalFileState = typeof LocalFileStateSchema.Type
  * Local file state - mutable variant for internal sync operations
  */
 export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFileStateSchema>>>
+
+/**
+ * Local file state row - includes fileId, used for SQLite table operations
+ */
+export type LocalFileStateRow = typeof LocalFileStateRowSchema.Type
+
+/**
+ * Wider type for local file state that accepts both strongly-typed LocalFileState
+ * and raw table rows (where status fields are plain strings).
+ * Used by getFileDisplayState to accept query results directly.
+ */
+export interface LocalFileStateLike {
+  readonly localHash?: string
+  readonly uploadStatus?: string
+  readonly downloadStatus?: string
+  readonly lastSyncError?: string
+  readonly [key: string]: unknown
+}
 
 /**
  * Map of file IDs to local file states (readonly)
@@ -112,6 +131,12 @@ export type FileSyncEvent =
   | { readonly type: "upload:progress"; readonly fileId: string; readonly progress: TransferProgress }
   | { readonly type: "upload:complete"; readonly fileId: string }
   | { readonly type: "upload:error"; readonly fileId: string; readonly error: unknown }
+  | {
+    readonly type: "transfer:exhausted"
+    readonly kind: "upload" | "download"
+    readonly fileId: string
+    readonly error: unknown
+  }
   | { readonly type: "online" }
   | { readonly type: "offline" }
 
@@ -308,9 +333,13 @@ export interface FileDisplayState {
  *
  * @example
  * ```typescript
- * // In a React component
- * const [localFileState] = store.useClientDocument(tables.localFileState)
- * const displayState = getFileDisplayState(file, localFileState?.localFiles ?? {})
+ * // In a React component — query per-file for targeted reactivity
+ * import { queryDb } from '@livestore/livestore'
+ *
+ * const localState = store.useQuery(
+ *   queryDb(tables.localFileState.where({ fileId: file.id }).first())
+ * )
+ * const displayState = getFileDisplayState(file, localState)
  *
  * return displayState.canDisplay
  *   ? <img src={`/${file.path}`} />
@@ -318,26 +347,25 @@ export interface FileDisplayState {
  * ```
  *
  * @param file - The file record from the files table
- * @param localFilesState - The local files state map from the client document
+ * @param localFileState - The local file state for this file (query result row, or undefined if not found)
  * @returns The display state for the file
  */
 export function getFileDisplayState(
   file: FileRecord,
-  localFilesState: LocalFilesState
+  localFileState?: LocalFileStateLike
 ): FileDisplayState {
-  const localState = localFilesState[file.id]
   // hasLocalCopy is true only if local hash matches the file's content hash
   // This ensures we have the correct version of the file locally
-  const hasLocalCopy = !!localState?.localHash && localState.localHash === file.contentHash
+  const hasLocalCopy = !!localFileState?.localHash && localFileState.localHash === file.contentHash
   const isUploaded = file.remoteKey !== ""
-  const isUploading = localState?.uploadStatus === "inProgress"
-  const isDownloading = localState?.downloadStatus === "inProgress"
-  const isUploadQueued = localState?.uploadStatus === "queued"
-  const isDownloadQueued = localState?.downloadStatus === "queued"
+  const isUploading = localFileState?.uploadStatus === "inProgress"
+  const isDownloading = localFileState?.downloadStatus === "inProgress"
+  const isUploadQueued = localFileState?.uploadStatus === "queued"
+  const isDownloadQueued = localFileState?.downloadStatus === "queued"
 
   return {
     file,
-    localState,
+    localState: localFileState as LocalFileState | undefined,
     canDisplay: hasLocalCopy || isUploaded,
     hasLocalCopy,
     isUploaded,

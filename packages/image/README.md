@@ -151,6 +151,7 @@ Generate multiple thumbnail sizes in the background using a Web Worker.
 ```typescript
 import { createFileSyncSchema } from '@livestore-filesync/core/schema'
 import { createThumbnailSchema } from '@livestore-filesync/image/thumbnails/schema'
+import { State } from '@livestore/livestore'
 
 const fileSyncSchema = createFileSyncSchema()
 const thumbnailSchema = createThumbnailSchema()
@@ -159,6 +160,16 @@ const tables = {
   ...fileSyncSchema.tables,
   ...thumbnailSchema.tables,
 }
+
+const events = {
+  ...fileSyncSchema.events,
+  ...thumbnailSchema.events,
+}
+
+const materializers = State.SQLite.materializers(events, {
+  ...fileSyncSchema.createMaterializers(tables),
+  ...thumbnailSchema.createMaterializers(tables),
+})
 ```
 
 2. **Create a worker file:**
