@@ -1079,6 +1079,58 @@ describe("FileSync - Error State Recovery", () => {
   })
 })
 
+describe("FileSync - Event Callback Safety", () => {
+  it("continues emitting to other subscribers when one callback throws", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { offline: true }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    const receivedBySecond: Array<string> = []
+    const receivedByThird: Array<string> = []
+
+    // First subscriber throws on every event
+    const unsub1 = fileSync.onEvent(() => {
+      throw new Error("subscriber 1 blows up")
+    })
+    // Second subscriber should still receive events
+    const unsub2 = fileSync.onEvent((event) => {
+      receivedBySecond.push(event.type)
+    })
+    // Third subscriber should also still receive events
+    const unsub3 = fileSync.onEvent((event) => {
+      receivedByThird.push(event.type)
+    })
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      // setOnline(false) emits an "offline" event
+      await runtime.runPromise(fileSync.setOnline(false))
+      await delay(50)
+
+      // Both the second and third subscriber should have received the "offline"
+      // event despite the first subscriber throwing on every event
+      expect(receivedBySecond.length).toBeGreaterThan(0)
+      expect(receivedByThird.length).toBeGreaterThan(0)
+      expect(receivedBySecond).toContain("offline")
+      expect(receivedByThird).toContain("offline")
+    } finally {
+      unsub1()
+      unsub2()
+      unsub3()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
 describe("FileSync - Sync Error Events", () => {
   it("emits sync:error event on event batch processing failure", async () => {
     // This test is more of an integration test - we need to trigger an actual error

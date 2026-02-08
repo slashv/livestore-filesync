@@ -320,12 +320,18 @@ export const makeFileSync = (
       ...config.executorConfig
     }
 
-    // Emit an event
+    // Emit an event — individual callback errors are caught to prevent one bad
+    // subscriber from crashing the sync engine or preventing other subscribers
+    // from receiving events.
     const emit = (event: FileSyncEvent): Effect.Effect<void> =>
       Effect.gen(function*() {
         const callbacks = yield* Ref.get(eventCallbacks)
         for (const callback of callbacks) {
-          callback(event)
+          try {
+            callback(event)
+          } catch (err) {
+            yield* Effect.logWarning("[FileSync] Event callback threw an error", { event: event.type, error: err })
+          }
         }
       })
 
