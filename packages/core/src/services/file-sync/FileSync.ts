@@ -535,8 +535,11 @@ export const makeFileSync = (
         yield* emit({ type: "offline" })
         yield* executor.pause()
 
-        // Reset inProgress and error transfers to queued since they can't complete while offline
-        // Error transfers are reset because they failed due to connectivity loss
+        // Only reset inProgress transfers to queued — these are actively running and
+        // will fail due to network loss, so they need to be re-queued when back online.
+        // Do NOT reset error transfers: they may have failed for non-network reasons
+        // (corrupt file, permission denied, too large) and blindly retrying would
+        // create infinite retry loops.
         yield* stateManager.atomicUpdate((state) => {
           let hasChanges = false
           const nextState = { ...state }
@@ -544,14 +547,12 @@ export const makeFileSync = (
             let updated = false
             const updatedFile = { ...localFile }
 
-            if (localFile.uploadStatus === "inProgress" || localFile.uploadStatus === "error") {
+            if (localFile.uploadStatus === "inProgress") {
               updatedFile.uploadStatus = "queued"
-              updatedFile.lastSyncError = ""
               updated = true
             }
-            if (localFile.downloadStatus === "inProgress" || localFile.downloadStatus === "error") {
+            if (localFile.downloadStatus === "inProgress") {
               updatedFile.downloadStatus = "queued"
-              updatedFile.lastSyncError = ""
               updated = true
             }
 
