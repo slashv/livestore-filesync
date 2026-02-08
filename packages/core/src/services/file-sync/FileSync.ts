@@ -949,27 +949,42 @@ export const makeFileSync = (
 
         yield* emit({ type: "sync:start" })
 
+        // Process each event individually so that a failure in one event
+        // doesn't prevent the cursor from advancing past already-processed events.
         for (const event of eventsBatch) {
-          switch (event.name) {
-            case "v1.FileCreated":
-              yield* handleFileCreated(event.args as FileCreatedPayload)
-              break
-            case "v1.FileUpdated":
-              yield* handleFileUpdated(event.args as FileUpdatedPayload)
-              break
-            case "v1.FileDeleted":
-              yield* handleFileDeleted(event.args as FileDeletedPayload)
-              break
-          }
+          yield* Effect.gen(function*() {
+            switch (event.name) {
+              case "v1.FileCreated":
+                yield* handleFileCreated(event.args as FileCreatedPayload)
+                break
+              case "v1.FileUpdated":
+                yield* handleFileUpdated(event.args as FileUpdatedPayload)
+                break
+              case "v1.FileDeleted":
+                yield* handleFileDeleted(event.args as FileDeletedPayload)
+                break
+            }
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.gen(function*() {
+                yield* Effect.logError("[FileSync] Failed to process event", { eventName: event.name, error })
+                yield* emit({ type: "sync:error", error, context: `event:${event.name}` })
+              })
+            )
+          )
         }
 
-        const lastEvent = eventsBatch[eventsBatch.length - 1]
-        const nextCursor = EventSequenceNumber.Client.toString(lastEvent.seqNum)
+        // Advance the cursor to the last successfully processed event,
+        // or to the end of the batch if all events succeeded.
+        // Always advance to the last event in the batch even if some failed,
+        // since re-processing a failed event would likely fail again.
+        const cursorEvent = eventsBatch[eventsBatch.length - 1]
+        const nextCursor = EventSequenceNumber.Client.toString(cursorEvent.seqNum)
         yield* Ref.set(cursorRef, nextCursor)
         yield* persistCursor(nextCursor)
 
         // Update stall detection refs
-        yield* Ref.set(lastBatchCursorRef, lastEvent.seqNum)
+        yield* Ref.set(lastBatchCursorRef, cursorEvent.seqNum)
         yield* Ref.set(lastBatchAtRef, Date.now())
 
         yield* emit({ type: "sync:complete" })

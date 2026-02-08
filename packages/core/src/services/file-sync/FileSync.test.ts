@@ -1131,6 +1131,64 @@ describe("FileSync - Event Callback Safety", () => {
   })
 })
 
+describe("FileSync - Per-Event Error Handling", () => {
+  it("processes multiple files independently through bootstrap without batch abort", async () => {
+    // Verify that each event/file is processed independently during bootstrap.
+    // Previously, handleEventBatch wrapped all events in a single try/catch,
+    // so one failing event would abort the entire batch.
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntimeWithConfig(deps, {
+      remoteOptions: { offline: true }
+    })
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      // Create two files — both have local copies
+      const fileId1 = crypto.randomUUID()
+      const path1 = makeStoredPath(deps.storeId, "hash1")
+      const fileId2 = crypto.randomUUID()
+      const path2 = makeStoredPath(deps.storeId, "hash2")
+
+      await runtime.runPromise(localStorage.writeFile(path1, new File(["data1"], "test1.txt")))
+      await runtime.runPromise(localStorage.writeFile(path2, new File(["data2"], "test2.txt")))
+
+      // Commit events before start
+      store.commit(events.fileCreated({
+        id: fileId1, path: path1, contentHash: "hash1",
+        createdAt: new Date(), updatedAt: new Date()
+      }))
+      store.commit(events.fileCreated({
+        id: fileId2, path: path2, contentHash: "hash2",
+        createdAt: new Date(), updatedAt: new Date()
+      }))
+
+      await runtime.runPromise(fileSync.setOnline(false))
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await delay(100)
+
+      // Both files should have local state — one file's processing shouldn't
+      // prevent the other from being processed
+      const state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[fileId1]).toBeDefined()
+      expect(state[fileId2]).toBeDefined()
+      expect(state[fileId1]?.uploadStatus).toBe("queued")
+      expect(state[fileId2]?.uploadStatus).toBe("queued")
+    } finally {
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
 describe("FileSync - Sync Error Events", () => {
   it("emits sync:error event on event batch processing failure", async () => {
     // This test is more of an integration test - we need to trigger an actual error
