@@ -1198,6 +1198,30 @@ export const makeFileSync = (
     const stopSyncLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         yield* executor.pause()
+
+        // Interrupt in-flight transfers so they don't commit conflicting state
+        // after this tab has lost leadership. Reset their statuses to queued
+        // so the new leader can pick them up.
+        const interrupted = yield* executor.interruptInflight()
+        if (interrupted.length > 0) {
+          yield* Effect.logDebug("[FileSync] Interrupted in-flight transfers on leadership loss", {
+            count: interrupted.length,
+            fileIds: interrupted.map((t) => t.fileId)
+          })
+          yield* stateManager.atomicUpdate((state) => {
+            const nextState = { ...state }
+            for (const task of interrupted) {
+              const existing = nextState[task.fileId]
+              if (!existing) continue
+              const statusField = task.kind === "download" ? "downloadStatus" : "uploadStatus"
+              if (existing[statusField] === "inProgress") {
+                nextState[task.fileId] = { ...existing, [statusField]: "queued" }
+              }
+            }
+            return nextState
+          })
+        }
+
         yield* stopEventStream()
       })
 

@@ -155,6 +155,13 @@ export interface SyncExecutorService {
   readonly start: () => Effect.Effect<void, never, Scope.Scope>
 
   /**
+   * Interrupt all in-flight transfer fibers and reset inflight counts.
+   * Returns the file IDs that were interrupted, so the caller can
+   * reset their transfer statuses (e.g., inProgress → queued).
+   */
+  readonly interruptInflight: () => Effect.Effect<ReadonlyArray<{ kind: TransferKind; fileId: string }>>
+
+  /**
    * Ensure worker fibers are running.
    * If a worker fiber has exited (crashed, interrupted), restarts it.
    * Only restarts workers when executor is not paused.
@@ -222,6 +229,11 @@ export const makeSyncExecutor = (
 
     // Track cancelled downloads to skip when dequeued (e.g., file was deleted)
     const cancelledDownloadsSet = yield* Ref.make<Set<string>>(new Set())
+
+    // Track in-flight task fibers for interruption on leadership loss
+    const inflightFibersRef = yield* Ref.make<
+      Map<string, { fiber: Fiber.RuntimeFiber<TransferResult, never>; kind: TransferKind; fileId: string }>
+    >(new Map())
 
     // Signal for idle waiting
     const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
@@ -333,6 +345,27 @@ export const makeSyncExecutor = (
         return result
       })
 
+    // Fork a tracked task: starts processTask in a background fiber
+    // and registers/unregisters it in inflightFibersRef for interruption support
+    const forkTracked = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const trackedTask = processTask(kind, fileId).pipe(
+          Effect.ensuring(
+            Ref.update(inflightFibersRef, (map) => {
+              const newMap = new Map(map)
+              newMap.delete(`${kind}:${fileId}`)
+              return newMap
+            })
+          )
+        )
+        const fiber = yield* Effect.fork(trackedTask)
+        yield* Ref.update(inflightFibersRef, (map) => {
+          const newMap = new Map(map)
+          newMap.set(`${kind}:${fileId}`, { fiber, kind, fileId })
+          return newMap
+        })
+      })
+
     // Worker that processes uploads (single queue)
     const createUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
@@ -357,8 +390,9 @@ export const makeSyncExecutor = (
             return
           }
 
-          // Process the task in the background
-          yield* Effect.fork(processTask("upload", maybeFileId.value))
+          // Process the task in the background and track the fiber
+          const fileId = maybeFileId.value
+          yield* forkTracked("upload", fileId)
         })
 
         yield* Effect.forever(processLoop).pipe(Effect.interruptible)
@@ -389,7 +423,7 @@ export const makeSyncExecutor = (
             const processed = yield* Ref.get(downloadProcessedSet)
             const cancelled = yield* Ref.get(cancelledDownloadsSet)
             if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* Effect.fork(processTask("download", fileId))
+              yield* forkTracked("download", fileId)
             } else {
               // Item was skipped - check if we're idle now
               yield* checkIdle
@@ -405,7 +439,7 @@ export const makeSyncExecutor = (
             const processed = yield* Ref.get(downloadProcessedSet)
             const cancelled = yield* Ref.get(cancelledDownloadsSet)
             if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* Effect.fork(processTask("download", fileId))
+              yield* forkTracked("download", fileId)
             } else {
               // Item was skipped - check if we're idle now
               yield* checkIdle
@@ -604,6 +638,33 @@ export const makeSyncExecutor = (
         yield* Deferred.await(deferred)
       })
 
+    // Interrupt all in-flight transfer fibers and reset inflight counts.
+    // Returns metadata about interrupted tasks so the caller can reset state.
+    const interruptInflight = (): Effect.Effect<
+      ReadonlyArray<{ kind: TransferKind; fileId: string }>
+    > =>
+      Effect.gen(function*() {
+        const fibers = yield* Ref.getAndSet(inflightFibersRef, new Map())
+        const interrupted: Array<{ kind: TransferKind; fileId: string }> = []
+
+        for (const [, entry] of fibers) {
+          yield* Fiber.interrupt(entry.fiber)
+          interrupted.push({ kind: entry.kind, fileId: entry.fileId })
+        }
+
+        // Reset inflight counts to 0
+        yield* Ref.update(stateRef, (s) => ({
+          ...s,
+          downloadsInflight: 0,
+          uploadsInflight: 0
+        }))
+
+        // Signal idle if needed (queues may still have items but no inflight)
+        yield* checkIdle
+
+        return interrupted
+      })
+
     return {
       enqueueDownload,
       enqueueUpload,
@@ -615,6 +676,7 @@ export const makeSyncExecutor = (
       getInflightCount,
       getQueuedCount,
       awaitIdle,
+      interruptInflight,
       start,
       ensureWorkers
     }
