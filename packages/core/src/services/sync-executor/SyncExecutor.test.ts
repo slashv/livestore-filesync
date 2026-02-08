@@ -125,6 +125,65 @@ describe("SyncExecutor", () => {
 
       expect(processCount).toBe(1)
     })
+
+    it("should not double-enqueue when concurrent fibers enqueue the same file", async () => {
+      const processCount = await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("10 millis")
+                yield* Ref.update(countRef, (n) => n + 1)
+              }),
+            testConfig
+          )
+
+          yield* executor.start()
+
+          // Fire 10 concurrent enqueues for the same fileId — the atomic
+          // Ref.modify in enqueueDownload should ensure only one gets through
+          yield* Effect.all(
+            Array.from({ length: 10 }, () => executor.enqueueDownload("same-file")),
+            { concurrency: 10 }
+          )
+          yield* executor.awaitIdle()
+
+          return yield* Ref.get(countRef)
+        })
+      )
+
+      expect(processCount).toBe(1)
+    })
+
+    it("should not double-enqueue uploads when concurrent fibers enqueue the same file", async () => {
+      const processCount = await runScoped(
+        Effect.gen(function*() {
+          const countRef = yield* Ref.make(0)
+
+          const executor = yield* makeSyncExecutor(
+            (_kind, _fileId) =>
+              Effect.gen(function*() {
+                yield* Effect.sleep("10 millis")
+                yield* Ref.update(countRef, (n) => n + 1)
+              }),
+            testConfig
+          )
+
+          yield* executor.start()
+          yield* Effect.all(
+            Array.from({ length: 10 }, () => executor.enqueueUpload("same-file")),
+            { concurrency: 10 }
+          )
+          yield* executor.awaitIdle()
+
+          return yield* Ref.get(countRef)
+        })
+      )
+
+      expect(processCount).toBe(1)
+    })
   })
 
   describe("pause and resume", () => {

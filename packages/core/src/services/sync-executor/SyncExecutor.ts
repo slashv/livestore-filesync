@@ -446,28 +446,31 @@ export const makeSyncExecutor = (
         yield* ensureWorkers()
       })
 
+    // Atomic check-and-set: Ref.modify returns [shouldEnqueue, newSet] in a single
+    // operation, preventing races where two fibers both see the fileId as absent
+    // and double-enqueue the same file.
     const enqueueDownload = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const queued = yield* Ref.get(downloadQueuedSet)
-        if (!queued.has(fileId)) {
-          yield* Ref.update(downloadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.add(fileId)
-            return newSet
-          })
+        const shouldEnqueue = yield* Ref.modify(downloadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return [true, newSet] as const
+        })
+        if (shouldEnqueue) {
           yield* Queue.offer(downloadQueue, fileId)
         }
       })
 
     const enqueueUpload = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const queued = yield* Ref.get(uploadQueuedSet)
-        if (!queued.has(fileId)) {
-          yield* Ref.update(uploadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.add(fileId)
-            return newSet
-          })
+        const shouldEnqueue = yield* Ref.modify(uploadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
+          const newSet = new Set(set)
+          newSet.add(fileId)
+          return [true, newSet] as const
+        })
+        if (shouldEnqueue) {
           yield* Queue.offer(uploadQueue, fileId)
         }
       })
@@ -478,20 +481,20 @@ export const makeSyncExecutor = (
         const processed = yield* Ref.get(downloadProcessedSet)
         if (processed.has(fileId)) return
 
-        const highQueued = yield* Ref.get(highPriorityDownloadQueuedSet)
-        if (highQueued.has(fileId)) return
-
         // Check if file is actually queued in normal queue (otherwise nothing to prioritize)
         const normalQueued = yield* Ref.get(downloadQueuedSet)
         if (!normalQueued.has(fileId)) return
 
-        // Add to high priority queue
-        yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
+        // Atomic check-and-set for the high priority queue set
+        const shouldEnqueue = yield* Ref.modify(highPriorityDownloadQueuedSet, (set) => {
+          if (set.has(fileId)) return [false, set] as const
           const newSet = new Set(set)
           newSet.add(fileId)
-          return newSet
+          return [true, newSet] as const
         })
-        yield* Queue.offer(highPriorityDownloadQueue, fileId)
+        if (shouldEnqueue) {
+          yield* Queue.offer(highPriorityDownloadQueue, fileId)
+        }
 
         // Note: We don't remove from normal queue since Effect Queue doesn't support removal.
         // The worker will skip it when it reaches it in the normal queue because
