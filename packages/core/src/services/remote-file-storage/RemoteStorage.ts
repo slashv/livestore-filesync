@@ -187,6 +187,31 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     readonly expiresAt: string
   }
 
+  const validateSignUploadResponse = (data: unknown): SignUploadResponse => {
+    if (typeof data !== "object" || data === null) {
+      throw new Error("Signer upload response is not an object")
+    }
+    const obj = data as Record<string, unknown>
+    if (typeof obj.url !== "string" || obj.url.length === 0) {
+      throw new Error("Signer upload response missing required 'url' string")
+    }
+    if (obj.method !== "PUT" && obj.method !== "POST") {
+      throw new Error(`Signer upload response has invalid 'method': ${String(obj.method)}`)
+    }
+    return data as SignUploadResponse
+  }
+
+  const validateSignDownloadResponse = (data: unknown): SignDownloadResponse => {
+    if (typeof data !== "object" || data === null) {
+      throw new Error("Signer download response is not an object")
+    }
+    const obj = data as Record<string, unknown>
+    if (typeof obj.url !== "string" || obj.url.length === 0) {
+      throw new Error("Signer download response missing required 'url' string")
+    }
+    return data as SignDownloadResponse
+  }
+
   const fetchOptions = config.includeCredentials ? { credentials: "include" as const } : {}
 
   const signUpload = (params: {
@@ -206,7 +231,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
           ...fetchOptions
         })
         if (!response.ok) throw new Error(`Signer upload signing failed: ${response.status}`)
-        return (await response.json()) as SignUploadResponse
+        return validateSignUploadResponse(await response.json())
       },
       catch: (error) =>
         new UploadError({
@@ -229,7 +254,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         })
 
         if (!response.ok) throw new Error(`Signer download signing failed: ${response.status}`)
-        return (await response.json()) as SignDownloadResponse
+        return validateSignDownloadResponse(await response.json())
       },
       catch: (error) =>
         new DownloadError({
