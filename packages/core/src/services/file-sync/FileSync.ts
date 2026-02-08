@@ -1539,6 +1539,9 @@ export const makeFileSync = (
         const existingFile = yield* getFile(fileId)
         if (!existingFile) return
 
+        // Cancel any pending download so it doesn't write the file back after deletion
+        yield* executor.cancelDownload(fileId)
+
         yield* deleteFileRecord(fileId)
 
         yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
