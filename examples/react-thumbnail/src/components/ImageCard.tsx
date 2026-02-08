@@ -1,5 +1,5 @@
-import { deleteFile, getFileDisplayState, readFile, rowsToLocalFilesState, updateFile } from "@livestore-filesync/core"
-import { rowsToThumbnailFilesState } from "@livestore-filesync/image/thumbnails"
+import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
+import { parseThumbnailSizes } from "@livestore-filesync/image/thumbnails"
 import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
 import React, { useMemo } from "react"
@@ -11,22 +11,19 @@ import { FileSyncImage } from "./FileSyncImage.tsx"
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   const store = useStore(reactStoreOptions)
 
-  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
-  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
-  const displayState = getFileDisplayState(
-    file,
-    localFilesState
+  // Per-file queries: only re-render when THIS file's state changes
+  const localFileState = store.useQuery(
+    queryDb(tables.localFileState.where({ fileId: file.id }).first())
   )
+  const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, localState: localFile } = displayState
 
-  // Thumbnail state from LiveStore SQLite table (for debug display)
-  const thumbnailStateRows = store.useQuery(queryDb(tables.thumbnailState.select()))
-  const thumbnailFiles = useMemo(() => rowsToThumbnailFilesState(thumbnailStateRows), [thumbnailStateRows])
-  const thumbnailState = thumbnailFiles[file.id]
-  const smallThumbnailStatus = useMemo(
-    () => thumbnailState?.sizes?.["small"]?.status ?? "pending",
-    [thumbnailState]
+  // Per-file thumbnail query
+  const thumbRow = store.useQuery(
+    queryDb(tables.thumbnailState.where({ fileId: file.id }).first())
   )
+  const sizes = useMemo(() => parseThumbnailSizes(thumbRow?.sizesJson), [thumbRow?.sizesJson])
+  const smallThumbnailStatus = sizes["small"]?.status ?? "pending"
   const hasThumbnail = smallThumbnailStatus === "done"
 
   const handleDelete = async () => {

@@ -4,50 +4,42 @@
  * @module
  */
 
-import type { FileThumbnailState, ThumbnailFilesState, ThumbnailSizeState } from "../types/index.js"
+import type { ThumbnailSizeState } from "../types/index.js"
 
 export { isSupportedImageMimeType, SUPPORTED_IMAGE_MIME_TYPES } from "../types/index.js"
 
 /**
- * Parse the sizesJson string from a thumbnailState row into a typed record.
+ * Parse the `sizesJson` string from a thumbnailState table row into a typed record.
+ *
+ * The thumbnailState table stores thumbnail generation status per size as a JSON
+ * string in the `sizesJson` column. Use this to access individual size statuses.
+ *
+ * @example
+ * ```typescript
+ * // React — per-file query
+ * const thumbRow = store.useQuery(
+ *   queryDb(tables.thumbnailState.where({ fileId: file.id }).first())
+ * )
+ * const sizes = parseThumbnailSizes(thumbRow?.sizesJson)
+ * const smallStatus = sizes['small']?.status ?? 'pending'
+ *
+ * // Vue — per-file query
+ * const thumbRow = useQuery(
+ *   queryDb(tables.thumbnailState.where({ fileId: file.id }).first())
+ * )
+ * const sizes = computed(() => parseThumbnailSizes(thumbRow.value?.sizesJson))
+ * ```
+ *
+ * @param sizesJson - The JSON string from the thumbnailState row's sizesJson column
+ * @returns Parsed record of size name to thumbnail size state
  */
-const parseSizesJson = (sizesJson: string): Record<string, ThumbnailSizeState> => {
+export function parseThumbnailSizes(
+  sizesJson?: string | null
+): Record<string, ThumbnailSizeState> {
+  if (!sizesJson) return {}
   try {
     return JSON.parse(sizesJson) as Record<string, ThumbnailSizeState>
   } catch {
     return {}
   }
-}
-
-/**
- * Convert an array of thumbnailState table rows into a ThumbnailFilesState map.
- *
- * Use this when reading the thumbnailState SQLite table (which returns rows)
- * and you need the map format keyed by fileId with parsed `sizes`.
- *
- * @example
- * ```typescript
- * // React
- * const rows = store.useQuery(queryDb(tables.thumbnailState.select()))
- * const thumbnailFiles = useMemo(() => rowsToThumbnailFilesState(rows), [rows])
- * const status = thumbnailFiles[fileId]?.sizes?.['small']?.status ?? 'pending'
- *
- * // Vue
- * const rows = useQuery(queryDb(tables.thumbnailState.select()))
- * const thumbnailFiles = computed(() => rowsToThumbnailFilesState(rows.value))
- * ```
- */
-export function rowsToThumbnailFilesState(
-  rows: ReadonlyArray<{ readonly fileId: string; readonly sizesJson?: string; readonly [key: string]: unknown }>
-): ThumbnailFilesState {
-  const map: Record<string, FileThumbnailState> = {}
-  for (const row of rows) {
-    map[row.fileId] = {
-      fileId: row.fileId,
-      contentHash: (row.contentHash as string) ?? "",
-      mimeType: (row.mimeType as string) ?? "",
-      sizes: parseSizesJson(row.sizesJson ?? "{}")
-    }
-  }
-  return map
 }

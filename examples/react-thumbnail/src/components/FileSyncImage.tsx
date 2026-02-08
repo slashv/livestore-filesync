@@ -1,5 +1,5 @@
-import { getFileDisplayState, resolveFileUrl, rowsToLocalFilesState } from "@livestore-filesync/core"
-import { resolveThumbnailUrl, rowsToThumbnailFilesState } from "@livestore-filesync/image/thumbnails"
+import { getFileDisplayState, resolveFileUrl } from "@livestore-filesync/core"
+import { parseThumbnailSizes, resolveThumbnailUrl } from "@livestore-filesync/image/thumbnails"
 import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
 import React, { useEffect, useMemo, useState } from "react"
@@ -27,23 +27,27 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
 }) => {
   const store = useStore(reactStoreOptions)
 
-  const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
-  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
-  const thumbnailStateRows = store.useQuery(queryDb(tables.thumbnailState.select()))
-  const thumbnailFiles = useMemo(() => rowsToThumbnailFilesState(thumbnailStateRows), [thumbnailStateRows])
+  // Per-file queries
+  const localFileState = store.useQuery(
+    queryDb(tables.localFileState.where({ fileId }).first())
+  )
+  const thumbRow = store.useQuery(
+    queryDb(tables.thumbnailState.where({ fileId }).first())
+  )
   const file = store.useQuery(tables.files.select().where({ id: fileId }).first())
 
   if (!file) {
     return null
   }
 
-  const displayState = getFileDisplayState(file, localFilesState)
+  const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, isUploading } = displayState
 
   const selectedSize = size ?? "full"
+  const sizes = useMemo(() => parseThumbnailSizes(thumbRow?.sizesJson), [thumbRow?.sizesJson])
   const thumbnailStatus = selectedSize === "full"
     ? null
-    : thumbnailFiles[fileId]?.sizes?.[selectedSize]?.status ?? "pending"
+    : sizes[selectedSize]?.status ?? "pending"
 
   const [src, setSrc] = useState<string | null>(null)
   const [isUsingThumbnail, setIsUsingThumbnail] = useState(false)

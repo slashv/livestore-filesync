@@ -48,6 +48,19 @@ export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.
 export type LocalFileStateRow = typeof LocalFileStateRowSchema.Type
 
 /**
+ * Wider type for local file state that accepts both strongly-typed LocalFileState
+ * and raw table rows (where status fields are plain strings).
+ * Used by getFileDisplayState to accept query results directly.
+ */
+export interface LocalFileStateLike {
+  readonly localHash?: string
+  readonly uploadStatus?: string
+  readonly downloadStatus?: string
+  readonly lastSyncError?: string
+  readonly [key: string]: unknown
+}
+
+/**
  * Map of file IDs to local file states (readonly)
  */
 export type LocalFilesState = typeof LocalFilesStateSchema.Type
@@ -314,13 +327,13 @@ export interface FileDisplayState {
  *
  * @example
  * ```typescript
- * // In a React component
- * import { rowsToLocalFilesState } from '@livestore-filesync/core'
+ * // In a React component — query per-file for targeted reactivity
  * import { queryDb } from '@livestore/livestore'
  *
- * const rows = store.useQuery(queryDb(tables.localFileState.select()))
- * const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
- * const displayState = getFileDisplayState(file, localFilesState)
+ * const localState = store.useQuery(
+ *   queryDb(tables.localFileState.where({ fileId: file.id }).first())
+ * )
+ * const displayState = getFileDisplayState(file, localState)
  *
  * return displayState.canDisplay
  *   ? <img src={`/${file.path}`} />
@@ -328,26 +341,25 @@ export interface FileDisplayState {
  * ```
  *
  * @param file - The file record from the files table
- * @param localFilesState - The local files state map (use rowsToLocalFilesState to convert query results)
+ * @param localFileState - The local file state for this file (query result row, or undefined if not found)
  * @returns The display state for the file
  */
 export function getFileDisplayState(
   file: FileRecord,
-  localFilesState: LocalFilesState
+  localFileState?: LocalFileStateLike
 ): FileDisplayState {
-  const localState = localFilesState[file.id]
   // hasLocalCopy is true only if local hash matches the file's content hash
   // This ensures we have the correct version of the file locally
-  const hasLocalCopy = !!localState?.localHash && localState.localHash === file.contentHash
+  const hasLocalCopy = !!localFileState?.localHash && localFileState.localHash === file.contentHash
   const isUploaded = file.remoteKey !== ""
-  const isUploading = localState?.uploadStatus === "inProgress"
-  const isDownloading = localState?.downloadStatus === "inProgress"
-  const isUploadQueued = localState?.uploadStatus === "queued"
-  const isDownloadQueued = localState?.downloadStatus === "queued"
+  const isUploading = localFileState?.uploadStatus === "inProgress"
+  const isDownloading = localFileState?.downloadStatus === "inProgress"
+  const isUploadQueued = localFileState?.uploadStatus === "queued"
+  const isDownloadQueued = localFileState?.downloadStatus === "queued"
 
   return {
     file,
-    localState,
+    localState: localFileState as LocalFileState | undefined,
     canDisplay: hasLocalCopy || isUploaded,
     hasLocalCopy,
     isUploaded,

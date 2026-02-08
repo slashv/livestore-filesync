@@ -5,7 +5,6 @@ import {
   getSyncStatus,
   onFileSyncEvent,
   removeActiveTransfer,
-  rowsToLocalFilesState,
   updateActiveTransfers
 } from "@livestore-filesync/core"
 import { queryDb } from "@livestore/livestore"
@@ -17,8 +16,7 @@ import { tables } from "../livestore/schema.ts"
 export const SyncStatus: React.FC = () => {
   const store = useStore(reactStoreOptions)
   const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
-  const localFilesState = useMemo(() => rowsToLocalFilesState(localFileStateRows), [localFileStateRows])
-  const syncStatus = getSyncStatus(localFilesState)
+  const syncStatus = useMemo(() => getSyncStatus(localFileStateRows), [localFileStateRows])
 
   // Track active transfer progress
   const [activeTransfers, setActiveTransfers] = useState<ActiveTransfers>({})

@@ -6,7 +6,6 @@ import {
   getFileDisplayState,
   readFile,
   resolveFileUrl,
-  rowsToLocalFilesState,
   updateFile,
 } from '@livestore-filesync/core'
 import { queryDb } from '@livestore/livestore'
@@ -20,12 +19,12 @@ const props = defineProps<{
 
 const { store } = useStore()
 
-const localFileStateRows = useQuery(queryDb(tables.localFileState.select()))
-const localFilesState = computed(() => rowsToLocalFilesState(localFileStateRows.value))
-const localFile = computed(() => localFilesState.value[props.file.id])
+// Per-file query: only re-renders when THIS file's local state changes
+const localFileState = useQuery(queryDb(tables.localFileState.where({ fileId: props.file.id }).first()))
+const localFile = computed(() => localFileState.value)
 
 const displayState = computed(() =>
-  getFileDisplayState(props.file, localFilesState.value)
+  getFileDisplayState(props.file, localFileState.value ?? undefined)
 )
 const canDisplay = computed(() => displayState.value.canDisplay)
 const isUploading = computed(() => displayState.value.isUploading)

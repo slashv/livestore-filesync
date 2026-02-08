@@ -1,7 +1,7 @@
 /**
  * Sync Status Utilities
  *
- * Pure functions for deriving aggregate sync status from LocalFilesState.
+ * Pure functions for deriving aggregate sync status from localFileState rows.
  * Framework-agnostic - works with any subscription mechanism.
  *
  * @module
@@ -10,56 +10,49 @@
 import type { ActiveTransferProgress, ActiveTransfers, LocalFilesState, SyncError, SyncStatus } from "../types/index.js"
 
 /**
- * Convert an array of localFileState rows into a LocalFilesState map.
- *
- * Use this when reading the localFileState SQLite table (which returns rows)
- * and you need the map format expected by {@link getSyncStatus} or
- * `getFileDisplayState`.
- *
- * @example
- * ```typescript
- * const rows = store.query(queryDb(tables.localFileState.select()))
- * const localFilesState = rowsToLocalFilesState(rows)
- * const status = getSyncStatus(localFilesState)
- * ```
+ * Shape of a localFileState row as returned by `useQuery` / `store.query`.
+ * Only the fields needed for sync status computation are required.
  */
-export function rowsToLocalFilesState(
-  rows: ReadonlyArray<{ readonly fileId: string; readonly [key: string]: unknown }>
-): LocalFilesState {
-  const map: Record<string, unknown> = {}
-  for (const row of rows) {
-    map[row.fileId] = row
-  }
-  return map as LocalFilesState
+interface LocalFileStateRowLike {
+  readonly fileId: string
+  readonly uploadStatus?: string
+  readonly downloadStatus?: string
+  readonly lastSyncError?: string
+  readonly [key: string]: unknown
 }
 
 /**
- * Compute aggregate sync status from local files state
+ * Compute aggregate sync status from localFileState table rows.
  *
- * This is a pure function that derives sync status from the localFileState
- * SQLite table. Use {@link rowsToLocalFilesState} to convert query results
- * into the expected map format, then pass to this function.
+ * Pass the result of `useQuery(queryDb(tables.localFileState.select()))` directly.
  *
  * @example
  * ```typescript
- * // With React useQuery
+ * // React
  * const rows = store.useQuery(queryDb(tables.localFileState.select()))
- * const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
- * const status = getSyncStatus(localFilesState)
+ * const status = useMemo(() => getSyncStatus(rows), [rows])
  *
- * // With Vue useQuery
+ * // Vue
  * const rows = useQuery(queryDb(tables.localFileState.select()))
- * const status = computed(() => getSyncStatus(rowsToLocalFilesState(rows.value)))
+ * const status = computed(() => getSyncStatus(rows.value))
  *
- * // With store.query (one-time read)
+ * // One-time read
  * const rows = store.query(queryDb(tables.localFileState.select()))
- * const status = getSyncStatus(rowsToLocalFilesState(rows))
+ * const status = getSyncStatus(rows)
  * ```
  *
- * @param localFilesState - Map of file IDs to local file state objects
+ * Also accepts a `LocalFilesState` map (Record<fileId, state>) for backward
+ * compatibility with internal code.
+ *
+ * @param input - Array of localFileState rows, or a LocalFilesState map
  * @returns Aggregate sync status with counts and file ID lists
  */
-export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
+export function getSyncStatus(input: ReadonlyArray<LocalFileStateRowLike> | LocalFilesState): SyncStatus {
+  // Normalize input: convert map to entries, or use rows as-is
+  const entries: ReadonlyArray<readonly [string, LocalFileStateRowLike]> = Array.isArray(input)
+    ? input.map((row) => [row.fileId, row] as const)
+    : Object.entries(input)
+
   const uploadingFileIds: Array<string> = []
   const downloadingFileIds: Array<string> = []
   const queuedUploadFileIds: Array<string> = []
@@ -69,7 +62,7 @@ export function getSyncStatus(localFilesState: LocalFilesState): SyncStatus {
   const errors: Array<SyncError> = []
   const seenErrorFileIds = new Set<string>()
 
-  for (const [fileId, state] of Object.entries(localFilesState)) {
+  for (const [fileId, state] of entries) {
     // Upload status
     switch (state.uploadStatus) {
       case "inProgress":

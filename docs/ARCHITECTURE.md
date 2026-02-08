@@ -14,7 +14,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
   directory listing) and metadata handling. Swapping the `FileSystem` layer changes the local
   storage backend without touching higher layers.
 
-- `LocalFileStateManager` (internal): centralized manager for all `localFilesState` mutations. Uses an internal
+- `LocalFileStateManager` (internal): centralized manager for all `localFileState` table mutations. Uses an internal
   lock to ensure atomic read-modify-write operations, preventing race conditions when multiple
   concurrent operations try to update the state. All state changes go through this service.
 
@@ -319,14 +319,18 @@ Files sync via LiveStore, but the file content may not be immediately available:
    they can download and display it
 
 The `files` table contains synced metadata (including `remoteKey`), while `localFileState` is a
-client document tracking what each client has locally.
+client-local SQLite table tracking what each client has locally (one row per file).
 
 ### getFileDisplayState
 
 ```typescript
 import { getFileDisplayState } from '@livestore-filesync/core'
 
-const displayState = getFileDisplayState(file, localFilesState)
+// Query just this file's local state row
+const localFileState = store.useQuery(
+  queryDb(tables.localFileState.where({ fileId: file.id }).first())
+)
+const displayState = getFileDisplayState(file, localFileState ?? undefined)
 
 // displayState contains:
 // - canDisplay: boolean  - true if file is available (local copy OR remote)
@@ -339,13 +343,15 @@ const displayState = getFileDisplayState(file, localFilesState)
 ### UI Pattern
 
 ```tsx
-// React example
-import { getFileDisplayState, rowsToLocalFilesState } from '@livestore-filesync/core'
+// React example — per-file query for targeted reactivity
+import { getFileDisplayState } from '@livestore-filesync/core'
 import { queryDb } from '@livestore/livestore'
 
-const rows = store.useQuery(queryDb(tables.localFileState.select()))
-const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
-const { canDisplay, isUploading } = getFileDisplayState(file, localFilesState)
+// Query only this file's local state row (not all rows)
+const localFileState = store.useQuery(
+  queryDb(tables.localFileState.where({ fileId: file.id }).first())
+)
+const { canDisplay, isUploading } = getFileDisplayState(file, localFileState ?? undefined)
 
 return canDisplay
   ? <img src={`/${file.path}`} />
@@ -356,6 +362,7 @@ This ensures:
 - Originating client displays immediately (has local copy)
 - Other clients show placeholder until upload completes
 - Correct version is displayed after edits (hash comparison)
+- Each component only re-renders when its own file's state changes (not when any file changes)
 
 ## Multi-Tab Coordination
 
@@ -414,17 +421,19 @@ This ensures:
 
 ## Sync Status
 
-The `getSyncStatus()` utility derives aggregate sync status from the `localFileState` client document.
+The `getSyncStatus()` utility derives aggregate sync status from the `localFileState` table rows.
 Since `localFileState` is reactive via LiveStore, applications can subscribe to it and compute
-sync status on each update.
+sync status on each update. The function accepts rows directly from `useQuery` — no conversion needed.
 
 ### getSyncStatus
 
 ```typescript
 import { getSyncStatus } from '@livestore-filesync/core'
+import { queryDb } from '@livestore/livestore'
 
-// The function takes the localFiles map and returns aggregate status
-const status = getSyncStatus(localFilesState)
+// Pass rows directly from the table query — no map conversion needed
+const rows = store.query(queryDb(tables.localFileState.select()))
+const status = getSyncStatus(rows)
 
 // status contains:
 // - uploadingCount: number     - files currently uploading
@@ -450,13 +459,13 @@ const status = getSyncStatus(localFilesState)
 **React:**
 
 ```tsx
-import { getSyncStatus, rowsToLocalFilesState } from '@livestore-filesync/core'
+import { getSyncStatus } from '@livestore-filesync/core'
 import { queryDb } from '@livestore/livestore'
 
 function SyncIndicator() {
+  // Pass rows directly to getSyncStatus — no map conversion needed
   const rows = store.useQuery(queryDb(tables.localFileState.select()))
-  const localFilesState = useMemo(() => rowsToLocalFilesState(rows), [rows])
-  const status = getSyncStatus(localFilesState)
+  const status = useMemo(() => getSyncStatus(rows), [rows])
 
   if (status.isSyncing) {
     return (
@@ -481,11 +490,12 @@ function SyncIndicator() {
 import { computed } from 'vue'
 import { useQuery } from 'vue-livestore'
 import { queryDb } from '@livestore/livestore'
-import { getSyncStatus, rowsToLocalFilesState } from '@livestore-filesync/core'
+import { getSyncStatus } from '@livestore-filesync/core'
 import { tables } from './schema'
 
+// Pass rows directly — no map conversion needed
 const rows = useQuery(queryDb(tables.localFileState.select()))
-const syncStatus = computed(() => getSyncStatus(rowsToLocalFilesState(rows.value)))
+const syncStatus = computed(() => getSyncStatus(rows.value))
 </script>
 
 <template>
@@ -507,9 +517,9 @@ import { getSyncStatus } from '@livestore-filesync/core'
 import { tables } from './schema'
 
 const unsubscribe = store.subscribe(
-  queryDb(tables.localFileState.get()),
-  (state) => {
-    const status = getSyncStatus(state.localFiles)
+  queryDb(tables.localFileState.select()),
+  (rows) => {
+    const status = getSyncStatus(rows)
     document.getElementById('sync-status').textContent =
       status.isSyncing ? `Syncing ${status.uploadingCount + status.downloadingCount} files...` : 'Synced'
   }

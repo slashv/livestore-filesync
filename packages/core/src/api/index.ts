@@ -47,6 +47,5 @@ export {
   createActiveTransferProgress,
   getSyncStatus,
   removeActiveTransfer,
-  rowsToLocalFilesState,
   updateActiveTransfers
 } from "./sync-status.js"
