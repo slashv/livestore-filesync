@@ -370,6 +370,7 @@ The `@livestore-filesync/image` package provides client-side thumbnail generatio
 - **Local storage**: Thumbnails stored in OPFS (not synced between clients)
 - **Automatic generation**: Watches for new image files and generates thumbnails automatically
 - **Leader-only**: Only the leader tab generates thumbnails to avoid duplicated work
+- **Batched scan state commits**: Startup/poll scans commit thumbnail state updates in one transaction before enqueueing generation work, reducing sync-queue pressure during large cold starts
 
 ### Quick Start
 

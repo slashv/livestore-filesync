@@ -302,6 +302,11 @@ await initVips({
 
 ## Performance Notes
 
+### Scan commit batching
+- Startup and polling scans batch `thumbnailState` upserts into a single `store.commit(...events)` call per scan cycle.
+- The service commits state first and then enqueues generation work, which avoids stale queued-state writes racing with generation-state updates.
+- This reduces push queue churn during large cold starts. The total number of pending sync events is unchanged (events are still counted individually).
+
 ### Canvas Processor
 - Zero additional download - uses built-in browser APIs
 - Instant initialization

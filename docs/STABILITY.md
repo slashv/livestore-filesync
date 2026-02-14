@@ -319,3 +319,18 @@ onFileSyncEvent((event) => {
   }
 })
 ```
+
+## App-Level Sync Policy Guidance
+
+The knobs below live in the host app's LiveStore worker/monitor code (not in this package):
+
+1. **Stuck detection threshold**
+   - For cold starts with large pending bursts, use a longer timeout (for example `60_000ms`) or
+     progress-based logic instead of a fixed short timeout.
+   - Prefer "no upstream/cursor progress" detection over raw pending count checks.
+
+2. **`onSyncError` behavior**
+   - Avoid fail-fast `onSyncError: "shutdown"` unless your product explicitly wants hard-stop
+     behavior on transient sync errors.
+   - For most apps, prefer non-shutdown behavior and surface persistent failures via monitoring
+     (`sync:error`, `sync:stream-exhausted`, `sync:heartbeat-recovery`).

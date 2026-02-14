@@ -150,6 +150,12 @@ interface GenerationQueueItem {
   mimeType: string
 }
 
+interface ScanAccumulator {
+  knownMissingFileIds: Set<string>
+  pendingStatesByFileId: Map<string, FileThumbnailState>
+  deferredGenerationQueueItems: Array<GenerationQueueItem>
+}
+
 // ============================================
 // Implementation
 // ============================================
@@ -352,17 +358,29 @@ export const makeThumbnailService = (
     }
 
     /**
+     * Create an upsert event for a file's thumbnail state
+     */
+    const createThumbnailStateUpsertEvent = (state: FileThumbnailState) =>
+      events.thumbnailStateUpsert({
+        fileId: state.fileId,
+        contentHash: state.contentHash,
+        mimeType: state.mimeType,
+        sizesJson: JSON.stringify(state.sizes)
+      })
+
+    /**
+     * Commit upserts for multiple file thumbnail states in a single transaction.
+     */
+    const commitBatchThumbnailState = (states: ReadonlyArray<FileThumbnailState>): void => {
+      if (states.length === 0) return
+      store.commit(...states.map(createThumbnailStateUpsertEvent))
+    }
+
+    /**
      * Commit an upsert for a single file's thumbnail state
      */
     const commitFileThumbnailState = (state: FileThumbnailState): void => {
-      store.commit(
-        events.thumbnailStateUpsert({
-          fileId: state.fileId,
-          contentHash: state.contentHash,
-          mimeType: state.mimeType,
-          sizesJson: JSON.stringify(state.sizes)
-        })
-      )
+      store.commit(createThumbnailStateUpsertEvent(state))
     }
 
     /**
@@ -377,19 +395,36 @@ export const makeThumbnailService = (
      */
     const updateFileThumbnailState = (
       fileId: string,
-      updater: (state: FileThumbnailState | undefined) => FileThumbnailState | undefined
+      updater: (state: FileThumbnailState | undefined) => FileThumbnailState | undefined,
+      scanAccumulator?: ScanAccumulator
     ): void => {
-      const currentState = readFileThumbnailState(fileId)
+      const currentState = scanAccumulator
+        ? scanAccumulator.pendingStatesByFileId.has(fileId)
+          ? scanAccumulator.pendingStatesByFileId.get(fileId)
+          : scanAccumulator.knownMissingFileIds.has(fileId)
+          ? undefined
+          : readFileThumbnailState(fileId)
+        : readFileThumbnailState(fileId)
       const newState = updater(currentState)
 
       if (newState === undefined) {
         // Remove the file state
         if (currentState !== undefined) {
-          commitRemoveFileThumbnailState(fileId)
+          if (scanAccumulator) {
+            scanAccumulator.pendingStatesByFileId.delete(fileId)
+            scanAccumulator.knownMissingFileIds.add(fileId)
+          } else {
+            commitRemoveFileThumbnailState(fileId)
+          }
         }
       } else {
         // Upsert the file state
-        commitFileThumbnailState(newState)
+        if (scanAccumulator) {
+          scanAccumulator.pendingStatesByFileId.set(fileId, newState)
+          scanAccumulator.knownMissingFileIds.delete(fileId)
+        } else {
+          commitFileThumbnailState(newState)
+        }
       }
     }
 
@@ -603,10 +638,18 @@ export const makeThumbnailService = (
       )
 
     // Queue a file for thumbnail generation
-    const queueFile = (file: FileRecord): Effect.Effect<void> =>
+    const queueFile = (file: FileRecord, scanAccumulator?: ScanAccumulator): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Check if thumbnails already exist with matching content hash
-        const existingState = readFileThumbnailState(file.id)
+        const existingState = scanAccumulator?.pendingStatesByFileId.get(file.id) ?? readFileThumbnailState(file.id)
+        if (scanAccumulator) {
+          if (existingState) {
+            scanAccumulator.pendingStatesByFileId.set(file.id, existingState)
+            scanAccumulator.knownMissingFileIds.delete(file.id)
+          } else {
+            scanAccumulator.knownMissingFileIds.add(file.id)
+          }
+        }
         if (existingState && existingState.contentHash === file.contentHash) {
           // Check if all sizes are in a final or in-progress state
           // Skip if already queued/generating/done/skipped (don't re-queue)
@@ -648,7 +691,7 @@ export const makeThumbnailService = (
                 { status: "skipped" as ThumbnailGenerationStatus }
               ])
             )
-          }))
+          }), scanAccumulator)
           return
         }
 
@@ -662,15 +705,20 @@ export const makeThumbnailService = (
           contentHash: file.contentHash,
           mimeType,
           sizes
-        }))
+        }), scanAccumulator)
 
         // Add to queue
-        yield* Queue.offer(generationQueue, {
+        const generationQueueItem: GenerationQueueItem = {
           fileId: file.id,
           contentHash: file.contentHash,
           path: file.path,
           mimeType
-        })
+        }
+        if (scanAccumulator) {
+          scanAccumulator.deferredGenerationQueueItems.push(generationQueueItem)
+        } else {
+          yield* Queue.offer(generationQueue, generationQueueItem)
+        }
       })
 
     // Clean up thumbnails for a deleted file
@@ -705,10 +753,23 @@ export const makeThumbnailService = (
           const files = store.query<Array<FileRecord>>(
             queryDb(config.filesTable.select())
           )
+          const scanAccumulator: ScanAccumulator = {
+            knownMissingFileIds: new Set(),
+            pendingStatesByFileId: new Map(),
+            deferredGenerationQueueItems: []
+          }
 
           for (const file of files) {
             if (file.deletedAt) continue
-            yield* queueFile(file)
+            yield* queueFile(file, scanAccumulator)
+          }
+
+          // Commit all state changes first, then enqueue generation work.
+          // This avoids stale queued state writes racing with generation updates.
+          commitBatchThumbnailState([...scanAccumulator.pendingStatesByFileId.values()])
+
+          for (const item of scanAccumulator.deferredGenerationQueueItems) {
+            yield* Queue.offer(generationQueue, item)
           }
         } catch (error) {
           // Table might not exist yet, or query failed

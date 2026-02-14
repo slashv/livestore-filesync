@@ -20,11 +20,13 @@ vi.mock("@livestore/livestore", async (importOriginal) => {
 })
 
 const makeService = async ({
+  concurrency = 1,
   filesTable,
   store
 }: {
+  concurrency?: number
   filesTable: { select: () => unknown; where: (conditions: unknown) => unknown }
-  store: { commit: (event: unknown) => void; query: (query: unknown) => unknown }
+  store: { commit: (...events: Array<unknown>) => void; query: (query: unknown) => unknown }
 }) => {
   const thumbnailSchema = createThumbnailSchema()
 
@@ -51,7 +53,7 @@ const makeService = async ({
 
   return Effect.runPromise(
     makeThumbnailService(store as any, thumbnailSchema.tables, thumbnailSchema.events, {
-      concurrency: 1,
+      concurrency,
       filesTable: filesTable as any,
       format: "webp",
       pollInterval: 0,
@@ -62,6 +64,11 @@ const makeService = async ({
 }
 
 describe("ThumbnailService query behavior", () => {
+  const getEventName = (event: unknown): string | undefined =>
+    typeof event === "object" && event !== null && "name" in event
+      ? ((event as { name: unknown }).name as string)
+      : undefined
+
   it("scans files on start when filesTable is present without external queryDb", async () => {
     queryDbMock.mockClear()
 
@@ -126,6 +133,73 @@ describe("ThumbnailService query behavior", () => {
     expect(filesTable.where).toHaveBeenCalledWith({ id: "file-1" })
     expect(queryDbMock).toHaveBeenCalledWith(whereQuery)
     expect(store.query).toHaveBeenCalledWith(whereQuery)
-    expect(store.commit).toHaveBeenCalled()
+
+    expect(store.commit).toHaveBeenCalledTimes(1)
+    const [regenerateCommitArgs] = store.commit.mock.calls
+    expect(regenerateCommitArgs).toHaveLength(1)
+    expect(getEventName(regenerateCommitArgs[0])).toBe("v1.ThumbnailStateUpsert")
+  })
+
+  it("batches thumbnail state upserts into a single commit when scanning on start", async () => {
+    queryDbMock.mockClear()
+
+    const selectQuery = { kind: "files.select" }
+    const filesTable = {
+      select: vi.fn(() => selectQuery),
+      where: vi.fn()
+    }
+
+    const files = [
+      {
+        contentHash: "hash-1",
+        deletedAt: null,
+        id: "file-1",
+        path: "image-1.jpg",
+        remoteKey: "remote-1"
+      },
+      {
+        contentHash: "hash-2",
+        deletedAt: null,
+        id: "file-2",
+        path: "image-2.png",
+        remoteKey: "remote-2"
+      },
+      {
+        contentHash: "hash-3",
+        deletedAt: null,
+        id: "file-3",
+        path: "image-3.webp",
+        remoteKey: "remote-3"
+      }
+    ]
+
+    const store = {
+      commit: vi.fn(),
+      query: vi
+        .fn<(query: unknown) => unknown>()
+        // readConfig()
+        .mockReturnValueOnce([])
+        // scanExistingFiles() -> files table
+        .mockReturnValueOnce(files)
+        // queueFile() -> readFileThumbnailState(file.id)
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce([])
+    }
+
+    const service = await makeService({ concurrency: 0, filesTable, store })
+    await Effect.runPromise(service.start())
+
+    const thumbnailUpsertCommitCalls = store.commit.mock.calls.filter((commitArgs) =>
+      commitArgs.length > 0 &&
+      commitArgs.every((event) => getEventName(event) === "v1.ThumbnailStateUpsert")
+    )
+    expect(thumbnailUpsertCommitCalls).toHaveLength(1)
+    expect(thumbnailUpsertCommitCalls[0]).toHaveLength(files.length)
+
+    expect(queryDbMock).toHaveBeenCalledWith(selectQuery)
+    expect(store.query).toHaveBeenCalledWith(selectQuery)
+
+    await Effect.runPromise(service.stop())
   })
 })
