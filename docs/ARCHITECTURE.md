@@ -16,7 +16,9 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 - `LocalFileStateManager` (internal): centralized manager for all `localFileState` table mutations. Uses an internal
   lock to ensure atomic read-modify-write operations, preventing race conditions when multiple
-  concurrent operations try to update the state. All state changes go through this service.
+  concurrent operations try to update the state. Diff-based operations (`atomicUpdate`,
+  `mergeFiles`, `replaceState`) batch multiple row changes into a single `store.commit(...events)`
+  transaction to reduce event churn.
 
 - `RemoteStorage`: remote storage abstraction for upload/download/delete/health checks.
   The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
@@ -693,6 +695,8 @@ On cold start, transfers stuck in `inProgress` or `error` state are automaticall
 - Files with `downloadStatus: "error"` are reset to `queued`
 - `lastSyncError` is cleared when retrying error state files
 - A `sync:error-retry-start` event is emitted with the file IDs being retried
+- Transfers are not immediately re-enqueued by stale recovery itself; queued work can be resumed
+  via `syncNow()` (which re-enqueues queued rows before stream restart) or `retryErrors()`
 
 **Important**: This recovery runs **once per `start()` lifecycle**, at the beginning of
 `startSyncLoop()` when the tab becomes leader. It does **not** run on mid-session stream

@@ -1,6 +1,6 @@
 import { EventSequenceNumber } from "@livestore/livestore"
 import { Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createTestStore, delay, generateTestFiles, waitFor } from "../../../test/helpers/livestore.js"
 import { getSyncStatus } from "../../api/sync-status.js"
 import { getClientSession } from "../../livestore/types.js"
@@ -22,6 +22,12 @@ interface CreateRuntimeOptions {
   executorConfig?: Partial<SyncExecutorConfig>
   fileSyncConfig?: Partial<FileSyncConfig>
 }
+
+const isNamedEvent = (value: unknown): value is { name: string } =>
+  typeof value === "object" &&
+  value !== null &&
+  "name" in value &&
+  typeof (value as { name?: unknown }).name === "string"
 
 const createRuntime = async (
   deps: Parameters<typeof FileSyncLive>[0],
@@ -251,6 +257,122 @@ describe("FileSync", () => {
       const upstreamCursor = EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
       expect(cursorDoc.lastEventSequence).toBe(upstreamCursor)
     } finally {
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("bootstraps local state with one commit transaction for multiple files", async () => {
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntime(deps, { offline: true })
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+
+    const fileId1 = crypto.randomUUID()
+    const path1 = makeStoredPath(deps.storeId, "bootstrap-hash-1")
+    const fileId2 = crypto.randomUUID()
+    const path2 = makeStoredPath(deps.storeId, "bootstrap-hash-2")
+
+    await runtime.runPromise(localStorage.writeFile(path1, new File(["bootstrap-1"], "bootstrap-1.txt")))
+    await runtime.runPromise(localStorage.writeFile(path2, new File(["bootstrap-2"], "bootstrap-2.txt")))
+
+    store.commit(events.fileCreated({
+      id: fileId1,
+      path: path1,
+      contentHash: "bootstrap-hash-1",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }))
+    store.commit(events.fileCreated({
+      id: fileId2,
+      path: path2,
+      contentHash: "bootstrap-hash-2",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }))
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+    const commitSpy = vi.spyOn(store, "commit")
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (state) => Object.keys(state).length === 2,
+        { timeoutMs: 1500, message: "Expected local state bootstrap for two files" }
+      )
+
+      const localStateCommitCalls = commitSpy.mock.calls
+        .map((call) => (call as Array<unknown>).filter(isNamedEvent))
+        .filter((events) =>
+          events.some((event) => event.name === "v1.LocalFileStateUpsert" || event.name === "v1.LocalFileStateRemove")
+        )
+
+      expect(localStateCommitCalls).toHaveLength(1)
+      expect(localStateCommitCalls[0]!.length).toBe(2)
+      for (const event of localStateCommitCalls[0]!) {
+        expect(event.name).toBe("v1.LocalFileStateUpsert")
+      }
+    } finally {
+      commitSpy.mockRestore()
+      await runtime.runPromise(fileSync.stop())
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("syncNow restart does not re-bootstrap local state", async () => {
+    const { deps, events, shutdown, store } = await createTestStore()
+    const { runtime } = await createRuntime(deps, { offline: true })
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+
+    const fileId = crypto.randomUUID()
+    const path = makeStoredPath(deps.storeId, "sync-now-no-bootstrap")
+
+    await runtime.runPromise(localStorage.writeFile(path, new File(["sync-now"], "sync-now.txt")))
+    store.commit(events.fileCreated({
+      id: fileId,
+      path,
+      contentHash: "sync-now-no-bootstrap",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }))
+
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+    const commitSpy = vi.spyOn(store, "commit")
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (state) => Object.keys(state).length === 1,
+        { timeoutMs: 1500, message: "Expected initial bootstrap to populate local state" }
+      )
+
+      commitSpy.mockClear()
+
+      await runtime.runPromise(fileSync.syncNow())
+      await delay(100)
+
+      const restartLocalStateEvents = commitSpy.mock.calls
+        .flatMap((call) => (call as Array<unknown>).filter(isNamedEvent))
+        .filter((event) => event.name === "v1.LocalFileStateUpsert" || event.name === "v1.LocalFileStateRemove")
+
+      expect(restartLocalStateEvents).toEqual([])
+    } finally {
+      commitSpy.mockRestore()
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))
       await runtime.dispose()

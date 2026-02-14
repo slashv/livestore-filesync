@@ -39,6 +39,8 @@ import type {
   FileSyncEventCallback,
   FileUpdatedPayload,
   LocalFilesState,
+  LocalFilesStateMutable,
+  LocalFileState,
   PreprocessorMap,
   TransferStatus
 } from "../../types/index.js"
@@ -780,6 +782,31 @@ export const makeFileSync = (
         ? current
         : next
 
+    const mergeFileState = (
+      existing: LocalFileState | undefined,
+      nextState: {
+        path: string
+        localHash: string
+        uploadStatus: TransferStatus
+        downloadStatus: TransferStatus
+        lastSyncError: string
+      }
+    ): LocalFileState => {
+      if (!existing) {
+        return nextState
+      }
+
+      const uploadStatus = resolveTransferStatus(existing.uploadStatus, nextState.uploadStatus)
+      const downloadStatus = resolveTransferStatus(existing.downloadStatus, nextState.downloadStatus)
+
+      return {
+        ...existing,
+        ...nextState,
+        uploadStatus,
+        downloadStatus
+      }
+    }
+
     const applyFileState = (
       fileId: string,
       nextState: {
@@ -791,25 +818,9 @@ export const makeFileSync = (
       }
     ): Effect.Effect<void> =>
       stateManager.atomicUpdate((currentState) => {
-        const existing = currentState[fileId]
-        if (!existing) {
-          return {
-            ...currentState,
-            [fileId]: nextState
-          }
-        }
-
-        const uploadStatus = resolveTransferStatus(existing.uploadStatus, nextState.uploadStatus)
-        const downloadStatus = resolveTransferStatus(existing.downloadStatus, nextState.downloadStatus)
-
         return {
           ...currentState,
-          [fileId]: {
-            ...existing,
-            ...nextState,
-            uploadStatus,
-            downloadStatus
-          }
+          [fileId]: mergeFileState(currentState[fileId], nextState)
         }
       })
 
@@ -932,20 +943,100 @@ export const makeFileSync = (
     const bootstrapFromTables = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const files = store.query<Array<FileRecord>>(queryDb(tables.files.select()))
+        const currentState = yield* stateManager.getState()
+        const nextState: LocalFilesStateMutable = { ...currentState }
+        const pendingUploads = new Set<string>()
+        const pendingDownloads = new Set<string>()
 
         for (const file of files) {
           if (file.deletedAt) {
-            yield* handleFileDeleted({ id: file.id, deletedAt: file.deletedAt })
+            const statePath = nextState[file.id]?.path
+            const path = statePath ?? file.path
+
+            if (path) {
+              // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
+              const otherActiveFileWithSamePath = files.some(
+                (f) => f.id !== file.id && !f.deletedAt && f.path === path
+              )
+              if (!otherActiveFileWithSamePath) {
+                yield* localStorage.deleteFile(path).pipe(Effect.ignore)
+              }
+            }
+
+            // Cancel any pending download for this file
+            yield* executor.cancelDownload(file.id)
+            delete nextState[file.id]
             continue
           }
 
-          yield* handleFileUpdated({
-            id: file.id,
+          const { exists, localHash } = yield* readLocalHash(file.path)
+
+          if (!exists) {
+            if (!file.remoteKey) continue
+            nextState[file.id] = mergeFileState(nextState[file.id], {
+              path: file.path,
+              localHash: "",
+              uploadStatus: "done",
+              downloadStatus: "queued",
+              lastSyncError: ""
+            })
+            pendingDownloads.add(file.id)
+            continue
+          }
+
+          if (localHash !== file.contentHash) {
+            if (file.remoteKey) {
+              nextState[file.id] = mergeFileState(nextState[file.id], {
+                path: file.path,
+                localHash,
+                uploadStatus: "done",
+                downloadStatus: "queued",
+                lastSyncError: ""
+              })
+              pendingDownloads.add(file.id)
+              continue
+            }
+
+            nextState[file.id] = mergeFileState(nextState[file.id], {
+              path: file.path,
+              localHash,
+              uploadStatus: "queued",
+              downloadStatus: "done",
+              lastSyncError: ""
+            })
+            pendingUploads.add(file.id)
+            continue
+          }
+
+          if (!file.remoteKey) {
+            nextState[file.id] = mergeFileState(nextState[file.id], {
+              path: file.path,
+              localHash,
+              uploadStatus: "queued",
+              downloadStatus: "done",
+              lastSyncError: ""
+            })
+            pendingUploads.add(file.id)
+            continue
+          }
+
+          nextState[file.id] = mergeFileState(nextState[file.id], {
             path: file.path,
-            remoteKey: file.remoteKey,
-            contentHash: file.contentHash,
-            updatedAt: file.updatedAt
+            localHash,
+            uploadStatus: "done",
+            downloadStatus: "done",
+            lastSyncError: ""
           })
+        }
+
+        yield* stateManager.atomicUpdate(() => nextState)
+
+        for (const fileId of pendingUploads) {
+          yield* executor.enqueueUpload(fileId)
+        }
+
+        for (const fileId of pendingDownloads) {
+          yield* executor.enqueueDownload(fileId)
         }
       }).pipe(
         Effect.catchAll((error) =>
@@ -1080,17 +1171,29 @@ export const makeFileSync = (
         yield* Ref.set(staleRecoveryDoneRef, true)
       })
 
+    const maybeBootstrapFromTables = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const storedCursor = yield* readCursor()
+        const localState = yield* stateManager.getState()
+        const isCursorRoot = EventSequenceNumber.Client.isEqual(
+          resolveCursor(storedCursor),
+          EventSequenceNumber.Client.ROOT
+        )
+        const isLocalStateEmpty = Object.keys(localState).length === 0
+
+        if (!isCursorRoot && !isLocalStateEmpty) return
+
+        const upstreamCursor = yield* getUpstreamHeadCursor()
+        yield* bootstrapFromTables()
+        yield* setCursorAfterBootstrap(upstreamCursor)
+      })
+
     const startEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
         if (!isLeader) return
 
         yield* stopEventStream()
-        const upstreamCursor = yield* getUpstreamHeadCursor()
-        yield* bootstrapFromTables()
-        if (upstreamCursor) {
-          yield* setCursorAfterBootstrap(upstreamCursor)
-        }
         const storedCursor = yield* readCursor()
 
         // Stream recovery configuration
@@ -1176,6 +1279,8 @@ export const makeFileSync = (
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
         if (!isLeader) return
+        // Ensure queued transfer state is reflected in executor queues before restart.
+        yield* reEnqueueQueuedTransfers()
         yield* startEventStream()
       })
 
@@ -1191,6 +1296,7 @@ export const makeFileSync = (
         } else {
           yield* executor.pause()
         }
+        yield* maybeBootstrapFromTables()
         yield* startEventStream()
       })
 

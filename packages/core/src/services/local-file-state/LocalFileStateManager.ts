@@ -122,6 +122,9 @@ export const makeLocalFileStateManager = (
   Effect.sync(() => {
     const { schema, store } = deps
     const { events, queryDb, tables } = schema
+    type LocalFileStateEvent =
+      | ReturnType<typeof events.localFileStateUpsert>
+      | ReturnType<typeof events.localFileStateRemove>
 
     /**
      * Convert a table row to LocalFileState (without fileId)
@@ -182,6 +185,22 @@ export const makeLocalFileStateManager = (
       store.commit(events.localFileStateRemove({ fileId }))
     }
 
+    /**
+     * Commit a batch of local file state events in one transaction.
+     */
+    const commitEvents = (eventsBatch: ReadonlyArray<LocalFileStateEvent>): void => {
+      if (eventsBatch.length === 0) return
+      store.commit(...eventsBatch)
+    }
+
+    const hasStateChanged = (existing: LocalFileState | undefined, next: LocalFileState): boolean =>
+      !existing ||
+      existing.path !== next.path ||
+      existing.localHash !== next.localHash ||
+      existing.downloadStatus !== next.downloadStatus ||
+      existing.uploadStatus !== next.uploadStatus ||
+      existing.lastSyncError !== next.lastSyncError
+
     // Set complete state for a single file
     const setFileState = (
       fileId: string,
@@ -224,14 +243,31 @@ export const makeLocalFileStateManager = (
       })
 
     // Remove a file's state
-    const removeFile = (fileId: string): Effect.Effect<void> => Effect.sync(() => commitRemove(fileId))
+    const removeFile = (fileId: string): Effect.Effect<void> =>
+      Effect.sync(() => {
+        if (!readFileState(fileId)) return
+        commitRemove(fileId)
+      })
 
     // Merge files into state
     const mergeFiles = (patch: LocalFilesState): Effect.Effect<void> =>
       Effect.sync(() => {
+        const currentState = readState()
+        const eventsBatch: Array<LocalFileStateEvent> = []
+
         for (const [fileId, state] of Object.entries(patch)) {
-          commitUpsert(fileId, state)
+          if (!hasStateChanged(currentState[fileId], state)) continue
+          eventsBatch.push(events.localFileStateUpsert({
+            fileId,
+            path: state.path,
+            localHash: state.localHash,
+            downloadStatus: state.downloadStatus,
+            uploadStatus: state.uploadStatus,
+            lastSyncError: state.lastSyncError
+          }))
         }
+
+        commitEvents(eventsBatch)
       })
 
     // Replace entire state
@@ -241,18 +277,29 @@ export const makeLocalFileStateManager = (
         const currentState = readState()
         const currentIds = new Set(Object.keys(currentState))
         const newIds = new Set(Object.keys(newState))
+        const eventsBatch: Array<LocalFileStateEvent> = []
 
         // Remove files that are not in the new state
         for (const fileId of currentIds) {
           if (!newIds.has(fileId)) {
-            commitRemove(fileId)
+            eventsBatch.push(events.localFileStateRemove({ fileId }))
           }
         }
 
         // Upsert all files in the new state
         for (const [fileId, state] of Object.entries(newState)) {
-          commitUpsert(fileId, state)
+          if (!hasStateChanged(currentState[fileId], state)) continue
+          eventsBatch.push(events.localFileStateUpsert({
+            fileId,
+            path: state.path,
+            localHash: state.localHash,
+            downloadStatus: state.downloadStatus,
+            uploadStatus: state.uploadStatus,
+            lastSyncError: state.lastSyncError
+          }))
         }
+
+        commitEvents(eventsBatch)
       })
 
     // Get current state (read-only)
@@ -272,29 +319,30 @@ export const makeLocalFileStateManager = (
         // Compute the diff and apply changes
         const currentIds = new Set(Object.keys(currentState))
         const nextIds = new Set(Object.keys(nextState))
+        const eventsBatch: Array<LocalFileStateEvent> = []
 
         // Remove files that are no longer in state
         for (const fileId of currentIds) {
           if (!nextIds.has(fileId)) {
-            commitRemove(fileId)
+            eventsBatch.push(events.localFileStateRemove({ fileId }))
           }
         }
 
         // Upsert files that are new or changed
         for (const [fileId, state] of Object.entries(nextState)) {
           const existing = currentState[fileId]
-          // Check if the state actually changed
-          if (
-            !existing ||
-            existing.path !== state.path ||
-            existing.localHash !== state.localHash ||
-            existing.downloadStatus !== state.downloadStatus ||
-            existing.uploadStatus !== state.uploadStatus ||
-            existing.lastSyncError !== state.lastSyncError
-          ) {
-            commitUpsert(fileId, state)
-          }
+          if (!hasStateChanged(existing, state)) continue
+          eventsBatch.push(events.localFileStateUpsert({
+            fileId,
+            path: state.path,
+            localHash: state.localHash,
+            downloadStatus: state.downloadStatus,
+            uploadStatus: state.uploadStatus,
+            lastSyncError: state.lastSyncError
+          }))
         }
+
+        commitEvents(eventsBatch)
       })
 
     return {

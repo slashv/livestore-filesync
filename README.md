@@ -268,6 +268,17 @@ FileSync is designed to work correctly when multiple browser tabs are open to th
 
 No configuration required — this works automatically.
 
+## Startup and Stream Restarts
+
+- Startup bootstrap from the `files` table is **conditional**. It runs only when the stored
+  cursor is the root cursor or `localFileState` is empty.
+- Mid-session restarts (`syncNow()`, heartbeat recovery) restart `eventsStream` from the stored
+  cursor and do **not** rescan every file row.
+- `syncNow()` re-enqueues files already marked as `queued` in `localFileState` before restarting
+  the stream, so pending work resumes without a full bootstrap.
+- Internal `localFileState` diff updates are batched into a single `store.commit(...)` call when
+  possible, reducing per-file event bursts during reconciliation.
+
 ## File Preprocessors
 
 FileSync supports preprocessing files before they are saved. This is useful for:

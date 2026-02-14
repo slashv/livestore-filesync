@@ -6,7 +6,8 @@ This document summarizes the event-stream refactor that replaces the previous re
 
 - **Stream-driven sync**: `FileSync` now consumes the LiveStore event stream filtered to file events and processes them in batches.
 - **Shared cursor**: A new client document, `fileSyncCursor`, stores the last processed event sequence so any leader tab can resume the stream.
-- **Bootstrap step**: On startup, the leader bootstraps file state from the `files` table, then advances the cursor to the current upstream head before streaming new events.
+- **Conditional bootstrap**: The leader bootstraps from the `files` table only when needed (root cursor or empty `localFileState`). Warm restarts reuse existing state.
+- **Batched local state writes**: `localFileState` diff updates are committed as a single `store.commit(...events)` transaction when possible, instead of one commit per row.
 - **Immediate delete handling**: `v1.FileDeleted` events delete local files immediately and remove local state entries.
 - **Configuration cleanup**: `gcDelayMs` was removed since periodic cleanup is no longer used.
 
@@ -17,7 +18,7 @@ This document summarizes the event-stream refactor that replaces the previous re
 
 ## Event handling rules
 
-- **FileCreated**: If the local file exists, set local state and enqueue upload (event stream is the only automatic trigger).
+- **FileCreated**: If the local file exists, set local state and enqueue upload.
 - **FileUpdated**:
   - If local file missing and `remoteKey` exists → queue download.
   - If local hash mismatches and `remoteKey` exists → queue download.
@@ -38,12 +39,15 @@ The event stream automatically recovers from errors using exponential backoff:
 
 ### Error State Auto-Retry
 
-On startup, files stuck in `error` state are automatically re-queued:
+On startup, files stuck in `error` state are automatically reset to `queued`:
 
-- Files with `uploadStatus: "error"` are reset to `queued` and re-enqueued for upload
-- Files with `downloadStatus: "error"` are reset to `queued` and re-enqueued for download
+- Files with `uploadStatus: "error"` are reset to `queued`
+- Files with `downloadStatus: "error"` are reset to `queued`
 - `lastSyncError` is cleared when retrying
 - `sync:error-retry-start` event is emitted with the list of file IDs being retried
+
+Queued transfers are re-enqueued when `syncNow()` is called (or via `retryErrors()` for explicit
+manual retries).
 
 ### Manual Retry API
 
@@ -93,7 +97,10 @@ Event batch re-processing is safe due to:
 2. **Deduplicated queues**: `SyncExecutor` uses sets to track queued file IDs, preventing duplicate enqueues
 3. **Hash-based decisions**: Upload/download decisions are based on comparing `localHash` vs `contentHash` and checking `remoteKey` existence
 
-On leader startup, the cursor is set to the current upstream head after table bootstrap so historical events are skipped. The cursor is then updated after all events in a batch are successfully processed. If processing fails, the cursor is not updated, allowing the batch to be re-processed on the next attempt.
+When conditional bootstrap runs, the cursor is set to the current upstream head after table
+reconciliation so historical events are skipped. The cursor is then updated after all events in a
+batch are successfully processed. If processing fails, the cursor is not updated, allowing the
+batch to be re-processed on the next attempt.
 
 ## Remaining tasks / follow-ups
 

@@ -1,7 +1,13 @@
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { createTestStore } from "../../../test/helpers/livestore.js"
 import { makeLocalFileStateManager } from "./LocalFileStateManager.js"
+
+const isNamedEvent = (value: unknown): value is { name: string } =>
+  typeof value === "object" &&
+  value !== null &&
+  "name" in value &&
+  typeof (value as { name?: unknown }).name === "string"
 
 describe("LocalFileStateManager", () => {
   it("should set and get file state", async () => {
@@ -322,6 +328,57 @@ describe("LocalFileStateManager", () => {
       expect(state["file-1"]?.uploadStatus).toBe("done")
       expect(state["file-1"]?.localHash).toBe("updated-hash")
     } finally {
+      await shutdown()
+    }
+  })
+
+  it("batches atomicUpdate row changes into a single commit", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const manager = await Effect.runPromise(makeLocalFileStateManager(deps))
+    const commitSpy = vi.spyOn(deps.store, "commit")
+
+    try {
+      await Effect.runPromise(
+        manager.atomicUpdate(() => ({
+          "file-1": {
+            path: "/path/to/file-1",
+            localHash: "hash-1",
+            uploadStatus: "queued",
+            downloadStatus: "done",
+            lastSyncError: ""
+          },
+          "file-2": {
+            path: "/path/to/file-2",
+            localHash: "hash-2",
+            uploadStatus: "done",
+            downloadStatus: "queued",
+            lastSyncError: ""
+          }
+        }))
+      )
+
+      expect(commitSpy).toHaveBeenCalledTimes(1)
+      const committedEvents = (commitSpy.mock.calls[0] as Array<unknown>).filter(isNamedEvent)
+      expect(committedEvents).toHaveLength(2)
+      for (const event of committedEvents) {
+        expect(event.name).toBe("v1.LocalFileStateUpsert")
+      }
+    } finally {
+      commitSpy.mockRestore()
+      await shutdown()
+    }
+  })
+
+  it("does not commit removeFile when row is missing", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const manager = await Effect.runPromise(makeLocalFileStateManager(deps))
+    const commitSpy = vi.spyOn(deps.store, "commit")
+
+    try {
+      await Effect.runPromise(manager.removeFile("missing-file"))
+      expect(commitSpy).not.toHaveBeenCalled()
+    } finally {
+      commitSpy.mockRestore()
       await shutdown()
     }
   })
