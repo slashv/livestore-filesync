@@ -8,6 +8,7 @@
     "@livestore-filesync/s3-signer": "workspace:*",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/opfs": "workspace:*",
+    "@effect/workflow": "catalog:",
     "@livestore/adapter-web": "catalog:",
     "@livestore/devtools-vite": "catalog:",
     "@livestore/livestore": "catalog:",

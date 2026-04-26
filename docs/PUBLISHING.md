@@ -56,6 +56,20 @@ pnpm test
 
 All checks must pass before publishing.
 
+## LiveStore Snapshot Dependencies
+
+This project develops against exact LiveStore npm snapshots rather than a local Verdaccio registry or a git checkout. The snapshot pins live in the `catalog` section of `pnpm-workspace.yaml`.
+
+Before publishing `@livestore-filesync/*` packages:
+
+- Keep the LiveStore runtime packages on the same exact snapshot version.
+- Keep `@livestore/peer-deps` on that same runtime snapshot so Effect and OpenTelemetry peer versions stay aligned.
+- Run `pnpm install` after changing snapshot pins so `pnpm-lock.yaml` and the publish-time `catalog:` replacements are updated.
+- Keep pnpm `overrides` aligned with the catalog so helper packages with hard-pinned LiveStore dependencies cannot pull a second LiveStore version into examples or downstream workspaces.
+- Republish filesync packages after changing LiveStore snapshots if downstream apps need the published peer dependency metadata to reference the new snapshot.
+
+Downstream pnpm workspaces should copy the same LiveStore catalog pins or add equivalent direct dependencies/overrides. Do not depend on the moving `snapshot` dist-tag for reproducible app deployments.
+
 ## Versioning
 
 We use **synchronized versioning** - all packages share the same version number to avoid compatibility confusion.

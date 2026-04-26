@@ -1112,6 +1112,8 @@ export const makeFileSync = (
     const recoverStaleTransfers = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const retriedFileIds: Array<string> = []
+        const queuedUploadFileIds: Array<string> = []
+        const queuedDownloadFileIds: Array<string> = []
 
         yield* stateManager.atomicUpdate((currentState) => {
           let hasChanges = false
@@ -1125,10 +1127,12 @@ export const makeFileSync = (
             if (localFile.uploadStatus === "inProgress") {
               updatedFile.uploadStatus = "queued"
               updated = true
+              queuedUploadFileIds.push(fileId)
             }
             if (localFile.downloadStatus === "inProgress") {
               updatedFile.downloadStatus = "queued"
               updated = true
+              queuedDownloadFileIds.push(fileId)
             }
 
             // Reset "error" to "queued" for auto-retry
@@ -1159,6 +1163,14 @@ export const makeFileSync = (
         if (retriedFileIds.length > 0) {
           yield* Effect.logInfo(`[FileSync] Auto-retrying ${retriedFileIds.length} files from error state`)
           yield* emit({ type: "sync:error-retry-start", fileIds: retriedFileIds })
+        }
+
+        for (const fileId of queuedUploadFileIds) {
+          yield* executor.enqueueUpload(fileId)
+        }
+
+        for (const fileId of queuedDownloadFileIds) {
+          yield* executor.enqueueDownload(fileId)
         }
       })
 

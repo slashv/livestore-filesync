@@ -1,12 +1,11 @@
 import { getSyncStatus } from "@livestore-filesync/core"
 import { queryDb } from "@livestore/livestore"
-import { useStore } from "@livestore/react"
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
+import { useAppStore } from "../livestore/store.ts"
 
 export const SyncStatus: React.FC = () => {
-  const store = useStore(reactStoreOptions)
+  const store = useAppStore()
   const localFileStateRows = store.useQuery(queryDb(tables.localFileState.select()))
   const syncStatus = useMemo(() => getSyncStatus(localFileStateRows), [localFileStateRows])
 

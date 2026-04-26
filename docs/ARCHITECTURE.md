@@ -225,6 +225,10 @@ stopFileSync()
 await disposeFileSync()
 ```
 
+`initFileSync` is idempotent for overlapping mounts of the same user/store lifecycle. Each call
+retains the singleton and returns a disposer; the singleton is only disposed after the last returned
+disposer runs. This avoids React remount or page-refresh races tearing down the active sync loop.
+
 ### Instance API (for advanced use cases)
 
 When you need multiple file sync instances (e.g., multiple stores) or want explicit dependency

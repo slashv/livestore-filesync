@@ -40,7 +40,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : framework === 'react' ? 2 : undefined,
   reporter: 'html',
 
   use: {
@@ -66,7 +66,7 @@ export default defineConfig({
   webServer: {
     command: 'pnpm run dev',
     url: `http://localhost:${config.port}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === 'true',
     cwd: config.cwd,
     timeout: 120000,
   },

@@ -3,17 +3,45 @@ packages:
   - examples/*
   - tests/e2e
 
+overrides:
+  '@livestore/adapter-web': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/adapter-node': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/devtools-vite': 0.0.0-snapshot-86c8d65816a9de8b2599654155ffb80951627223.mltzt7p9
+  '@livestore/livestore': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/peer-deps': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/react': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/sync-cf': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/utils': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/wa-sqlite': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@effect/ai': 0.35.0
+  '@effect/cli': 0.75.1
+  '@effect/cluster': 0.58.2
+  '@effect/experimental': 0.60.0
+  '@effect/opentelemetry': 0.63.0
+  '@effect/platform': 0.96.1
+  '@effect/platform-browser': 0.76.0
+  '@effect/platform-bun': 0.89.0
+  '@effect/platform-node': 0.106.0
+  '@effect/printer': 0.49.0
+  '@effect/printer-ansi': 0.49.0
+  '@effect/rpc': 0.75.1
+  '@effect/sql': 0.51.1
+  '@effect/typeclass': 0.40.0
+  '@effect/vitest': 0.29.0
+  '@effect/workflow': 0.16.0
+  effect: 3.21.2
+
 catalog:
-  # LiveStore packages (from npm pre-release)
-  '@livestore/adapter-web': 0.4.0-dev.22
-  '@livestore/adapter-node': 0.4.0-dev.22
-  '@livestore/devtools-vite': 0.4.0-dev.22
-  '@livestore/livestore': 0.4.0-dev.22
-  '@livestore/peer-deps': 0.4.0-dev.22
-  '@livestore/react': 0.4.0-dev.22
-  '@livestore/sync-cf': 0.4.0-dev.22
-  '@livestore/utils': 0.4.0-dev.22
-  '@livestore/wa-sqlite': 0.4.0-dev.22
+  # LiveStore packages (from exact npm snapshots)
+  '@livestore/adapter-web': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/adapter-node': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/devtools-vite': 0.0.0-snapshot-86c8d65816a9de8b2599654155ffb80951627223.mltzt7p9
+  '@livestore/livestore': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/peer-deps': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/react': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/sync-cf': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/utils': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/wa-sqlite': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
 
   # Type packages
   '@types/react': 19.2.7
@@ -25,10 +53,10 @@ catalog:
 
   # Build tools
   typescript: 5.9.3
-  vite: 7.3.0
+  vite: 7.2.4
   vitest: 4.0.16
   '@vitest/ui': 3.2.4
-  '@vitejs/plugin-react': 5.1.2
+  '@vitejs/plugin-react': 5.0.3
 
   # Styling
   tailwindcss: 4.1.18
@@ -45,26 +73,26 @@ catalog:
   '@playwright/test': 1.57.0
 
   # Effect
-  '@effect/ai': 0.33.2
-  '@effect/ai-openai': 0.37.2
-  '@effect/cli': 0.73.0
-  '@effect/experimental': 0.58.0
-  effect: 3.19.14
-  '@effect/cluster': 0.56.1
-  '@effect/rpc': 0.73.0
-  '@effect/language-service': 0.63.2
-  '@effect/platform': 0.94.1
-  '@effect/platform-browser': 0.74.0
-  '@effect/platform-bun': 0.87.0
-  '@effect/platform-node': 0.104.0
-  '@effect/platform-node-shared': 0.57.0
-  '@effect/printer': 0.47.0
-  '@effect/printer-ansi': 0.47.0
-  '@effect/opentelemetry': 0.60.0
-  '@effect/sql': 0.49.0
-  '@effect/sql-sqlite-node': 0.49.1
-  '@effect/typeclass': 0.38.0
-  '@effect/vitest': 0.27.0
+  '@effect/ai': 0.35.0
+  '@effect/ai-openai': 0.39.2
+  '@effect/cli': 0.75.1
+  '@effect/experimental': 0.60.0
+  effect: 3.21.2
+  '@effect/cluster': 0.58.2
+  '@effect/rpc': 0.75.1
+  '@effect/language-service': 0.85.1
+  '@effect/platform': 0.96.1
+  '@effect/platform-browser': 0.76.0
+  '@effect/platform-bun': 0.89.0
+  '@effect/platform-node': 0.106.0
+  '@effect/platform-node-shared': 0.59.0
+  '@effect/printer': 0.49.0
+  '@effect/printer-ansi': 0.49.0
+  '@effect/opentelemetry': 0.63.0
+  '@effect/sql': 0.51.1
+  '@effect/sql-sqlite-node': 0.52.0
+  '@effect/typeclass': 0.40.0
+  '@effect/vitest': 0.29.0
   '@effect/workflow': 0.16.0
 
   # OpenTelemetry
@@ -90,3 +118,4 @@ catalog:
   # Cloudflare tools
   wrangler: 4.42.2
   '@cloudflare/workers-types': 4.20251118.0
+  '@cloudflare/vite-plugin': 1.13.12

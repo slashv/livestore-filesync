@@ -1,12 +1,8 @@
 import { cloudflare } from "@cloudflare/vite-plugin"
 import { livestoreDevtoolsPlugin } from "@livestore/devtools-vite"
 import react from "@vitejs/plugin-react"
-import path from "node:path"
 import process from "node:process"
-import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const defaultPort = 60004
 
@@ -21,13 +17,15 @@ export default defineConfig({
     react(),
     livestoreDevtoolsPlugin({ schemaPath: "./src/livestore/schema.ts" })
   ],
-  resolve: {
-    alias: {
-      "@livestore/wa-sqlite": path.resolve(__dirname, "node_modules/@livestore/wa-sqlite")
-    },
-    dedupe: ["react", "react-dom", "@livestore/livestore", "@livestore/react", "effect"]
-  },
   optimizeDeps: {
+    include: [
+      "@livestore/adapter-web",
+      "@livestore/adapter-web/shared-worker",
+      "@livestore/adapter-web/worker",
+      "@livestore/livestore",
+      "@livestore/react",
+      "@livestore/sync-cf/client"
+    ],
     exclude: ["@livestore/wa-sqlite"]
   }
 })

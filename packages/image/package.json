@@ -83,8 +83,10 @@
   },
   "devDependencies": {
     "@effect/platform": "catalog:",
-    "@effect/vitest": "^0.25.1",
+    "@effect/vitest": "catalog:",
+    "@effect/workflow": "catalog:",
     "@livestore/livestore": "catalog:",
+    "@livestore/peer-deps": "catalog:",
     "@types/node": "^22.5.2",
     "effect": "catalog:",
     "typescript": "^5.6.2",

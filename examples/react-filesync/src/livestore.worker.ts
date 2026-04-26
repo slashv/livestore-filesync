@@ -3,7 +3,7 @@ import { makeWsSync } from "@livestore/sync-cf/client"
 
 import { schema } from "./livestore/schema.ts"
 
-const syncUrl = import.meta.env.VITE_LIVESTORE_SYNC_URL || "http://localhost:60004/sync"
+const syncUrl = import.meta.env.VITE_LIVESTORE_SYNC_URL || `${globalThis.location.origin}/sync`
 
 makeWorker({
   schema,

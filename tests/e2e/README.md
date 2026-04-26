@@ -38,20 +38,11 @@ All framework implementations must include the following `data-testid` attribute
 ### Testing the React Example
 
 ```bash
-# Start the React dev server
-cd examples/web-filesync
-pnpm dev
-
-# In another terminal, run tests
-cd tests/e2e
-pnpm test
+# Starts examples/react-filesync automatically and runs Chromium tests.
+pnpm --filter e2e-tests test:react
 ```
 
-### Testing with Auto-Start Server
-
-```bash
-START_SERVER=1 SERVER_CWD=../../examples/web-filesync pnpm test
-```
+The default `pnpm --filter e2e-tests test` command currently targets the React example.
 
 ### Testing Against Different Ports/URLs
 
@@ -66,13 +57,8 @@ Some tests call the remote file storage endpoint directly. Set `FILESYNC_AUTH_TO
 ### Testing Vue or Other Implementations
 
 ```bash
-# Start your Vue example
-cd examples/vue-filesync
-pnpm dev
-
-# Run tests against it
-cd tests/e2e
-BASE_URL=http://localhost:60005 pnpm test
+# Starts examples/vue-filesync automatically and runs Chromium tests.
+pnpm --filter e2e-tests test:vue
 ```
 
 ## Test Categories

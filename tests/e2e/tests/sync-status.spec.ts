@@ -460,10 +460,13 @@ test.describe('Sync Status - Transfer Progress', () => {
       )
       .toBe(0)
 
-    // Verify all files completed without errors
-    const finalStatus = await getSyncStatusCounts(page)
-    expect(finalStatus.errors).toBe(0)
-    expect(finalStatus.isSyncing).toBe(false)
+    // Verify all files completed without errors and LiveStore has settled.
+    await expect
+      .poll(async () => {
+        const status = await getSyncStatusCounts(page)
+        return { errors: status.errors, isSyncing: status.isSyncing }
+      }, { timeout: 10000, intervals: [100, 250, 500] })
+      .toEqual({ errors: 0, isSyncing: false })
   })
 
   test('observes upload activity and file status transitions', async ({ page }) => {
@@ -574,7 +577,15 @@ test.describe('Sync Status - Transfer Progress', () => {
     // Verify all completed without errors
     const finalStatus = await getSyncStatusCounts(page)
     expect(finalStatus.errors).toBe(0)
-    expect(finalStatus.isSyncing).toBe(false)
+    await expect
+      .poll(
+        async () => {
+          const status = await getSyncStatusCounts(page)
+          return status.isSyncing
+        },
+        { timeout: 5000, intervals: [100] }
+      )
+      .toBe(false)
   })
 })
 

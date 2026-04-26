@@ -1,13 +1,12 @@
 import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
 import { queryDb } from "@livestore/livestore"
-import { useStore } from "@livestore/react"
 import React, { useEffect, useState } from "react"
-import { reactStoreOptions } from "../App.tsx"
 import { tables } from "../livestore/schema.ts"
+import { useAppStore } from "../livestore/store.ts"
 import type { FileType } from "../types"
 
 export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
-  const store = useStore(reactStoreOptions)
+  const store = useAppStore()
 
   // Per-file query: only re-renders when THIS file's local state changes
   const localFileState = store.useQuery(

@@ -69,6 +69,25 @@ export interface InitFileSyncConfig {
 
 let singleton: FileSyncInstance | null = null
 let singletonUserId: string | null = null
+let singletonRefCount = 0
+
+const retainSingleton = (): () => Promise<void> => {
+  singletonRefCount += 1
+  let disposed = false
+
+  return async () => {
+    if (disposed) return
+    disposed = true
+
+    singletonRefCount = Math.max(0, singletonRefCount - 1)
+    if (singletonRefCount > 0) return
+
+    const instance = singleton
+    singleton = null
+    singletonUserId = null
+    await instance?.dispose()
+  }
+}
 
 const requireFileSync = (): FileSyncInstance => {
   if (!singleton) {
@@ -160,14 +179,11 @@ export const initFileSync = (
     singleton.dispose()
     singleton = null
     singletonUserId = null
+    singletonRefCount = 0
   }
 
   if (singleton) {
-    return async () => {
-      await singleton?.dispose()
-      singleton = null
-      singletonUserId = null
-    }
+    return retainSingleton()
   }
 
   singletonUserId = userId
@@ -206,11 +222,7 @@ export const initFileSync = (
     singleton.start()
   }
 
-  return async () => {
-    await singleton?.dispose()
-    singleton = null
-    singletonUserId = null
-  }
+  return retainSingleton()
 }
 
 /**
@@ -233,6 +245,7 @@ export const disposeFileSync = async (): Promise<void> => {
     await singleton.dispose()
     singleton = null
     singletonUserId = null
+    singletonRefCount = 0
   }
 }
 
