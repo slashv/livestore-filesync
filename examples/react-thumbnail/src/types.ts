@@ -5,4 +5,4 @@ export type LocalFilesState = typeof fileSyncSchema.schemas.LocalFilesStateSchem
 export type FileType = typeof tables.files.rowSchema.Type
 
 export type TransferStatus = typeof fileSyncSchema.schemas.TransferStatusSchema.Type
-export type ThumbnailState = typeof thumbnailSchema.schemas.ThumbnailStateDocumentSchema.Type
+export type ThumbnailState = typeof thumbnailSchema.schemas.ThumbnailStateRowSchema.Type
