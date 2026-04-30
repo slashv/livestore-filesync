@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useStore, useQuery } from 'vue-livestore'
+import { useQuery } from 'vue-livestore'
 import { queryDb } from '@livestore/livestore'
 import {
   getSyncStatus,
@@ -13,7 +13,6 @@ import {
 } from '@livestore-filesync/core'
 import { tables } from '../livestore/schema'
 
-const { store } = useStore()
 const localFileStateRows = useQuery(queryDb(tables.localFileState.select()))
 
 const syncStatus = computed(() => getSyncStatus(localFileStateRows.value))

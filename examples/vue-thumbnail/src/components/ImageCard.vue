@@ -13,14 +13,12 @@ import {
   resolveThumbnailUrl,
 } from '@livestore-filesync/image/thumbnails'
 import { queryDb } from '@livestore/livestore'
-import { useStore, useQuery } from 'vue-livestore'
+import { useQuery } from 'vue-livestore'
 import type { FileType } from '../types'
 
 const props = defineProps<{
   file: FileType
 }>()
-
-const { store } = useStore()
 
 // Per-file queries: only re-render when THIS file's state changes
 const localFileState = useQuery(queryDb(tables.localFileState.where({ fileId: props.file.id }).first()))

@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/s3-signer",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "type": "module",
   "license": "MIT",
   "description": "S3-compatible signing service for livestore-filesync (Cloudflare Workers)",
@@ -26,6 +26,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "!dist/**/*.test.*",
     "!dist/src"
   ],
   "scripts": {

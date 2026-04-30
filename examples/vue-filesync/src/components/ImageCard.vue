@@ -9,15 +9,13 @@ import {
   updateFile,
 } from '@livestore-filesync/core'
 import { queryDb } from '@livestore/livestore'
-import { useStore, useQuery } from 'vue-livestore'
+import { useQuery } from 'vue-livestore'
 import type { FileType } from '../types'
 import { invertImageFile } from '../utils/image.utils'
 
 const props = defineProps<{
   file: FileType
 }>()
-
-const { store } = useStore()
 
 // Per-file query: only re-renders when THIS file's local state changes
 const localFileState = useQuery(queryDb(tables.localFileState.where({ fileId: props.file.id }).first()))
