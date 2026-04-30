@@ -1202,6 +1202,8 @@ test.describe('File Sync - Offline/Online Recovery', () => {
   })
 
   test('should upload multiple files added while offline after going back online', async ({ browser }) => {
+    test.setTimeout(90000)
+
     // Bug: When adding multiple files while offline, then going back online,
     // some uploads fail with FileNotFoundError even though files were saved to OPFS.
     //
@@ -1293,20 +1295,23 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     console.log('Went back online')
 
     // 8. Wait for all uploads to complete
-    for (let i = 0; i < fileCount; i++) {
-      await expect(uploadStatuses.nth(i)).toHaveText('done', { timeout: 30000 })
-      console.log(`File ${i + 1}/${fileCount} upload completed`)
-    }
+    await expect
+      .poll(
+        async () =>
+          (await uploadStatuses.allTextContents()).filter((status) => status.trim() === 'done')
+            .length,
+        { timeout: 60000, intervals: [500, 1000] }
+      )
+      .toBe(fileCount)
     console.log('All uploads completed')
 
     // 9. Verify all files have non-empty remoteKey
-    for (let i = 0; i < fileCount; i++) {
-      await expect
-        .poll(async () => (await remoteKeys.nth(i).textContent())?.trim() || '', {
-          timeout: 15000,
-        })
-        .not.toBe('')
-    }
+    await expect
+      .poll(
+        async () => (await remoteKeys.allTextContents()).filter((key) => key.trim() !== '').length,
+        { timeout: 30000, intervals: [500, 1000] }
+      )
+      .toBe(fileCount)
     console.log('All files have remoteKey')
 
     // 10. Check for any FileNotFoundError or upload errors

@@ -361,6 +361,7 @@ describe("FileSync", () => {
         { timeoutMs: 1500, message: "Expected initial bootstrap to populate local state" }
       )
 
+      await runtime.runPromise(fileSync.setOnline(false))
       commitSpy.mockClear()
 
       await runtime.runPromise(fileSync.syncNow())
@@ -893,9 +894,20 @@ describe("FileSync - Multi-file upload sync status", () => {
       expect(totalInAnyUploadState).toBe(3)
 
       // Wait for all uploads to complete
-      await delay(800)
-
-      const state2 = await runtime.runPromise(fileSync.getLocalFilesState())
+      const state2 = await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (value) => {
+          const status = getSyncStatus(value)
+          return status.uploadingCount === 0 &&
+            status.queuedUploadCount === 0 &&
+            !status.isSyncing &&
+            results.every((result) => value[result.fileId]?.uploadStatus === "done")
+        },
+        {
+          timeoutMs: 3000,
+          message: "Expected all uploads to complete"
+        }
+      )
       const status2 = getSyncStatus(state2)
 
       // All should be done
@@ -1031,9 +1043,21 @@ describe("FileSync - Multi-file upload sync status", () => {
       }
 
       // Wait for all to complete
-      await delay(600)
-
-      const finalState = await runtime.runPromise(fileSync.getLocalFilesState())
+      const finalState = await waitFor(
+        () => runtime.runPromise(fileSync.getLocalFilesState()),
+        (value) => {
+          const status = getSyncStatus(value)
+          return status.uploadingCount === 0 &&
+            status.queuedUploadCount === 0 &&
+            !status.isSyncing &&
+            !status.hasPending &&
+            results.every((result) => value[result.fileId]?.uploadStatus === "done")
+        },
+        {
+          timeoutMs: 3000,
+          message: "Expected all mixed upload states to complete"
+        }
+      )
       const finalStatus = getSyncStatus(finalState)
 
       expect(finalStatus.uploadingCount).toBe(0)

@@ -4,7 +4,7 @@ File sync for LiveStore apps. This missing piece for local-first apps that need 
 
 **[!]** This is still under active development and not yet fully tested or ready. Generally the sync functionality on web and desktop (electron) is in a functional state while the expo (mobile) and image packages are less mature.
 
-**[!]** This project targets LiveStore 0.4 which is in active development. We pin exact LiveStore npm snapshot versions in `pnpm-workspace.yaml` so local development, CI, published packages, and downstream apps can resolve the same built LiveStore package graph without relying on a local registry.
+**[!]** This project targets LiveStore 0.4 which is in active development. We pin exact LiveStore npm development release versions in `pnpm-workspace.yaml` so local development, CI, published packages, and downstream apps can resolve the same built LiveStore package graph without relying on a local registry.
 
 - **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
@@ -37,18 +37,17 @@ cd livestore-filesync
 pnpm install
 ```
 
-### LiveStore snapshots
+### LiveStore development release
 
-LiveStore publishes built npm snapshots for development commits. This repo uses exact snapshot versions instead of the moving `snapshot` dist-tag so installs are reproducible:
+LiveStore publishes built npm development releases for 0.4 while it is in active development. This repo uses exact release versions so installs are reproducible:
 
-- Runtime LiveStore packages use `0.0.0-snapshot-40be66583f2747be268e4905bd36027893ba4a26`
-- `@livestore/devtools-vite` uses `0.0.0-snapshot-86c8d65816a9de8b2599654155ffb80951627223.mltzt7p9`
+- LiveStore packages use `0.4.0-dev.23`
 
-Update the LiveStore catalog entries in `pnpm-workspace.yaml` and run `pnpm install` whenever you intentionally move to a newer snapshot.
+Update the LiveStore catalog entries in `pnpm-workspace.yaml` and run `pnpm install` whenever you intentionally move to a newer development release.
 
-Downstream apps must install the same LiveStore snapshot versions directly, through their own pnpm catalog, or through package-manager overrides. This repo also uses pnpm `overrides` to force transitive LiveStore dependencies from helper packages such as `vue-livestore` onto the same snapshot. `@livestore-filesync/core` and `@livestore-filesync/image` publish LiveStore as peer dependencies, so consumers remain responsible for resolving a compatible LiveStore version.
+Downstream apps must install the same LiveStore development release versions directly, through their own pnpm catalog, or through package-manager overrides. This repo also uses pnpm `overrides` to force transitive LiveStore dependencies from helper packages such as `vue-livestore` onto the same release. `@livestore-filesync/core` and `@livestore-filesync/image` publish LiveStore as peer dependencies, so consumers remain responsible for resolving a compatible LiveStore version.
 
-Install `@livestore/peer-deps` at the same runtime snapshot in downstream apps to keep Effect and OpenTelemetry peer versions aligned with the LiveStore snapshot.
+Install `@livestore/peer-deps` at the same runtime release in downstream apps to keep Effect and OpenTelemetry peer versions aligned with LiveStore.
 
 ## Install
 

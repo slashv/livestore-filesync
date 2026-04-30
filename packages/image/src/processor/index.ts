@@ -13,6 +13,7 @@
 // Import for factory function
 import { createCanvasProcessor } from "./canvas.js"
 import type { ImageProcessor, ImageProcessorType } from "./types.js"
+import type { VipsProcessorOptions } from "./vips.js"
 
 export type {
   BufferImageProcessor,
@@ -38,7 +39,7 @@ export interface CreateImageProcessorOptions {
   /**
    * Vips-specific options (only used when type is 'vips')
    */
-  vipsOptions?: import("./vips.js").VipsProcessorOptions
+  vipsOptions?: VipsProcessorOptions
 }
 
 /**

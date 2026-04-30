@@ -40,7 +40,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : framework === 'react' ? 2 : undefined,
+  // React examples use LiveStore SharedWorker heavily in multi-tab tests; run them
+  // serially to avoid cross-test timing interference in the shared browser process.
+  workers: process.env.CI ? 1 : framework === 'react' ? 1 : undefined,
   reporter: 'html',
 
   use: {

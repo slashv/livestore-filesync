@@ -26,31 +26,31 @@ catalog:
   '@effect/typeclass': 0.40.0
   '@effect/vitest': 0.29.0
   '@effect/workflow': 0.16.0
-  '@livestore/adapter-node': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/adapter-web': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/devtools-vite': 0.0.0-snapshot-86c8d65816a9de8b2599654155ffb80951627223.mltzt7p9
-  '@livestore/livestore': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/peer-deps': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/react': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/sync-cf': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/utils': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/wa-sqlite': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/adapter-node': 0.4.0-dev.23
+  '@livestore/adapter-web': 0.4.0-dev.23
+  '@livestore/devtools-vite': 0.4.0-dev.23
+  '@livestore/livestore': 0.4.0-dev.23
+  '@livestore/peer-deps': 0.4.0-dev.23
+  '@livestore/react': 0.4.0-dev.23
+  '@livestore/sync-cf': 0.4.0-dev.23
+  '@livestore/utils': 0.4.0-dev.23
+  '@livestore/wa-sqlite': 0.4.0-dev.23
   '@opentelemetry/api': 1.9.0
-  '@opentelemetry/context-zone': 2.2.0
-  '@opentelemetry/core': 2.2.0
-  '@opentelemetry/exporter-metrics-otlp-grpc': 0.208.0
-  '@opentelemetry/exporter-metrics-otlp-http': 0.208.0
-  '@opentelemetry/exporter-trace-otlp-grpc': 0.208.0
-  '@opentelemetry/exporter-trace-otlp-http': 0.208.0
-  '@opentelemetry/otlp-exporter-base': 0.208.0
-  '@opentelemetry/otlp-transformer': 0.208.0
-  '@opentelemetry/resources': 2.2.0
-  '@opentelemetry/sdk-logs': 0.208.0
-  '@opentelemetry/sdk-metrics': 2.2.0
-  '@opentelemetry/sdk-trace-base': 2.2.0
-  '@opentelemetry/sdk-trace-node': 2.2.0
-  '@opentelemetry/sdk-trace-web': 2.2.0
-  '@opentelemetry/semantic-conventions': 1.38.0
+  '@opentelemetry/context-zone': 2.7.1
+  '@opentelemetry/core': 2.7.1
+  '@opentelemetry/exporter-metrics-otlp-grpc': 0.216.0
+  '@opentelemetry/exporter-metrics-otlp-http': 0.216.0
+  '@opentelemetry/exporter-trace-otlp-grpc': 0.216.0
+  '@opentelemetry/exporter-trace-otlp-http': 0.216.0
+  '@opentelemetry/otlp-exporter-base': 0.216.0
+  '@opentelemetry/otlp-transformer': 0.216.0
+  '@opentelemetry/resources': 2.7.1
+  '@opentelemetry/sdk-logs': 0.216.0
+  '@opentelemetry/sdk-metrics': 2.7.1
+  '@opentelemetry/sdk-trace-base': 2.7.1
+  '@opentelemetry/sdk-trace-node': 2.7.1
+  '@opentelemetry/sdk-trace-web': 2.7.1
+  '@opentelemetry/semantic-conventions': 1.40.0
   '@playwright/test': 1.57.0
   '@tailwindcss/vite': 4.1.18
   '@types/bun': 1.2.21
@@ -68,7 +68,7 @@ catalog:
   solid-js: 1.9.9
   tailwindcss: 4.1.18
   typescript: 5.9.3
-  vite: 7.2.4
+  vite: 7.3.1
   vitest: 4.0.16
   wrangler: 4.42.2
 
@@ -89,29 +89,29 @@ overrides:
   '@effect/typeclass': 0.40.0
   '@effect/vitest': 0.29.0
   '@effect/workflow': 0.16.0
-  '@livestore/adapter-node': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/adapter-web': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/devtools-vite': 0.0.0-snapshot-86c8d65816a9de8b2599654155ffb80951627223.mltzt7p9
-  '@livestore/livestore': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/peer-deps': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/react': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/sync-cf': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/utils': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
-  '@livestore/wa-sqlite': 0.0.0-snapshot-549365e30f111abfab18a2c404c24d8407d230de
+  '@livestore/adapter-node': 0.4.0-dev.23
+  '@livestore/adapter-web': 0.4.0-dev.23
+  '@livestore/devtools-vite': 0.4.0-dev.23
+  '@livestore/livestore': 0.4.0-dev.23
+  '@livestore/peer-deps': 0.4.0-dev.23
+  '@livestore/react': 0.4.0-dev.23
+  '@livestore/sync-cf': 0.4.0-dev.23
+  '@livestore/utils': 0.4.0-dev.23
+  '@livestore/wa-sqlite': 0.4.0-dev.23
   '@opentelemetry/api': 1.9.0
-  '@opentelemetry/context-zone': 2.2.0
-  '@opentelemetry/core': 2.2.0
-  '@opentelemetry/exporter-metrics-otlp-grpc': 0.208.0
-  '@opentelemetry/exporter-metrics-otlp-http': 0.208.0
-  '@opentelemetry/exporter-trace-otlp-grpc': 0.208.0
-  '@opentelemetry/exporter-trace-otlp-http': 0.208.0
-  '@opentelemetry/otlp-exporter-base': 0.208.0
-  '@opentelemetry/otlp-transformer': 0.208.0
-  '@opentelemetry/resources': 2.2.0
-  '@opentelemetry/sdk-logs': 0.208.0
-  '@opentelemetry/sdk-metrics': 2.2.0
-  '@opentelemetry/sdk-trace-base': 2.2.0
-  '@opentelemetry/sdk-trace-node': 2.2.0
-  '@opentelemetry/sdk-trace-web': 2.2.0
-  '@opentelemetry/semantic-conventions': 1.38.0
+  '@opentelemetry/context-zone': 2.7.1
+  '@opentelemetry/core': 2.7.1
+  '@opentelemetry/exporter-metrics-otlp-grpc': 0.216.0
+  '@opentelemetry/exporter-metrics-otlp-http': 0.216.0
+  '@opentelemetry/exporter-trace-otlp-grpc': 0.216.0
+  '@opentelemetry/exporter-trace-otlp-http': 0.216.0
+  '@opentelemetry/otlp-exporter-base': 0.216.0
+  '@opentelemetry/otlp-transformer': 0.216.0
+  '@opentelemetry/resources': 2.7.1
+  '@opentelemetry/sdk-logs': 0.216.0
+  '@opentelemetry/sdk-metrics': 2.7.1
+  '@opentelemetry/sdk-trace-base': 2.7.1
+  '@opentelemetry/sdk-trace-node': 2.7.1
+  '@opentelemetry/sdk-trace-web': 2.7.1
+  '@opentelemetry/semantic-conventions': 1.40.0
   effect: 3.21.2
