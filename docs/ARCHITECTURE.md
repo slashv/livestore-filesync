@@ -892,10 +892,10 @@ image resizing.
    `thumbnailConfig` tables via client-only events. This persists across page refreshes, syncs
    across local tabs, and avoids Schema.Record rebase conflicts.
 
-5. **Batched scan writes**: On startup and periodic scans, `ThumbnailService` collects per-file
-   `thumbnailStateUpsert` changes in memory, commits them in a single transaction, then enqueues
-   generation work. This reduces sync queue churn and avoids stale queued-state writes racing with
-   generation updates.
+5. **Batched scan writes**: On startup and periodic scans, `ThumbnailService` reads existing
+   `thumbnailState` rows for skip decisions, collects only changed per-file `thumbnailStateUpsert`
+   writes in memory, commits them in a single transaction, then enqueues generation work. This
+   reduces sync queue churn and avoids stale queued-state writes racing with generation updates.
 
 ### Services
 

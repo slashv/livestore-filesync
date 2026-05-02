@@ -21,10 +21,15 @@ vi.mock("@livestore/livestore", async (importOriginal) => {
 
 const makeService = async ({
   concurrency = 1,
+  fileSystem,
   filesTable,
   store
 }: {
   concurrency?: number
+  fileSystem?: {
+    exists: (path: string) => Effect.Effect<boolean>
+    readFile: (path: string) => Effect.Effect<Uint8Array | null>
+  }
   filesTable: { select: () => unknown; where: (conditions: unknown) => unknown }
   store: { commit: (...events: Array<unknown>) => void; query: (query: unknown) => unknown }
 }) => {
@@ -47,8 +52,8 @@ const makeService = async ({
   } as any)
 
   const fileSystemLayer = Layer.succeed(FileSystem, {
-    exists: () => Effect.succeed(false),
-    readFile: () => Effect.succeed(new Uint8Array())
+    exists: fileSystem?.exists ?? (() => Effect.succeed(false)),
+    readFile: fileSystem?.readFile ?? (() => Effect.succeed(new Uint8Array()))
   } as any)
 
   return Effect.runPromise(
@@ -201,5 +206,93 @@ describe("ThumbnailService query behavior", () => {
     expect(store.query).toHaveBeenCalledWith(selectQuery)
 
     await Effect.runPromise(service.stop())
+  })
+
+  it("does not re-emit thumbnail state upserts on repeated unchanged scans", async () => {
+    queryDbMock.mockClear()
+
+    const selectQuery = { kind: "files.select" }
+    const filesTable = {
+      select: vi.fn(() => selectQuery),
+      where: vi.fn()
+    }
+
+    const files = [
+      {
+        contentHash: "hash-1",
+        deletedAt: null,
+        id: "file-1",
+        path: "image-1.jpg",
+        remoteKey: "remote-1"
+      },
+      {
+        contentHash: "hash-2",
+        deletedAt: null,
+        id: "file-2",
+        path: "document.bin",
+        remoteKey: "remote-2"
+      }
+    ]
+
+    const queuedStateRow = {
+      contentHash: "hash-1",
+      fileId: "file-1",
+      mimeType: "image/jpeg",
+      sizesJson: JSON.stringify({ small: { status: "queued" } })
+    }
+    const skippedStateRow = {
+      contentHash: "hash-2",
+      fileId: "file-2",
+      mimeType: "unknown",
+      sizesJson: JSON.stringify({ small: { status: "skipped" } })
+    }
+
+    const store = {
+      commit: vi.fn(),
+      query: vi
+        .fn<(query: unknown) => unknown>()
+        // First start: readConfig()
+        .mockReturnValueOnce([])
+        // First start: scanExistingFiles() -> files table
+        .mockReturnValueOnce(files)
+        // First start: queueFile() -> readFileThumbnailState(file-1)
+        .mockReturnValueOnce([])
+        // First start: queueFile() -> readFileThumbnailState(file-2)
+        .mockReturnValueOnce([])
+        // Second start: readConfig()
+        .mockReturnValueOnce([])
+        // Second start: scanExistingFiles() -> files table
+        .mockReturnValueOnce(files)
+        // Second start: queueFile() -> readFileThumbnailState(file-1)
+        .mockReturnValueOnce([queuedStateRow])
+        // Second start: queueFile() -> readFileThumbnailState(file-2)
+        .mockReturnValueOnce([skippedStateRow])
+    }
+
+    const service = await makeService({
+      concurrency: 0,
+      fileSystem: {
+        exists: () => Effect.succeed(true),
+        readFile: () => Effect.succeed(new Uint8Array(12))
+      },
+      filesTable,
+      store
+    })
+
+    await Effect.runPromise(service.start())
+    await Effect.runPromise(service.stop())
+    await Effect.runPromise(service.start())
+    await Effect.runPromise(service.stop())
+
+    const thumbnailUpsertCommitCalls = store.commit.mock.calls.filter((commitArgs) =>
+      commitArgs.length > 0 &&
+      commitArgs.every((event) => getEventName(event) === "v1.ThumbnailStateUpsert")
+    )
+    expect(thumbnailUpsertCommitCalls).toHaveLength(1)
+    expect(thumbnailUpsertCommitCalls[0]).toHaveLength(files.length)
+
+    const committedEvents = thumbnailUpsertCommitCalls[0] as Array<{ args: { fileId: string; sizesJson: string } }>
+    expect(committedEvents.map((event) => event.args.fileId)).toEqual(["file-1", "file-2"])
+    expect(JSON.parse(committedEvents[1]!.args.sizesJson)).toEqual({ small: { status: "skipped" } })
   })
 })

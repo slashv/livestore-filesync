@@ -1,6 +1,6 @@
 {
   "name": "e2e-tests",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "type": "module",
   "private": true,
   "description": "Framework-agnostic E2E tests for livestore-filesync",

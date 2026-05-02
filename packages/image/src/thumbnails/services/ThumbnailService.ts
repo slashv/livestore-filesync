@@ -151,8 +151,9 @@ interface GenerationQueueItem {
 }
 
 interface ScanAccumulator {
+  knownStatesByFileId: Map<string, FileThumbnailState>
   knownMissingFileIds: Set<string>
-  pendingStatesByFileId: Map<string, FileThumbnailState>
+  dirtyStatesByFileId: Map<string, FileThumbnailState>
   deferredGenerationQueueItems: Array<GenerationQueueItem>
 }
 
@@ -247,6 +248,35 @@ const getMimeTypeFromBytes = (data: ArrayBuffer): string | null => {
   }
 
   return null
+}
+
+const stableJsonStringify = (value: unknown): string => JSON.stringify(sortJsonValue(value))
+
+const sortJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortJsonValue)
+
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>
+    const sorted: Record<string, unknown> = {}
+    for (const key of Object.keys(record).sort()) {
+      sorted[key] = sortJsonValue(record[key])
+    }
+    return sorted
+  }
+
+  return value
+}
+
+const areFileThumbnailStatesEqual = (
+  left: FileThumbnailState | undefined,
+  right: FileThumbnailState | undefined
+): boolean => {
+  if (left === undefined || right === undefined) return left === right
+
+  return left.fileId === right.fileId &&
+    left.contentHash === right.contentHash &&
+    left.mimeType === right.mimeType &&
+    stableJsonStringify(left.sizes) === stableJsonStringify(right.sizes)
 }
 
 /**
@@ -390,6 +420,27 @@ export const makeThumbnailService = (
       store.commit(events.thumbnailStateRemove({ fileId }))
     }
 
+    const getFileThumbnailStateForScan = (
+      fileId: string,
+      scanAccumulator: ScanAccumulator
+    ): FileThumbnailState | undefined => {
+      if (scanAccumulator.knownStatesByFileId.has(fileId)) {
+        return scanAccumulator.knownStatesByFileId.get(fileId)
+      }
+
+      if (scanAccumulator.knownMissingFileIds.has(fileId)) {
+        return undefined
+      }
+
+      const state = readFileThumbnailState(fileId)
+      if (state) {
+        scanAccumulator.knownStatesByFileId.set(fileId, state)
+      } else {
+        scanAccumulator.knownMissingFileIds.add(fileId)
+      }
+      return state
+    }
+
     /**
      * Helper to update a single file's thumbnail state
      */
@@ -399,11 +450,7 @@ export const makeThumbnailService = (
       scanAccumulator?: ScanAccumulator
     ): void => {
       const currentState = scanAccumulator
-        ? scanAccumulator.pendingStatesByFileId.has(fileId)
-          ? scanAccumulator.pendingStatesByFileId.get(fileId)
-          : scanAccumulator.knownMissingFileIds.has(fileId)
-          ? undefined
-          : readFileThumbnailState(fileId)
+        ? getFileThumbnailStateForScan(fileId, scanAccumulator)
         : readFileThumbnailState(fileId)
       const newState = updater(currentState)
 
@@ -411,7 +458,8 @@ export const makeThumbnailService = (
         // Remove the file state
         if (currentState !== undefined) {
           if (scanAccumulator) {
-            scanAccumulator.pendingStatesByFileId.delete(fileId)
+            scanAccumulator.knownStatesByFileId.delete(fileId)
+            scanAccumulator.dirtyStatesByFileId.delete(fileId)
             scanAccumulator.knownMissingFileIds.add(fileId)
           } else {
             commitRemoveFileThumbnailState(fileId)
@@ -420,8 +468,11 @@ export const makeThumbnailService = (
       } else {
         // Upsert the file state
         if (scanAccumulator) {
-          scanAccumulator.pendingStatesByFileId.set(fileId, newState)
+          scanAccumulator.knownStatesByFileId.set(fileId, newState)
           scanAccumulator.knownMissingFileIds.delete(fileId)
+          if (!areFileThumbnailStatesEqual(currentState, newState)) {
+            scanAccumulator.dirtyStatesByFileId.set(fileId, newState)
+          }
         } else {
           commitFileThumbnailState(newState)
         }
@@ -641,15 +692,9 @@ export const makeThumbnailService = (
     const queueFile = (file: FileRecord, scanAccumulator?: ScanAccumulator): Effect.Effect<void> =>
       Effect.gen(function*() {
         // Check if thumbnails already exist with matching content hash
-        const existingState = scanAccumulator?.pendingStatesByFileId.get(file.id) ?? readFileThumbnailState(file.id)
-        if (scanAccumulator) {
-          if (existingState) {
-            scanAccumulator.pendingStatesByFileId.set(file.id, existingState)
-            scanAccumulator.knownMissingFileIds.delete(file.id)
-          } else {
-            scanAccumulator.knownMissingFileIds.add(file.id)
-          }
-        }
+        const existingState = scanAccumulator
+          ? getFileThumbnailStateForScan(file.id, scanAccumulator)
+          : readFileThumbnailState(file.id)
         if (existingState && existingState.contentHash === file.contentHash) {
           // Check if all sizes are in a final or in-progress state
           // Skip if already queued/generating/done/skipped (don't re-queue)
@@ -754,8 +799,9 @@ export const makeThumbnailService = (
             queryDb(config.filesTable.select())
           )
           const scanAccumulator: ScanAccumulator = {
+            knownStatesByFileId: new Map(),
             knownMissingFileIds: new Set(),
-            pendingStatesByFileId: new Map(),
+            dirtyStatesByFileId: new Map(),
             deferredGenerationQueueItems: []
           }
 
@@ -766,7 +812,7 @@ export const makeThumbnailService = (
 
           // Commit all state changes first, then enqueue generation work.
           // This avoids stale queued state writes racing with generation updates.
-          commitBatchThumbnailState([...scanAccumulator.pendingStatesByFileId.values()])
+          commitBatchThumbnailState([...scanAccumulator.dirtyStatesByFileId.values()])
 
           for (const item of scanAccumulator.deferredGenerationQueueItems) {
             yield* Queue.offer(generationQueue, item)
