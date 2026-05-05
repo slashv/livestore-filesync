@@ -1,4 +1,4 @@
-import { deleteFile, getFileDisplayState, readFile, updateFile } from "@livestore-filesync/core"
+import { deleteFile, getFileDisplayState, getFileMetadata, readFile, updateFile } from "@livestore-filesync/core"
 import { parseThumbnailSizes } from "@livestore-filesync/image/thumbnails"
 import { queryDb } from "@livestore/livestore"
 import { useStore } from "@livestore/react"
@@ -17,6 +17,10 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   )
   const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, localState: localFile } = displayState
+  const metadata = getFileMetadata(file)
+  const imageAspectRatio = metadata?.image
+    ? `${metadata.image.width} / ${metadata.image.height}`
+    : undefined
 
   // Per-file thumbnail query
   const thumbRow = store.useQuery(
@@ -46,7 +50,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
 
   return (
     <div className="card" data-testid="file-card">
-      <div className="image-container">
+      <div className="image-container" style={{ aspectRatio: imageAspectRatio }}>
         <FileSyncImage
           fileId={file.id}
           fillMode="cover"
@@ -100,6 +104,12 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
             <tr>
               <td className="label">File: Hash</td>
               <td>{file.contentHash}</td>
+            </tr>
+            <tr>
+              <td className="label">File: Metadata</td>
+              <td data-testid="file-metadata">
+                {metadata?.image ? `${metadata.image.width}x${metadata.image.height}` : "None"}
+              </td>
             </tr>
             <tr>
               <td className="label">Local File: Upload</td>

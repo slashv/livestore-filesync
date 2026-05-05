@@ -106,10 +106,9 @@ const url = await resolveFileUrl(result.fileId)
 
 See `examples/` for complete implementations:
 - `examples/react-filesync` — React example
-- `examples/vue-filesync` — Vue example
-- `examples/vue-thumbnail` — Vue example with image thumbnail generation (wasm-vips)
 - `examples/react-thumbnail` — React example with image thumbnails using the canvas processor (no WASM)
 - `examples/node-filesync` — Node.js usage
+- `examples/vue-filesync` and `examples/vue-thumbnail` — historical Vue examples; these are not actively maintained
 
 **Note on examples**: I've been using examples to test out the implementation on different platforms and frameworks. The examples are also used to run the e2e tests against which makes them more complicated than they need to be for testing and debugging purposes. As the project matures the examples will probably migrate towards a few simpler examples and the e2e testing targets into seperate apps.
 
@@ -288,6 +287,15 @@ const preprocessors: PreprocessorMap = {
     // Your transformation logic
     return transformedFile
   },
+  // Or return metadata with the final file
+  'image/webp': async (file) => ({
+    file,
+    metadata: {
+      mimeType: file.type,
+      sizeBytes: file.size,
+      image: { width: 1200, height: 800 }
+    }
+  }),
   // Or specific types
   'image/png': async (file) => convertPngToJpeg(file)
 }
@@ -307,6 +315,27 @@ Preprocessor patterns support:
 - **Universal wildcard**: `'*'` or `'*/*'` matches any file
 
 Priority order: exact match > wildcard subtype > universal wildcard.
+
+### File Metadata
+
+Preprocessors can return `{ file, metadata }` to persist metadata on the synced `files` row. Metadata is stored with the current `contentHash`, so `updateFile()` replaces it when file content changes.
+
+```typescript
+import { getFileMetadata } from '@livestore-filesync/core'
+
+const metadata = getFileMetadata(fileRecord)
+const ratio = metadata?.image
+  ? `${metadata.image.width} / ${metadata.image.height}`
+  : undefined
+```
+
+Supported metadata fields are:
+- `mimeType?: string`
+- `sizeBytes?: number`
+- `image?: { width: number; height: number }`
+- `custom?: Record<string, unknown>`
+
+Existing preprocessors that return only `File` continue to work. Existing rows without metadata read as `null` through `getFileMetadata()`.
 
 ### Image Preprocessing Package
 
@@ -333,6 +362,8 @@ initFileSync(store, {
   }
 })
 ```
+
+Image preprocessors return metadata for the final output image, including MIME type, byte size, and pixel dimensions. When an image is already in the target format and is returned unchanged, dimensions are still extracted once so UIs can reserve layout before `resolveFileUrl()` returns.
 
 **Lightweight Canvas Alternative:** If you don't need the full power of wasm-vips (ICC profile preservation, lossless compression), you can use the canvas-based processor:
 
@@ -399,7 +430,7 @@ const dispose = initThumbnails(store, {
 const url = await resolveThumbnailUrl(fileId, 'small')
 ```
 
-See `examples/vue-thumbnail` (wasm-vips) and `examples/react-thumbnail` (canvas processor) for complete implementations.
+See `examples/react-thumbnail` for the maintained thumbnail example. Vue thumbnail examples are historical and are not actively maintained.
 
 ## Requirements
 

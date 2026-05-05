@@ -113,6 +113,8 @@ initFileSync(store, {
 })
 ```
 
+Image preprocessors return metadata for the final stored file. FileSync persists this on the synced `files` row so apps can read `getFileMetadata(fileRecord)?.image` and reserve the correct image aspect ratio before a file or thumbnail URL resolves.
+
 ### Preprocessor API
 
 #### `createImagePreprocessor(options?)`

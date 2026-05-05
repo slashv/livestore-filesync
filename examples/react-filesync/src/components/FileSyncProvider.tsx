@@ -1,4 +1,5 @@
 import { initFileSync, triggerSync } from "@livestore-filesync/core"
+import { createImagePreprocessor } from "@livestore-filesync/image/preprocessor"
 import { layer as opfsLayer } from "@livestore-filesync/opfs"
 import { type ReactNode, Suspense, useEffect, useState } from "react"
 import { useAppStore } from "../livestore/store.ts"
@@ -32,7 +33,17 @@ const FileSyncProviderInner = ({
         ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
         ...(authToken ? { authToken } : {})
       },
-      ...(healthCheckIntervalMs !== undefined ? { options: { healthCheckIntervalMs } } : {})
+      options: {
+        ...(healthCheckIntervalMs !== undefined ? { healthCheckIntervalMs } : {}),
+        preprocessors: {
+          "image/*": createImagePreprocessor({
+            processor: "canvas",
+            maxDimension: 1500,
+            quality: 90,
+            format: "jpeg"
+          })
+        }
+      }
     })
 
     // Mark as ready on next tick to ensure initFileSync has fully completed

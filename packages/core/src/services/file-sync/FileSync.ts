@@ -33,6 +33,7 @@ import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
 import type {
   FileCreatedPayload,
   FileDeletedPayload,
+  FileMetadata,
   FileOperationResult,
   FileRecord,
   FileSyncEvent,
@@ -44,7 +45,7 @@ import type {
   PreprocessorMap,
   TransferStatus
 } from "../../types/index.js"
-import { applyPreprocessor, makeStoredPath } from "../../utils/index.js"
+import { applyPreprocessorWithMetadata, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
 import { Hash } from "../hash/index.js"
 import { LocalFileStateManager } from "../local-file-state/index.js"
@@ -286,6 +287,29 @@ export const makeFileSync = (
     // Local wrapper for hashFile that uses the captured hash service
     const doHashFile = (file: File) => hashService.hashFile(file)
 
+    const serializeFileMetadata = (
+      file: File,
+      metadata: FileMetadata | undefined
+    ): Effect.Effect<string | null, StorageError> =>
+      Effect.try({
+        try: () => {
+          if (!metadata) return null
+          const normalized: FileMetadata = {
+            ...metadata,
+            ...(metadata.mimeType === undefined && file.type ? { mimeType: file.type } : {}),
+            ...(metadata.sizeBytes === undefined ? { sizeBytes: file.size } : {})
+          }
+          return JSON.stringify(normalized)
+        },
+        catch: (error) =>
+          new StorageError({
+            message: `Failed to serialize metadata for ${file.name}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            cause: error
+          })
+      })
+
     // Get client session for leader election
     const clientSession = getClientSession(store)
 
@@ -356,12 +380,13 @@ export const makeFileSync = (
             path: file.path,
             remoteKey,
             contentHash: file.contentHash,
+            metadataJson: file.metadataJson,
             updatedAt: new Date()
           })
         )
       })
 
-    const createFileRecord = (params: { id: string; path: string; contentHash: string }) =>
+    const createFileRecord = (params: { id: string; path: string; contentHash: string; metadataJson: string | null }) =>
       Effect.sync(() => {
         console.log("createFileRecord file ID:", params.id)
         store.commit(
@@ -369,6 +394,7 @@ export const makeFileSync = (
             id: params.id,
             path: params.path,
             contentHash: params.contentHash,
+            metadataJson: params.metadataJson,
             createdAt: new Date(),
             updatedAt: new Date()
           })
@@ -379,6 +405,7 @@ export const makeFileSync = (
       id: string
       path: string
       contentHash: string
+      metadataJson: string | null
       remoteKey?: string
     }) =>
       Effect.gen(function*() {
@@ -390,6 +417,7 @@ export const makeFileSync = (
             path: params.path,
             remoteKey: params.remoteKey ?? file.remoteKey,
             contentHash: params.contentHash,
+            metadataJson: params.metadataJson,
             updatedAt: new Date()
           })
         )
@@ -1591,21 +1619,23 @@ export const makeFileSync = (
         // Apply preprocessor if configured for this file type
         // Use tryPromise so rejected/throwing preprocessors produce a caught error
         // instead of a defect that crashes the fiber
-        const processedFile = yield* Effect.tryPromise({
-          try: () => applyPreprocessor(config.preprocessors, file),
+        const processed = yield* Effect.tryPromise({
+          try: () => applyPreprocessorWithMetadata(config.preprocessors, file),
           catch: (err) =>
             new StorageError({
               message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
               cause: err
             })
         })
+        const processedFile = processed.file
+        const metadataJson = yield* serializeFileMetadata(processedFile, processed.metadata)
 
         const id = crypto.randomUUID()
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
         yield* localStorage.writeFile(path, processedFile)
-        yield* createFileRecord({ id, path, contentHash })
+        yield* createFileRecord({ id, path, contentHash, metadataJson })
         yield* markLocalFileChanged(id, path, contentHash)
 
         return { fileId: id, path, contentHash }
@@ -1622,21 +1652,23 @@ export const makeFileSync = (
         }
 
         // Apply preprocessor if configured for this file type
-        const processedFile = yield* Effect.tryPromise({
-          try: () => applyPreprocessor(config.preprocessors, file),
+        const processed = yield* Effect.tryPromise({
+          try: () => applyPreprocessorWithMetadata(config.preprocessors, file),
           catch: (err) =>
             new StorageError({
               message: `Preprocessor failed for ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
               cause: err
             })
         })
+        const processedFile = processed.file
+        const metadataJson = yield* serializeFileMetadata(processedFile, processed.metadata)
 
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
         if (contentHash !== existingFile.contentHash) {
           yield* localStorage.writeFile(path, processedFile)
-          yield* updateFileRecord({ id: fileId, path, contentHash, remoteKey: "" })
+          yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
 
           if (path !== existingFile.path) {
             yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))

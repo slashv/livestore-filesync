@@ -4,7 +4,12 @@
  * @module
  */
 
-import type { FilePreprocessor, PreprocessorMap } from "../types/index.js"
+import type {
+  AppliedPreprocessorResult,
+  FilePreprocessor,
+  FilePreprocessorResult,
+  PreprocessorMap
+} from "../types/index.js"
 
 /**
  * Match a MIME type against a pattern with wildcard support.
@@ -144,14 +149,41 @@ export async function applyPreprocessor(
   preprocessors: PreprocessorMap | undefined,
   file: File
 ): Promise<File> {
+  const result = await applyPreprocessorWithMetadata(preprocessors, file)
+  return result.file
+}
+
+/**
+ * Normalize a file preprocessor result into an object shape.
+ */
+export function normalizePreprocessorResult(result: FilePreprocessorResult): AppliedPreprocessorResult {
+  if (result && typeof result === "object" && "file" in result) {
+    return {
+      file: result.file,
+      ...(result.metadata !== undefined ? { metadata: result.metadata } : {})
+    }
+  }
+
+  return { file: result }
+}
+
+/**
+ * Apply the appropriate preprocessor and preserve any metadata it returns.
+ *
+ * If no matching preprocessor is found, the original file is returned without metadata.
+ */
+export async function applyPreprocessorWithMetadata(
+  preprocessors: PreprocessorMap | undefined,
+  file: File
+): Promise<AppliedPreprocessorResult> {
   if (!preprocessors || Object.keys(preprocessors).length === 0) {
-    return file
+    return { file }
   }
 
   const preprocessor = findPreprocessor(preprocessors, file.type)
   if (!preprocessor) {
-    return file
+    return { file }
   }
 
-  return preprocessor(file)
+  return normalizePreprocessorResult(await preprocessor(file))
 }

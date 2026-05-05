@@ -82,7 +82,8 @@ body {
 
 .image-container {
   position: relative;
-  min-height: 200px;
+  aspect-ratio: 1 / 1;
+  min-height: 120px;
   background: #eee;
   border-right: 1px solid #ccc;
   align-self: stretch;
@@ -99,11 +100,33 @@ body {
 .image-placeholder {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #666;
-  font-size: 0.875rem;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent),
+    #eee;
+  background-size: 220% 100%;
+  animation: placeholder-shimmer 1.4s ease-in-out infinite;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes placeholder-shimmer {
+  from {
+    background-position: 220% 0;
+  }
+
+  to {
+    background-position: -220% 0;
+  }
 }
 
 .thumbnail-badge {

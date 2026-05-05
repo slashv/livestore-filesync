@@ -34,6 +34,11 @@ if (!config) {
   throw new Error(`Unknown framework: ${framework}. Use 'vue', 'react', 'thumbnail', 'vue-thumbnail', or 'react-thumbnail'.`)
 }
 
+const port = process.env.E2E_PORT ? Number(process.env.E2E_PORT) : config.port
+if (!Number.isInteger(port) || port <= 0) {
+  throw new Error(`Invalid E2E_PORT: ${process.env.E2E_PORT}`)
+}
+
 export default defineConfig({
   testDir: './tests',
   testMatch: config.testMatch,
@@ -46,7 +51,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: `http://localhost:${config.port}`,
+    baseURL: `http://localhost:${port}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -66,8 +71,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'pnpm run dev',
-    url: `http://localhost:${config.port}`,
+    command: `PORT=${port} pnpm run dev`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === 'true',
     cwd: config.cwd,
     timeout: 120000,

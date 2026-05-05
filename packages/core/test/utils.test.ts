@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Hash } from "../src/services/hash/HashService.js"
 import { HashServiceLive } from "../src/services/hash/index.js"
+import { getFileMetadata, parseFileMetadata } from "../src/types/index.js"
 import {
   extractHashFromPath,
   FILES_DIRECTORY,
@@ -82,6 +83,45 @@ describe("path utilities", () => {
     it("should build a store-scoped root path", () => {
       expect(makeStoreRoot("store/one")).toBe(`${FILES_DIRECTORY}/store_one`)
     })
+  })
+})
+
+describe("file metadata utilities", () => {
+  it("parses valid metadata JSON", () => {
+    const metadata = parseFileMetadata(JSON.stringify({
+      mimeType: "image/png",
+      sizeBytes: 123,
+      image: { width: 10, height: 20 },
+      custom: { source: "test" }
+    }))
+
+    expect(metadata).toEqual({
+      mimeType: "image/png",
+      sizeBytes: 123,
+      image: { width: 10, height: 20 },
+      custom: { source: "test" }
+    })
+  })
+
+  it("returns null for missing or malformed metadata JSON", () => {
+    expect(parseFileMetadata(null)).toBeNull()
+    expect(parseFileMetadata("")).toBeNull()
+    expect(parseFileMetadata("not-json")).toBeNull()
+  })
+
+  it("reads metadata from file records", () => {
+    const metadata = getFileMetadata({
+      id: "file-1",
+      path: "path",
+      remoteKey: "",
+      contentHash: "hash",
+      metadataJson: JSON.stringify({ sizeBytes: 7 }),
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      deletedAt: null
+    })
+
+    expect(metadata).toEqual({ sizeBytes: 7 })
   })
 })
 

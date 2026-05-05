@@ -1,4 +1,11 @@
-import { deleteFile, getFileDisplayState, readFile, resolveFileUrl, updateFile } from "@livestore-filesync/core"
+import {
+  deleteFile,
+  getFileDisplayState,
+  getFileMetadata,
+  readFile,
+  resolveFileUrl,
+  updateFile
+} from "@livestore-filesync/core"
 import { queryDb } from "@livestore/livestore"
 import React, { useEffect, useState } from "react"
 import { tables } from "../livestore/schema.ts"
@@ -14,15 +21,36 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
   )
   const displayState = getFileDisplayState(file, localFileState ?? undefined)
   const { canDisplay, isUploading, localState: localFile } = displayState
+  const metadata = getFileMetadata(file)
+  const imageAspectRatio = metadata?.image
+    ? `${metadata.image.width} / ${metadata.image.height}`
+    : undefined
 
   const [src, setSrc] = useState<string | null>(null)
 
   // Resolve file URL on mount and when file updates
   useEffect(() => {
-    resolveFileUrl(file.id).then((url) => {
-      if (url) setSrc(url)
-    })
-  }, [file.id, file.updatedAt])
+    let cancelled = false
+
+    resolveFileUrl(file.id)
+      .then((url) => {
+        if (!cancelled) setSrc(url)
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    file.id,
+    file.updatedAt,
+    file.remoteKey,
+    localFile?.downloadStatus,
+    localFile?.localHash,
+    localFile?.uploadStatus
+  ])
 
   const handleDelete = async () => {
     try {
@@ -44,7 +72,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
 
   return (
     <div className="card" data-testid="file-card">
-      <div className="image-container">
+      <div className="image-container" style={{ aspectRatio: imageAspectRatio }}>
         {canDisplay && src ?
           (
             <img
@@ -56,7 +84,7 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
           ) :
           (
             <div className="image-placeholder" data-testid="file-placeholder">
-              {isUploading ? "Uploading..." : "Waiting for file..."}
+              <span className="sr-only">{isUploading ? "Uploading image" : "Image pending"}</span>
             </div>
           )}
       </div>
@@ -99,6 +127,12 @@ export const ImageCard: React.FC<{ file: FileType }> = ({ file }) => {
             <tr>
               <td className="label">File: Hash</td>
               <td>{file.contentHash}</td>
+            </tr>
+            <tr>
+              <td className="label">File: Metadata</td>
+              <td data-testid="file-metadata">
+                {metadata?.image ? `${metadata.image.width}x${metadata.image.height}` : "None"}
+              </td>
             </tr>
             <tr>
               <td className="label">File: Updated At</td>

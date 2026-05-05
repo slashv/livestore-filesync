@@ -203,6 +203,9 @@ importers:
       '@livestore-filesync/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@livestore-filesync/image':
+        specifier: workspace:*
+        version: link:../../packages/image
       '@livestore-filesync/opfs':
         specifier: workspace:*
         version: link:../../packages/opfs
@@ -369,7 +372,7 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.19.0
-        version: 1.22.1(vite@7.3.1(@types/node@25.0.3)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(workerd@1.20260128.0)(wrangler@4.61.1(@cloudflare/workers-types@4.20260129.0))
+        version: 1.22.1(vite@7.3.1(@types/node@25.0.3)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(workerd@1.20260415.1)(wrangler@4.61.1(@cloudflare/workers-types@4.20260129.0))
       '@cloudflare/workers-types':
         specifier: ^4.20251118.0
         version: 4.20260129.0
@@ -439,7 +442,7 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.19.0
-        version: 1.22.1(vite@7.3.1(@types/node@25.0.3)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(workerd@1.20260415.1)(wrangler@4.61.1(@cloudflare/workers-types@4.20260129.0))
+        version: 1.22.1(vite@7.3.1(@types/node@25.0.3)(lightningcss@1.32.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))(workerd@1.20260128.0)(wrangler@4.61.1(@cloudflare/workers-types@4.20260129.0))
       '@cloudflare/workers-types':
         specifier: ^4.20251118.0
         version: 4.20260129.0

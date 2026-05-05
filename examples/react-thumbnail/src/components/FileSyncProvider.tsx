@@ -1,4 +1,5 @@
 import { initFileSync } from "@livestore-filesync/core"
+import { createImagePreprocessor } from "@livestore-filesync/image/preprocessor"
 import { initThumbnails, type ThumbnailFormat, type ThumbnailSizes } from "@livestore-filesync/image/thumbnails"
 import { layer as opfsLayer } from "@livestore-filesync/opfs"
 import { useStore } from "@livestore/react"
@@ -39,6 +40,16 @@ const FileSyncProviderInner = ({
         signerBaseUrl,
         ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
         ...(authToken ? { authToken } : {})
+      },
+      options: {
+        preprocessors: {
+          "image/*": createImagePreprocessor({
+            processor: "canvas",
+            maxDimension: 1500,
+            quality: 90,
+            format: "jpeg"
+          })
+        }
       }
     })
 

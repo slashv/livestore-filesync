@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { createCanvasImagePreprocessor } from "./canvas-preprocessor.js"
 import {
   createImagePreprocessor,
   createResizeOnlyPreprocessor,
@@ -18,6 +19,79 @@ import {
  * packages/core/src/utils/mime.test.ts > "applyPreprocessor - skip behavior patterns"
  * packages/core/src/services/file-sync/FileSync.storage.test.ts > "FileSync - Preprocessor integration"
  */
+
+const withMockImageBitmap = async <T>(
+  dimensions: { width: number; height: number },
+  fn: () => Promise<T>
+): Promise<T> => {
+  const previous = globalThis.createImageBitmap
+  globalThis.createImageBitmap = (async () => ({
+    width: dimensions.width,
+    height: dimensions.height,
+    close: () => {}
+  })) as typeof createImageBitmap
+  try {
+    return await fn()
+  } finally {
+    globalThis.createImageBitmap = previous
+  }
+}
+
+const withRejectingImageBitmap = async <T>(fn: () => Promise<T>): Promise<T> => {
+  const previous = globalThis.createImageBitmap
+  globalThis.createImageBitmap = (async () => {
+    throw new Error("decode failed")
+  }) as typeof createImageBitmap
+  try {
+    return await fn()
+  } finally {
+    globalThis.createImageBitmap = previous
+  }
+}
+
+const withMockCanvasApi = async <T>(
+  dimensions: { width: number; height: number },
+  fn: () => Promise<T>
+): Promise<T> => {
+  const previousImageBitmap = globalThis.createImageBitmap
+  const previousOffscreenCanvas = globalThis.OffscreenCanvas
+
+  class MockOffscreenCanvas {
+    readonly width: number
+    readonly height: number
+
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+    }
+
+    getContext() {
+      return {
+        imageSmoothingEnabled: false,
+        imageSmoothingQuality: "low",
+        drawImage: () => {}
+      }
+    }
+
+    async convertToBlob(options?: ImageEncodeOptions) {
+      return new Blob(["processed"], { type: options?.type ?? "image/png" })
+    }
+  }
+
+  globalThis.createImageBitmap = (async () => ({
+    width: dimensions.width,
+    height: dimensions.height,
+    close: () => {}
+  })) as typeof createImageBitmap
+  globalThis.OffscreenCanvas = MockOffscreenCanvas as unknown as typeof OffscreenCanvas
+
+  try {
+    return await fn()
+  } finally {
+    globalThis.createImageBitmap = previousImageBitmap
+    globalThis.OffscreenCanvas = previousOffscreenCanvas
+  }
+}
 
 describe("defaultImagePreprocessorOptions", () => {
   it("should have correct default values", () => {
@@ -70,7 +144,31 @@ describe("createImagePreprocessor", () => {
 
       // Should return original file unchanged (no WASM needed)
       const result = await preprocessor(smallFile)
-      expect(result).toBe(smallFile)
+      expect(result).toEqual({
+        file: smallFile,
+        metadata: {
+          mimeType: "image/png",
+          sizeBytes: smallFile.size
+        }
+      })
+    })
+
+    it("returns dimensions for skipped files when dimensions can be extracted", async () => {
+      const preprocessor = createImagePreprocessor({
+        minSizeThreshold: 1000
+      })
+      const smallFile = new File(["tiny"], "small.png", { type: "image/png" })
+
+      const result = await withMockImageBitmap({ width: 40, height: 20 }, () => preprocessor(smallFile))
+
+      expect(result).toEqual({
+        file: smallFile,
+        metadata: {
+          mimeType: "image/png",
+          sizeBytes: smallFile.size,
+          image: { width: 40, height: 20 }
+        }
+      })
     })
 
     it("does not skip files at or above size threshold", async () => {
@@ -101,7 +199,13 @@ describe("createImagePreprocessor", () => {
 
       // Should return original file (early exit before WASM load)
       const result = await preprocessor(jpegFile)
-      expect(result).toBe(jpegFile)
+      expect(result).toEqual({
+        file: jpegFile,
+        metadata: {
+          mimeType: "image/jpeg",
+          sizeBytes: jpegFile.size
+        }
+      })
     })
 
     it("skips already-matching webp format when maxDimension is 0", async () => {
@@ -112,7 +216,13 @@ describe("createImagePreprocessor", () => {
 
       const webpFile = new File(["webp data"], "image.webp", { type: "image/webp" })
       const result = await preprocessor(webpFile)
-      expect(result).toBe(webpFile)
+      expect(result).toEqual({
+        file: webpFile,
+        metadata: {
+          mimeType: "image/webp",
+          sizeBytes: webpFile.size
+        }
+      })
     })
 
     it("skips already-matching png format when maxDimension is 0", async () => {
@@ -123,7 +233,70 @@ describe("createImagePreprocessor", () => {
 
       const pngFile = new File(["png data"], "image.png", { type: "image/png" })
       const result = await preprocessor(pngFile)
-      expect(result).toBe(pngFile)
+      expect(result).toEqual({
+        file: pngFile,
+        metadata: {
+          mimeType: "image/png",
+          sizeBytes: pngFile.size
+        }
+      })
+    })
+
+    it("returns final dimensions for unchanged target-format files", async () => {
+      const preprocessor = createImagePreprocessor({
+        format: "jpeg",
+        maxDimension: 0
+      })
+      const jpegFile = new File(["jpeg data"], "photo.jpg", { type: "image/jpeg" })
+
+      const result = await withMockImageBitmap({ width: 640, height: 480 }, () => preprocessor(jpegFile))
+
+      expect(result).toEqual({
+        file: jpegFile,
+        metadata: {
+          mimeType: "image/jpeg",
+          sizeBytes: jpegFile.size,
+          image: { width: 640, height: 480 }
+        }
+      })
+    })
+
+    it("preserves skip behavior when dimension probing fails", async () => {
+      const preprocessor = createImagePreprocessor({
+        format: "png",
+        maxDimension: 0
+      })
+      const pngFile = new File(["png data"], "image.png", { type: "image/png" })
+
+      const result = await withRejectingImageBitmap(() => preprocessor(pngFile))
+
+      expect(result).toEqual({
+        file: pngFile,
+        metadata: {
+          mimeType: "image/png",
+          sizeBytes: pngFile.size
+        }
+      })
+    })
+
+    it("returns final dimensions for transformed canvas-backed images", async () => {
+      const preprocessor = createImagePreprocessor({
+        processor: "canvas",
+        format: "jpeg",
+        maxDimension: 50
+      })
+      const pngFile = new File(["png data"], "image.png", { type: "image/png" })
+
+      const result = await withMockCanvasApi({ width: 100, height: 50 }, () => preprocessor(pngFile))
+
+      expect(result).toMatchObject({
+        metadata: {
+          mimeType: "image/jpeg",
+          sizeBytes: "processed".length,
+          image: { width: 50, height: 25 }
+        }
+      })
+      expect((result as { file: File }).file.type).toBe("image/jpeg")
     })
 
     it("does not skip when format does not match (even with maxDimension=0)", async () => {
@@ -137,6 +310,27 @@ describe("createImagePreprocessor", () => {
 
       // Should try to process (and fail because WASM isn't available)
       await expect(preprocessor(pngFile)).rejects.toThrow()
+    })
+  })
+})
+
+describe("createCanvasImagePreprocessor", () => {
+  it("returns metadata for unchanged images", async () => {
+    const preprocessor = createCanvasImagePreprocessor({
+      format: "png",
+      maxDimension: 0
+    })
+    const pngFile = new File(["png data"], "image.png", { type: "image/png" })
+
+    const result = await withMockImageBitmap({ width: 100, height: 75 }, () => preprocessor(pngFile))
+
+    expect(result).toEqual({
+      file: pngFile,
+      metadata: {
+        mimeType: "image/png",
+        sizeBytes: pngFile.size,
+        image: { width: 100, height: 75 }
+      }
     })
   })
 })

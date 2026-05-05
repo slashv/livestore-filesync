@@ -37,7 +37,8 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 FileSync supports file preprocessing via MIME-type based preprocessors. When a file is saved or
 updated, the system checks if a preprocessor is configured for that file's MIME type and applies
-the transformation before storing.
+the transformation before storing. Preprocessors may return either a `File` or
+`{ file, metadata }`; metadata is synced on the `files` row as `metadataJson`.
 
 ### How Preprocessors Work
 
@@ -59,13 +60,16 @@ the transformation before storing.
          +-----+-----+
                |
                v
+[Normalize file + metadata]
+               |
+               v
 [Hash processed file]
                |
                v
 [Write to local storage]
                |
                v
-[Create file record]
+[Create/update file record with metadataJson]
                |
                v
 [Queue for upload]
@@ -92,17 +96,43 @@ initFileSync(store, {
   options: {
     preprocessors: {
       'image/*': async (file) => resizeImage(file, { maxDimension: 1500 }),
+      'image/webp': async (file) => ({
+        file,
+        metadata: {
+          mimeType: file.type,
+          sizeBytes: file.size,
+          image: { width: 1200, height: 800 }
+        }
+      }),
       'video/mp4': async (file) => compressVideo(file)
     }
   }
 })
 ```
 
+### File Metadata
+
+File metadata is stored on the synced `files` table as `metadataJson`, nullable for older rows and for preprocessors that return only `File`. Use `getFileMetadata(fileRecord)` or `parseFileMetadata(metadataJson)` from core instead of parsing this column in app code.
+
+The built-in metadata shape is intentionally small:
+
+```typescript
+type FileMetadata = {
+  mimeType?: string
+  sizeBytes?: number
+  image?: { width: number; height: number }
+  custom?: Record<string, unknown>
+}
+```
+
+Metadata belongs to the row's current `contentHash`. `saveFile()` persists metadata with `v1.FileCreated`; content-changing `updateFile()` persists replacement metadata with `v1.FileUpdated`; remote-key-only updates preserve existing metadata. Existing synced update events that omit the metadata field also preserve existing metadata.
+
 ### Implementation Notes
 
 - Preprocessors run synchronously in the main thread by default
 - For heavy processing (e.g., video), consider using Web Workers
 - The preprocessed file is what gets hashed and stored (both locally and remotely)
+- Preprocessor metadata describes the final stored file, not the original input
 - Preprocessing errors will cause the `saveFile` operation to fail
 
 ## FileSystem requirement

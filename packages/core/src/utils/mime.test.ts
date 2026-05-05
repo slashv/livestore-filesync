@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 import type { PreprocessorMap } from "../types/index.js"
-import { applyPreprocessor, findPreprocessor, matchMimeType } from "./mime.js"
+import {
+  applyPreprocessor,
+  applyPreprocessorWithMetadata,
+  findPreprocessor,
+  matchMimeType,
+  normalizePreprocessorResult
+} from "./mime.js"
 
 describe("matchMimeType", () => {
   describe("exact matches", () => {
@@ -179,6 +185,20 @@ describe("applyPreprocessor", () => {
     expect(result.type).toBe("image/jpeg")
   })
 
+  it("should return only the file from metadata-capable preprocessor results", async () => {
+    const preprocessors: PreprocessorMap = {
+      "image/*": async (file) => ({
+        file: new File([await file.arrayBuffer()], "processed.jpg", { type: "image/jpeg" }),
+        metadata: { image: { width: 100, height: 50 } }
+      })
+    }
+    const file = new File(["content"], "test.png", { type: "image/png" })
+    const result = await applyPreprocessor(preprocessors, file)
+
+    expect(result.name).toBe("processed.jpg")
+    expect(result.type).toBe("image/jpeg")
+  })
+
   it("should handle async preprocessors", async () => {
     let preprocessorCalled = false
     const preprocessors: PreprocessorMap = {
@@ -208,6 +228,54 @@ describe("applyPreprocessor", () => {
     await applyPreprocessor(preprocessors, file)
 
     expect(receivedFile).toBe(file)
+  })
+})
+
+describe("applyPreprocessorWithMetadata", () => {
+  it("returns original file without metadata when no preprocessor matches", async () => {
+    const file = new File(["content"], "test.txt", { type: "text/plain" })
+    const result = await applyPreprocessorWithMetadata({ "image/*": async (file) => file }, file)
+
+    expect(result).toEqual({ file })
+  })
+
+  it("preserves metadata from metadata-capable preprocessor results", async () => {
+    const preprocessors: PreprocessorMap = {
+      "image/*": async (file) => ({
+        file,
+        metadata: {
+          mimeType: "image/png",
+          sizeBytes: file.size,
+          image: { width: 10, height: 20 },
+          custom: { source: "test" }
+        }
+      })
+    }
+    const file = new File(["content"], "test.png", { type: "image/png" })
+    const result = await applyPreprocessorWithMetadata(preprocessors, file)
+
+    expect(result.file).toBe(file)
+    expect(result.metadata).toEqual({
+      mimeType: "image/png",
+      sizeBytes: file.size,
+      image: { width: 10, height: 20 },
+      custom: { source: "test" }
+    })
+  })
+})
+
+describe("normalizePreprocessorResult", () => {
+  it("normalizes File results", () => {
+    const file = new File(["content"], "test.txt")
+    expect(normalizePreprocessorResult(file)).toEqual({ file })
+  })
+
+  it("normalizes object results", () => {
+    const file = new File(["content"], "test.txt")
+    expect(normalizePreprocessorResult({ file, metadata: { sizeBytes: 7 } })).toEqual({
+      file,
+      metadata: { sizeBytes: 7 }
+    })
   })
 })
 
