@@ -97,6 +97,23 @@ export const FileSyncCursorSchema = Schema.Struct({
   updatedAt: Schema.Date
 })
 
+/**
+ * Synced file metadata schema.
+ * Stored as JSON on the files row and associated with that row's contentHash.
+ */
+export const FileMetadataSchema = Schema.Struct({
+  mimeType: Schema.optional(Schema.String),
+  sizeBytes: Schema.optional(Schema.Number),
+  image: Schema.optional(Schema.Struct({
+    width: Schema.Number,
+    height: Schema.Number
+  })),
+  custom: Schema.optional(Schema.Record({
+    key: Schema.String,
+    value: Schema.Unknown
+  }))
+})
+
 // ============================================
 // Event Payload Schemas
 // ============================================
@@ -108,6 +125,7 @@ export const FileCreatedPayloadSchema = Schema.Struct({
   id: Schema.String,
   path: Schema.String,
   contentHash: Schema.String,
+  metadataJson: Schema.optional(Schema.NullOr(Schema.String)),
   createdAt: Schema.Date,
   updatedAt: Schema.Date
 })
@@ -120,6 +138,7 @@ export const FileUpdatedPayloadSchema = Schema.Struct({
   path: Schema.String,
   remoteKey: Schema.String,
   contentHash: Schema.String,
+  metadataJson: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.Date
 })
 
@@ -161,6 +180,7 @@ export function createFileSyncSchema() {
         path: State.SQLite.text({ default: "" }),
         remoteKey: State.SQLite.text({ default: "" }),
         contentHash: State.SQLite.text({ default: "" }),
+        metadataJson: State.SQLite.text({ nullable: true }),
         createdAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
         updatedAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
         deletedAt: State.SQLite.integer({ nullable: true, schema: Schema.DateFromNumber })
@@ -241,16 +261,33 @@ export function createFileSyncSchema() {
       contentHash,
       createdAt,
       id,
+      metadataJson,
       path,
       updatedAt
-    }: FileCreatedPayload) => appTables.files.insert({ id, path, contentHash, createdAt, updatedAt }),
+    }: FileCreatedPayload) =>
+      appTables.files.insert({
+        id,
+        path,
+        contentHash,
+        metadataJson: metadataJson ?? null,
+        createdAt,
+        updatedAt
+      }),
     "v1.FileUpdated": ({
       contentHash,
       id,
+      metadataJson,
       path,
       remoteKey,
       updatedAt
-    }: FileUpdatedPayload) => appTables.files.update({ path, remoteKey, contentHash, updatedAt }).where({ id }),
+    }: FileUpdatedPayload) =>
+      appTables.files.update({
+        path,
+        remoteKey,
+        contentHash,
+        ...(metadataJson !== undefined ? { metadataJson } : {}),
+        updatedAt
+      }).where({ id }),
     "v1.FileDeleted": ({ deletedAt, id }: FileDeletedPayload) => appTables.files.update({ deletedAt }).where({ id }),
 
     // Local file state materializers - row-level operations
@@ -280,6 +317,7 @@ export function createFileSyncSchema() {
       LocalFileStateRowSchema,
       LocalFilesStateSchema,
       FileSyncCursorSchema,
+      FileMetadataSchema,
       FileCreatedPayloadSchema,
       FileUpdatedPayloadSchema,
       FileDeletedPayloadSchema

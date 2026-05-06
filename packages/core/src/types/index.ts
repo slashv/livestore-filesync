@@ -14,6 +14,7 @@ import type { Schema } from "@livestore/livestore"
 import type {
   FileCreatedPayloadSchema,
   FileDeletedPayloadSchema,
+  FileMetadataSchema,
   FileSyncCursorSchema,
   FileSyncTables,
   FileUpdatedPayloadSchema,
@@ -80,6 +81,12 @@ export type LocalFilesStateMutable = Schema.Schema.Type<ReturnType<typeof Schema
  * Derived from the files table schema
  */
 export type FileRecord = FileSyncTables["files"]["rowSchema"]["Type"]
+
+/**
+ * Optional metadata describing a synced file.
+ * Metadata is associated with the file record's current contentHash.
+ */
+export type FileMetadata = typeof FileMetadataSchema.Type
 
 /**
  * File created event payload
@@ -256,18 +263,35 @@ export type ActiveTransfers = Readonly<Record<string, ActiveTransferProgress>>
 // ============================================
 
 /**
+ * Result returned by a file preprocessor.
+ */
+export type FilePreprocessorResult = File | {
+  readonly file: File
+  readonly metadata?: FileMetadata
+}
+
+/**
+ * Normalized result returned after applying a preprocessor.
+ */
+export interface AppliedPreprocessorResult {
+  readonly file: File
+  readonly metadata?: FileMetadata
+}
+
+/**
  * A file preprocessor transforms a file before it's saved.
- * Returns the transformed file (or the original if no transformation needed).
+ * Returns the transformed file (or the original if no transformation needed),
+ * optionally with metadata for the final file.
  *
  * @example
  * ```typescript
  * const resizeImage: FilePreprocessor = async (file) => {
  *   // Transform the file...
- *   return transformedFile
+ *   return { file: transformedFile, metadata: { image: { width, height } } }
  * }
  * ```
  */
-export type FilePreprocessor = (file: File) => Promise<File>
+export type FilePreprocessor = (file: File) => Promise<FilePreprocessorResult>
 
 /**
  * Map of MIME type patterns to preprocessor functions.
@@ -287,6 +311,28 @@ export type FilePreprocessor = (file: File) => Promise<File>
  * ```
  */
 export type PreprocessorMap = Record<string, FilePreprocessor>
+
+/**
+ * Parse the JSON metadata stored on a file row.
+ * Returns null for missing or malformed metadata.
+ */
+export function parseFileMetadata(metadataJson?: string | null): FileMetadata | null {
+  if (!metadataJson) return null
+  try {
+    const parsed = JSON.parse(metadataJson) as unknown
+    if (!parsed || typeof parsed !== "object") return null
+    return parsed as FileMetadata
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Get parsed metadata from a file record.
+ */
+export function getFileMetadata(file: FileRecord): FileMetadata | null {
+  return parseFileMetadata(file.metadataJson)
+}
 
 // ============================================
 // Display State Utilities

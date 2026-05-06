@@ -15,6 +15,33 @@ import {
   setOnline,
 } from './helpers'
 
+const formatPageError = (error: Error): string => {
+  const details = [
+    error.stack,
+    error.message && error.message !== error.stack ? `message=${error.message}` : undefined,
+    Object.getOwnPropertyNames(error)
+      .map((key) => {
+        const value = (error as unknown as Record<string, unknown>)[key]
+        return `${key}=${JSON.stringify(value)}`
+      })
+      .join(', '),
+  ].filter(Boolean)
+
+  return details.length > 0 ? details.join(' | ') : String(error)
+}
+
+const trackUnhandledRejections = async (page: { addInitScript: (script: () => void) => Promise<void> }): Promise<void> => {
+  await page.addInitScript(() => {
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event.reason as unknown
+      const details = reason instanceof Error
+        ? (reason.stack || reason.message)
+        : JSON.stringify(reason)
+      console.error(`UNHANDLED_REJECTION ${details}`)
+    })
+  })
+}
+
 // React example has a known flakiness issue with multi-tab tests due to
 // LiveStore's new StoreProvider format having timing issues with SharedWorker
 // context sharing. Skip these tests for React until the upstream issue is resolved.
@@ -36,7 +63,42 @@ test.describe('File Sync', () => {
     await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
       timeout: 10000,
     })
+    await expect(page.locator('[data-testid="file-metadata"]')).toHaveText('400x400')
     await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+  })
+
+  test('should save and display files in local-only mode without remote requests', async ({ page }) => {
+    const remoteRequests: string[] = []
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.pathname.startsWith('/api') || url.pathname.startsWith('/livestore-filesync-files/')) {
+        remoteRequests.push(url.toString())
+      }
+    })
+
+    const storeId = generateStoreId('local_only')
+    await page.goto(`/?storeId=${storeId}&localOnly=1`)
+    await waitForLiveStoreAndSync(page)
+
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    const testImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+    await expect(page.locator('[data-testid="file-metadata"]')).toHaveText('400x400')
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+
+    await expect(page.locator('[data-testid="file-remote-key"]')).toHaveText('')
+    await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('done')
+    await expect(page.locator('[data-testid="file-download-status"]')).toHaveText('done')
+    await expect(page.locator('[data-testid="sync-has-pending"]')).toHaveText('No')
+    await expect(page.locator('[data-testid="sync-error-count"]')).toHaveText('0')
+
+    await page.waitForTimeout(500)
+    expect(remoteRequests).toEqual([])
   })
 
   test('should delete files from remote storage', async ({ page }) => {
@@ -494,7 +556,7 @@ test.describe('File Sync', () => {
 
     const trackErrors = (page: typeof page1, label: string) => {
       page.on('pageerror', (error) => {
-        errors.push(`[${label}] ${error.message}`)
+        errors.push(`[${label}] ${formatPageError(error)}`)
       })
       page.on('console', (msg) => {
         const text = msg.text()
@@ -502,6 +564,7 @@ test.describe('File Sync', () => {
           text.includes('UNIQUE constraint') ||
           text.includes('UnknownError') ||
           text.includes('SqliteError') ||
+          text.includes('UNHANDLED_REJECTION') ||
           text.includes('ERROR')
         ) {
           consoleMessages.push(`[${label}] ${text}`)
@@ -591,7 +654,7 @@ test.describe('File Sync', () => {
 
     const trackErrors = (page: typeof page1, label: string) => {
       page.on('pageerror', (error) => {
-        errors.push(`[${label}] ${error.message}`)
+        errors.push(`[${label}] ${formatPageError(error)}`)
       })
       page.on('console', (msg) => {
         const text = msg.text()
@@ -599,6 +662,7 @@ test.describe('File Sync', () => {
           text.includes('UNIQUE constraint') ||
           text.includes('UnknownError') ||
           text.includes('SqliteError') ||
+          text.includes('UNHANDLED_REJECTION') ||
           text.includes('ERROR')
         ) {
           consoleMessages.push(`[${label}] ${text}`)
@@ -706,7 +770,7 @@ test.describe('File Sync', () => {
 
     const trackErrors = (page: typeof browser1TabA, label: string) => {
       page.on('pageerror', (error) => {
-        errors.push(`[${label}] ${error.message}`)
+        errors.push(`[${label}] ${formatPageError(error)}`)
       })
       page.on('console', (msg) => {
         const text = msg.text()
@@ -714,6 +778,7 @@ test.describe('File Sync', () => {
           text.includes('UNIQUE constraint') ||
           text.includes('UnknownError') ||
           text.includes('SqliteError') ||
+          text.includes('UNHANDLED_REJECTION') ||
           text.includes('ERROR')
         ) {
           consoleMessages.push(`[${label}] ${text}`)
@@ -721,6 +786,7 @@ test.describe('File Sync', () => {
       })
     }
 
+    await Promise.all(allTabs.map((tab) => trackUnhandledRejections(tab)))
     allTabs.forEach((tab, i) => trackErrors(tab, tabNames[i]))
 
     // Navigate tabs sequentially and wait for each to complete initial sync
@@ -1227,7 +1293,7 @@ test.describe('File Sync - Offline/Online Recovery', () => {
     const consoleMessages: string[] = []
 
     page.on('pageerror', (error) => {
-      errors.push(error.message)
+      errors.push(formatPageError(error))
     })
     page.on('console', (msg) => {
       const text = msg.text()

@@ -3,7 +3,7 @@
  *
  * Creates a file sync instance that handles:
  * - Local file storage (OPFS)
- * - Remote file sync (upload/download)
+ * - Remote file sync (upload/download), unless explicitly configured local-only
  * - Offline support with automatic retry
  * - Two-pass reconciliation for efficient syncing
  *
@@ -20,6 +20,7 @@ import {
   HashServiceLive,
   LocalFileStorage,
   LocalFileStorageLive,
+  makeLocalOnlyRemoteStorage,
   makeS3SignerRemoteStorage,
   RemoteStorage
 } from "../services/index.js"
@@ -69,6 +70,16 @@ export type SyncEvent = FileSyncEvent
 
 export type { SyncSchema, SyncStore } from "../livestore/types.js"
 
+export interface SignerRemoteConfig {
+  signerBaseUrl: string
+  headers?: Record<string, string>
+  authToken?: string
+  /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
+  includeCredentials?: boolean
+}
+
+export type FileSyncRemoteConfig = SignerRemoteConfig | false
+
 /**
  * Configuration for createFileSync
  */
@@ -79,14 +90,8 @@ export interface CreateFileSyncConfig {
   /** Schema with tables and events from createFileSyncSchema */
   schema: SyncSchema
 
-  /** Remote storage configuration */
-  remote: {
-    signerBaseUrl: string
-    headers?: Record<string, string>
-    authToken?: string
-    /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
-    includeCredentials?: boolean
-  }
+  /** Remote storage configuration. Pass false for explicit local-only mode. */
+  remote: FileSyncRemoteConfig
 
   /** FileSystem layer - required. Use @livestore-filesync/opfs for browsers or @effect/platform-node for Node. */
   fileSystem: Layer.Layer<FileSystem>
@@ -206,6 +211,14 @@ export interface FileSyncInstance {
  *   remote: { signerBaseUrl: '/api' }
  * })
  *
+ * // Local-only / unauthenticated mode
+ * const localOnlyFileSync = createFileSync({
+ *   store,
+ *   schema: { tables, events, queryDb },
+ *   fileSystem: opfsLayer(),
+ *   remote: false
+ * })
+ *
  * // Node.js (using platform-node)
  * import { NodeFileSystem } from '@effect/platform-node'
  *
@@ -228,6 +241,7 @@ export interface FileSyncInstance {
  */
 export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const { fileSystem, hashService, options = {}, remote, schema, store } = config
+  const isLocalOnly = remote === false
 
   // State
   let online = true // optimistic default; health check will correct if offline
@@ -244,19 +258,22 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     ...(options.localPathRoot !== undefined ? { localPathRoot: options.localPathRoot } : {})
   }
 
-  const remoteStorageConfig: RemoteStorageConfig = {
-    signerBaseUrl: remote.signerBaseUrl,
-    ...(remote.headers ? { headers: remote.headers } : {}),
-    ...(remote.authToken ? { authToken: remote.authToken } : {}),
-    ...(remote.includeCredentials ? { includeCredentials: remote.includeCredentials } : {})
-  }
-
   const RemoteStorageLive = Layer.succeed(
     RemoteStorage,
-    makeS3SignerRemoteStorage(remoteStorageConfig)
+    isLocalOnly
+      ? makeLocalOnlyRemoteStorage()
+      : makeS3SignerRemoteStorage(
+        {
+          signerBaseUrl: remote.signerBaseUrl,
+          ...(remote.headers ? { headers: remote.headers } : {}),
+          ...(remote.authToken ? { authToken: remote.authToken } : {}),
+          ...(remote.includeCredentials ? { includeCredentials: remote.includeCredentials } : {})
+        } satisfies RemoteStorageConfig
+      )
   )
 
   const fileSyncConfig: FileSyncConfig = {
+    remoteMode: isLocalOnly ? "local-only" : "remote",
     executorConfig: {
       maxConcurrentDownloads: options.maxConcurrentDownloads ?? defaultExecutorConfig.maxConcurrentDownloads,
       maxConcurrentUploads: options.maxConcurrentUploads ?? defaultExecutorConfig.maxConcurrentUploads

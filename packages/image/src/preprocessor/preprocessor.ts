@@ -112,6 +112,36 @@ function getMimeType(format: ImageFormat): string {
   }
 }
 
+type ImageDimensions = {
+  readonly width: number
+  readonly height: number
+}
+
+const getFileMetadata = (
+  file: File,
+  dimensions?: ImageDimensions
+) => ({
+  ...(file.type ? { mimeType: file.type } : {}),
+  sizeBytes: file.size,
+  ...(dimensions ? { image: dimensions } : {})
+})
+
+const getImageDimensions = async (arrayBuffer: ArrayBuffer): Promise<ImageDimensions | undefined> => {
+  if (typeof createImageBitmap !== "function") return undefined
+
+  const bitmap = await createImageBitmap(new Blob([arrayBuffer])).catch(() => undefined)
+  if (!bitmap) return undefined
+
+  try {
+    return {
+      width: bitmap.width,
+      height: bitmap.height
+    }
+  } finally {
+    bitmap.close()
+  }
+}
+
 /**
  * Create an image preprocessor with the given options.
  *
@@ -186,10 +216,15 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
     return processor
   }
 
-  return async (file: File): Promise<File> => {
+  return async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer()
+
     // Skip if below size threshold
     if (minSizeThreshold > 0 && file.size < minSizeThreshold) {
-      return file
+      return {
+        file,
+        metadata: getFileMetadata(file, await getImageDimensions(arrayBuffer))
+      }
     }
 
     // Check if already in target format
@@ -197,11 +232,11 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
 
     // Early exit: if already target format and no resizing configured, skip entirely
     if (isTargetFormat && maxDimension === 0) {
-      return file
+      return {
+        file,
+        metadata: getFileMetadata(file, await getImageDimensions(arrayBuffer))
+      }
     }
-
-    // Read file into buffer for dimension check
-    const arrayBuffer = await file.arrayBuffer()
 
     // Get or create the processor (lazy init, dynamic import for vips)
     const proc = await getProcessor()
@@ -221,16 +256,17 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
 
     // Check if the image was actually modified
     // If dimensions match and format matches, original might have been within bounds
-    const blob = new Blob([arrayBuffer])
-    const bitmap = await createImageBitmap(blob)
-    const originalWidth = bitmap.width
-    const originalHeight = bitmap.height
-    bitmap.close()
+    const dimensions = await getImageDimensions(arrayBuffer)
+    const originalWidth = dimensions?.width ?? result.width
+    const originalHeight = dimensions?.height ?? result.height
 
     // If already in target format and within bounds, return original
     const withinBounds = maxDimension === 0 || (originalWidth <= maxDimension && originalHeight <= maxDimension)
     if (isTargetFormat && withinBounds) {
-      return file
+      return {
+        file,
+        metadata: getFileMetadata(file, { width: originalWidth, height: originalHeight })
+      }
     }
 
     // Generate new filename
@@ -239,7 +275,11 @@ export function createImagePreprocessor(options: ImagePreprocessorOptions = {}):
 
     // Use MemoryFile for React Native compatibility
     // React Native's File/Blob constructors don't properly support ArrayBuffer
-    return new MemoryFile(new Uint8Array(result.data), newFilename, result.mimeType) as unknown as File
+    const processedFile = new MemoryFile(new Uint8Array(result.data), newFilename, result.mimeType) as unknown as File
+    return {
+      file: processedFile,
+      metadata: getFileMetadata(processedFile, { width: result.width, height: result.height })
+    }
   }
 }
 
@@ -278,7 +318,7 @@ export function createResizeOnlyPreprocessor(
     return processor
   }
 
-  return async (file: File): Promise<File> => {
+  return async (file: File) => {
     // Determine output format from input MIME type
     let format: "jpeg" | "webp" | "png" = "jpeg"
     if (file.type === "image/png") {
@@ -291,15 +331,16 @@ export function createResizeOnlyPreprocessor(
     const arrayBuffer = await file.arrayBuffer()
 
     // Check dimensions first
-    const blob = new Blob([arrayBuffer])
-    const bitmap = await createImageBitmap(blob)
-    const width = bitmap.width
-    const height = bitmap.height
-    bitmap.close()
+    const dimensions = await getImageDimensions(arrayBuffer)
+    const width = dimensions?.width ?? 0
+    const height = dimensions?.height ?? 0
 
     // Skip if already within bounds
-    if (width <= maxDimension && height <= maxDimension) {
-      return file
+    if (dimensions && width <= maxDimension && height <= maxDimension) {
+      return {
+        file,
+        metadata: getFileMetadata(file, dimensions)
+      }
     }
 
     // Get or create the processor (lazy init, dynamic import for vips)
@@ -320,6 +361,10 @@ export function createResizeOnlyPreprocessor(
 
     // Use MemoryFile for React Native compatibility
     // React Native's File/Blob constructors don't properly support ArrayBuffer
-    return new MemoryFile(new Uint8Array(result.data), file.name, file.type) as unknown as File
+    const processedFile = new MemoryFile(new Uint8Array(result.data), file.name, result.mimeType) as unknown as File
+    return {
+      file: processedFile,
+      metadata: getFileMetadata(processedFile, { width: result.width, height: result.height })
+    }
   }
 }

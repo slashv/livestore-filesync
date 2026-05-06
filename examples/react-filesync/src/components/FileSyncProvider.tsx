@@ -1,10 +1,12 @@
 import { initFileSync, triggerSync } from "@livestore-filesync/core"
+import { createImagePreprocessor } from "@livestore-filesync/image/preprocessor"
 import { layer as opfsLayer } from "@livestore-filesync/opfs"
 import { type ReactNode, Suspense, useEffect, useState } from "react"
 import { useAppStore } from "../livestore/store.ts"
 
 type FileSyncProviderProps = {
   signerBaseUrl?: string
+  localOnly?: boolean
   headers?: Record<string, string>
   authHeaders?: () => Record<string, string>
   authToken?: string
@@ -18,6 +20,7 @@ const FileSyncProviderInner = ({
   children,
   headers,
   healthCheckIntervalMs,
+  localOnly = false,
   signerBaseUrl = "/api"
 }: FileSyncProviderProps) => {
   const store = useAppStore()
@@ -27,12 +30,24 @@ const FileSyncProviderInner = ({
     const resolvedHeaders = headers ?? authHeaders?.()
     const dispose = initFileSync(store, {
       fileSystem: opfsLayer(),
-      remote: {
-        signerBaseUrl,
-        ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
-        ...(authToken ? { authToken } : {})
-      },
-      ...(healthCheckIntervalMs !== undefined ? { options: { healthCheckIntervalMs } } : {})
+      remote: localOnly
+        ? false
+        : {
+          signerBaseUrl,
+          ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
+          ...(authToken ? { authToken } : {})
+        },
+      options: {
+        ...(healthCheckIntervalMs !== undefined ? { healthCheckIntervalMs } : {}),
+        preprocessors: {
+          "image/*": createImagePreprocessor({
+            processor: "canvas",
+            maxDimension: 1500,
+            quality: 90,
+            format: "jpeg"
+          })
+        }
+      }
     })
 
     // Mark as ready on next tick to ensure initFileSync has fully completed
@@ -44,7 +59,7 @@ const FileSyncProviderInner = ({
       window.clearTimeout(retryQueuedTransfers)
       void dispose()
     }
-  }, [store, signerBaseUrl, headers, authHeaders, authToken, healthCheckIntervalMs])
+  }, [store, signerBaseUrl, headers, authHeaders, authToken, healthCheckIntervalMs, localOnly])
 
   return ready ? <>{children}</> : null
 }

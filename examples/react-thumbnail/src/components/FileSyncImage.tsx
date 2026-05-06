@@ -57,31 +57,38 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
     let cancelled = false
 
     const resolveUrl = async () => {
-      // If requesting full size, use file URL directly
-      if (selectedSize === "full") {
+      try {
+        // If requesting full size, use file URL directly
+        if (selectedSize === "full") {
+          const url = await resolveFileUrl(fileId)
+          if (!cancelled) {
+            setSrc(url)
+            setIsUsingThumbnail(false)
+          }
+          return
+        }
+
+        // Try thumbnail first if it's ready
+        if (thumbnailStatus === "done") {
+          const thumbnailUrl = await resolveThumbnailUrl(fileId, selectedSize)
+          if (!cancelled && thumbnailUrl) {
+            setSrc(thumbnailUrl)
+            setIsUsingThumbnail(true)
+            return
+          }
+        }
+
+        // Fallback to full image
         const url = await resolveFileUrl(fileId)
-        if (!cancelled && url) {
+        if (!cancelled) {
           setSrc(url)
           setIsUsingThumbnail(false)
         }
-        return
-      }
-
-      // Try thumbnail first if it's ready
-      if (thumbnailStatus === "done") {
-        const thumbnailUrl = await resolveThumbnailUrl(fileId, selectedSize)
-        if (!cancelled && thumbnailUrl) {
-          setSrc(thumbnailUrl)
-          setIsUsingThumbnail(true)
-          return
+      } catch {
+        if (!cancelled) {
+          setSrc(null)
+          setIsUsingThumbnail(false)
         }
-      }
-
-      // Fallback to full image
-      const url = await resolveFileUrl(fileId)
-      if (!cancelled && url) {
-        setSrc(url)
-        setIsUsingThumbnail(false)
       }
     }
 
@@ -90,7 +97,16 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
     return () => {
       cancelled = true
     }
-  }, [fileId, selectedSize, thumbnailStatus, file?.updatedAt])
+  }, [
+    fileId,
+    selectedSize,
+    thumbnailStatus,
+    file?.updatedAt,
+    file?.remoteKey,
+    localFileState?.downloadStatus,
+    localFileState?.localHash,
+    localFileState?.uploadStatus
+  ])
 
   // Show placeholder if not displayable or no src
   if (!canDisplay || !src) {
@@ -98,8 +114,8 @@ export const FileSyncImage: React.FC<FileSyncImageProps> = ({
       <div
         className={`image-placeholder ${className ?? ""}`}
         data-testid="file-placeholder"
+        aria-label={isUploading ? "Uploading image" : "Image pending"}
       >
-        {isUploading ? "Uploading..." : "Waiting for file..."}
       </div>
     )
   }

@@ -30,6 +30,8 @@ const preprocessor = createImagePreprocessor({
 })
 ```
 
+Image preprocessors return the processed file together with metadata for the final stored image. This includes the final MIME type, byte size, and pixel dimensions. If a file is returned unchanged because it is already within bounds or below the size threshold, dimensions are still extracted once when the runtime supports image decoding.
+
 **Requirements:**
 - Copy `node_modules/wasm-vips/lib/vips.wasm` to your public directory
 - ~3MB WASM download on first use (cached by browser)
@@ -56,6 +58,21 @@ const preprocessor = createImagePreprocessor({
 - Converts all images to sRGB (loses wide-gamut colors)
 - No lossless WebP support
 - Strips all metadata (EXIF, etc.)
+
+### Using Synced Image Metadata
+
+FileSync stores preprocessor metadata on the synced `files` row. Apps can use it to reserve layout before `resolveFileUrl()` or thumbnail URLs are ready:
+
+```typescript
+import { getFileMetadata } from '@livestore-filesync/core'
+
+const metadata = getFileMetadata(file)
+const style = metadata?.image
+  ? { aspectRatio: `${metadata.image.width} / ${metadata.image.height}` }
+  : undefined
+```
+
+The metadata describes the final output image after resizing and format conversion, not the original input image.
 
 ## Thumbnail Workers
 

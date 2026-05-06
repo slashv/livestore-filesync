@@ -95,6 +95,16 @@ const dispose = initFileSync(store, {
 // await dispose()
 ```
 
+For unauthenticated/local-first use, pass `remote: false`. Files are stored and resolved locally,
+and FileSync will not call the signer API or enqueue uploads/downloads:
+
+```typescript
+const dispose = initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: false
+})
+```
+
 ### 3. Use the API
 
 ```typescript
@@ -106,10 +116,9 @@ const url = await resolveFileUrl(result.fileId)
 
 See `examples/` for complete implementations:
 - `examples/react-filesync` — React example
-- `examples/vue-filesync` — Vue example
-- `examples/vue-thumbnail` — Vue example with image thumbnail generation (wasm-vips)
 - `examples/react-thumbnail` — React example with image thumbnails using the canvas processor (no WASM)
 - `examples/node-filesync` — Node.js usage
+- `examples/vue-filesync` and `examples/vue-thumbnail` — historical Vue examples; these are not actively maintained
 
 **Note on examples**: I've been using examples to test out the implementation on different platforms and frameworks. The examples are also used to run the e2e tests against which makes them more complicated than they need to be for testing and debugging purposes. As the project matures the examples will probably migrate towards a few simpler examples and the e2e testing targets into seperate apps.
 
@@ -136,6 +145,11 @@ createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
 
 ## Backend Storage
+
+Backend storage is optional. Use `remote: false` for local-only apps or guest sessions where files
+should be saved, read, updated, and deleted only from local storage. In local-only mode, `remoteKey`
+stays as an empty string and `localFileState` reports local files as `uploadStatus: "done"` and
+`downloadStatus: "done"`.
 
 The client expects a **signer service** running in a server-side process that mints short-lived URLs for uploads/downloads and handles deletes. In the examples, we leverage the existing LiveStore Cloudflare Worker to host this signer service alongside LiveStore sync — see the `src/cf-worker/` folder in each example for the implementation.
 
@@ -216,6 +230,9 @@ const url = await resolveFileUrl(file.id)
 
 **Automatic prioritization:** When `resolveFileUrl()` is called for a file that's queued for download, that file is automatically moved to the front of the queue. This ensures visible files are downloaded before background files.
 
+In local-only mode, `resolveFileUrl()` only resolves local files and returns `null` if the local
+bytes are missing; it never signs a remote download URL.
+
 See `examples/react-filesync` or `examples/vue-filesync` for complete implementations.
 
 ## Handling Upload State
@@ -265,7 +282,8 @@ No configuration required — this works automatically.
 - Mid-session restarts (`syncNow()`, heartbeat recovery) restart `eventsStream` from the stored
   cursor and do **not** rescan every file row.
 - `syncNow()` re-enqueues files already marked as `queued` in `localFileState` before restarting
-  the stream, so pending work resumes without a full bootstrap.
+  the stream, so pending work resumes without a full bootstrap. In local-only mode this is harmless
+  and does not enqueue remote transfers.
 - Internal `localFileState` diff updates are batched into a single `store.commit(...)` call when
   possible, reducing per-file event bursts during reconciliation.
 
@@ -288,6 +306,15 @@ const preprocessors: PreprocessorMap = {
     // Your transformation logic
     return transformedFile
   },
+  // Or return metadata with the final file
+  'image/webp': async (file) => ({
+    file,
+    metadata: {
+      mimeType: file.type,
+      sizeBytes: file.size,
+      image: { width: 1200, height: 800 }
+    }
+  }),
   // Or specific types
   'image/png': async (file) => convertPngToJpeg(file)
 }
@@ -307,6 +334,27 @@ Preprocessor patterns support:
 - **Universal wildcard**: `'*'` or `'*/*'` matches any file
 
 Priority order: exact match > wildcard subtype > universal wildcard.
+
+### File Metadata
+
+Preprocessors can return `{ file, metadata }` to persist metadata on the synced `files` row. Metadata is stored with the current `contentHash`, so `updateFile()` replaces it when file content changes.
+
+```typescript
+import { getFileMetadata } from '@livestore-filesync/core'
+
+const metadata = getFileMetadata(fileRecord)
+const ratio = metadata?.image
+  ? `${metadata.image.width} / ${metadata.image.height}`
+  : undefined
+```
+
+Supported metadata fields are:
+- `mimeType?: string`
+- `sizeBytes?: number`
+- `image?: { width: number; height: number }`
+- `custom?: Record<string, unknown>`
+
+Existing preprocessors that return only `File` continue to work. Existing rows without metadata read as `null` through `getFileMetadata()`.
 
 ### Image Preprocessing Package
 
@@ -333,6 +381,8 @@ initFileSync(store, {
   }
 })
 ```
+
+Image preprocessors return metadata for the final output image, including MIME type, byte size, and pixel dimensions. When an image is already in the target format and is returned unchanged, dimensions are still extracted once so UIs can reserve layout before `resolveFileUrl()` returns.
 
 **Lightweight Canvas Alternative:** If you don't need the full power of wasm-vips (ICC profile preservation, lossless compression), you can use the canvas-based processor:
 
@@ -399,7 +449,7 @@ const dispose = initThumbnails(store, {
 const url = await resolveThumbnailUrl(fileId, 'small')
 ```
 
-See `examples/vue-thumbnail` (wasm-vips) and `examples/react-thumbnail` (canvas processor) for complete implementations.
+See `examples/react-thumbnail` for the maintained thumbnail example. Vue thumbnail examples are historical and are not actively maintained.
 
 ## Requirements
 

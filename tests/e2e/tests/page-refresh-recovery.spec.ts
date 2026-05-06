@@ -569,13 +569,11 @@ test.describe('Page Refresh Recovery', () => {
       })
       .not.toBe(initialSrc)
 
-    // Wait for edit upload to start
+    // Wait for the delayed edit upload request to actually start before refreshing.
+    await expect.poll(() => editUploadStarted, { timeout: 15000 }).toBe(true)
     await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('inProgress', {
       timeout: 5000,
     })
-
-    // Ensure the upload request was actually intercepted
-    await expect.poll(() => editUploadStarted, { timeout: 5000 }).toBe(true)
 
     console.log('Edit upload in progress (with 5s delay), refreshing page...')
 

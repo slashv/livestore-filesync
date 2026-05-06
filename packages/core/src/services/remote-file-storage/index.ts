@@ -6,6 +6,8 @@
 
 export {
   type DownloadOptions,
+  type LocalOnlyRemoteStorageConfig,
+  makeLocalOnlyRemoteStorage,
   makeRemoteStorageLive,
   makeS3SignerRemoteStorage,
   RemoteStorage,

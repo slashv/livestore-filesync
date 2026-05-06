@@ -24,6 +24,8 @@ The services are wired together as Effect layers inside `createFileSync` and the
   The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
   API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
   short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
+  When `remote: false` is configured, FileSync uses an internal disabled adapter and the orchestration
+  layer avoids remote calls entirely.
 
 - `SyncExecutor` (internal): manages upload/download queues with concurrency limits and retry/backoff logic.
   Worker fibers are tracked and can be restarted via `ensureWorkers()` if they exit unexpectedly.
@@ -31,13 +33,27 @@ The services are wired together as Effect layers inside `createFileSync` and the
 - `FileSync`: orchestration service and primary CRUD API. Tracks online state, consumes the
   LiveStore event stream for file events, updates local state incrementally, schedules transfers
   through `SyncExecutor`, updates remote URLs, and runs health checks. It also handles `saveFile`,
-  `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first.
+  `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first. In local-only mode
+  it still writes and resolves local files, but skips health checks and upload/download/delete work.
+
+## Remote Modes
+
+FileSync has two explicit remote modes:
+
+- **Remote-backed**: the default mode. `initFileSync` uses `/api` when `remote` is omitted, and
+  `createFileSync` requires a signer config. Empty `remoteKey` means the local file should upload;
+  remote keys allow other clients to download.
+- **Local-only**: enabled with `remote: false`. `saveFile()` and `updateFile()` keep `remoteKey` as
+  `""`, write `localFileState` as `uploadStatus: "done"` and `downloadStatus: "done"` when local
+  bytes exist, and never calls `/health`, `/v1/sign/upload`, `/v1/sign/download`, or `/v1/delete`.
+  `triggerSync()` and `retryErrors()` are no-ops/harmless for remote transfers in this mode.
 
 ## File Preprocessors
 
 FileSync supports file preprocessing via MIME-type based preprocessors. When a file is saved or
 updated, the system checks if a preprocessor is configured for that file's MIME type and applies
-the transformation before storing.
+the transformation before storing. Preprocessors may return either a `File` or
+`{ file, metadata }`; metadata is synced on the `files` row as `metadataJson`.
 
 ### How Preprocessors Work
 
@@ -59,13 +75,16 @@ the transformation before storing.
          +-----+-----+
                |
                v
+[Normalize file + metadata]
+               |
+               v
 [Hash processed file]
                |
                v
 [Write to local storage]
                |
                v
-[Create file record]
+[Create/update file record with metadataJson]
                |
                v
 [Queue for upload]
@@ -92,17 +111,43 @@ initFileSync(store, {
   options: {
     preprocessors: {
       'image/*': async (file) => resizeImage(file, { maxDimension: 1500 }),
+      'image/webp': async (file) => ({
+        file,
+        metadata: {
+          mimeType: file.type,
+          sizeBytes: file.size,
+          image: { width: 1200, height: 800 }
+        }
+      }),
       'video/mp4': async (file) => compressVideo(file)
     }
   }
 })
 ```
 
+### File Metadata
+
+File metadata is stored on the synced `files` table as `metadataJson`, nullable for older rows and for preprocessors that return only `File`. Use `getFileMetadata(fileRecord)` or `parseFileMetadata(metadataJson)` from core instead of parsing this column in app code.
+
+The built-in metadata shape is intentionally small:
+
+```typescript
+type FileMetadata = {
+  mimeType?: string
+  sizeBytes?: number
+  image?: { width: number; height: number }
+  custom?: Record<string, unknown>
+}
+```
+
+Metadata belongs to the row's current `contentHash`. `saveFile()` persists metadata with `v1.FileCreated`; content-changing `updateFile()` persists replacement metadata with `v1.FileUpdated`; remote-key-only updates preserve existing metadata. Existing synced update events that omit the metadata field also preserve existing metadata.
+
 ### Implementation Notes
 
 - Preprocessors run synchronously in the main thread by default
 - For heavy processing (e.g., video), consider using Web Workers
 - The preprocessed file is what gets hashed and stored (both locally and remotely)
+- Preprocessor metadata describes the final stored file, not the original input
 - Preprocessing errors will cause the `saveFile` operation to fail
 
 ## FileSystem requirement
@@ -119,6 +164,15 @@ import { layer as opfsLayer } from '@livestore-filesync/opfs'
 initFileSync(store, {
   fileSystem: opfsLayer(),
   remote: { signerBaseUrl: '/api' }
+})
+```
+
+Local-only usage for guest/unauthenticated sessions:
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: false
 })
 ```
 
@@ -157,6 +211,8 @@ Text diagram (arrows show the main direction of calls):
 Notes:
 - `FileSync` is the primary entry point for CRUD; it writes locally first and the leader event stream queues sync.
 - `FileSync` handles background uploads/downloads and keeps metadata in the LiveStore tables.
+- With `remote: false`, the `SyncExecutor` and `RemoteStorage` transfer path is disabled for file
+  records and local state remains stable without queued/error upload states.
 - `LocalFileStorage` is the only layer that touches the filesystem adapter directly.
 - `RemoteStorage` is the only layer that knows about the remote backend API.
 

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { FileSyncProvider } from "./components/FileSyncProvider.tsx"
 import { Gallery } from "./components/Gallery.tsx"
 import { SyncStatus } from "./components/SyncStatus.tsx"
-import { authToken, getAuthHeaders, healthCheckIntervalMs } from "./livestore/store.ts"
+import { authToken, getAuthHeaders, healthCheckIntervalMs, localOnlyFileSync } from "./livestore/store.ts"
 
 export const App = () => {
   const [storeRegistry] = useState(() => new StoreRegistry())
@@ -16,6 +16,7 @@ export const App = () => {
         authHeaders={getAuthHeaders}
         authToken={authToken}
         healthCheckIntervalMs={healthCheckIntervalMs}
+        localOnly={localOnlyFileSync}
       >
         <div className="app-layout">
           <div className="main">

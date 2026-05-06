@@ -47,6 +47,14 @@ export interface RemoteStorageConfig {
 }
 
 /**
+ * Remote configuration used when FileSync is explicitly running without a
+ * remote backend.
+ */
+export interface LocalOnlyRemoteStorageConfig {
+  readonly mode: "local-only"
+}
+
+/**
  * Result of an upload
  */
 export interface RemoteUploadResult {
@@ -136,7 +144,7 @@ export interface RemoteStorageService extends RemoteStorageAdapter {
   /**
    * Get the current configuration
    */
-  readonly getConfig: () => RemoteStorageConfig
+  readonly getConfig: () => RemoteStorageConfig | LocalOnlyRemoteStorageConfig
 }
 
 /**
@@ -504,6 +512,55 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     getDownloadUrl,
     checkHealth,
     getConfig
+  }
+}
+
+/**
+ * Create a RemoteStorage implementation for explicit local-only FileSync mode.
+ *
+ * FileSync orchestration should not call transfer methods in this mode. The
+ * adapter exists only to keep Effect layer wiring simple and fails loudly if a
+ * remote operation accidentally leaks through.
+ */
+export const makeLocalOnlyRemoteStorage = (): RemoteStorageService => {
+  const disabledUpload = () =>
+    Effect.fail(
+      new UploadError({
+        message: "Remote upload is disabled because FileSync is running in local-only mode"
+      })
+    )
+
+  const disabledDownload = (key: string) =>
+    Effect.fail(
+      new DownloadError({
+        message: "Remote download is disabled because FileSync is running in local-only mode",
+        url: key
+      })
+    )
+
+  const disabledDownloadUrl = (key: string) =>
+    Effect.fail(
+      new DownloadError({
+        message: "Remote download URL signing is disabled because FileSync is running in local-only mode",
+        url: key
+      })
+    )
+
+  const disabledDelete = (key: string) =>
+    Effect.fail(
+      new DeleteError({
+        message: "Remote delete is disabled because FileSync is running in local-only mode",
+        path: key
+      })
+    )
+
+  return {
+    upload: disabledUpload,
+    download: disabledDownload,
+    delete: disabledDelete,
+    getDownloadUrl: disabledDownloadUrl,
+    checkHealth: () => Effect.succeed(true),
+    getConfig: () => ({ mode: "local-only" })
   }
 }
 
