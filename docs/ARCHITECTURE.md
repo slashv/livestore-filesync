@@ -24,6 +24,8 @@ The services are wired together as Effect layers inside `createFileSync` and the
   The built-in implementation is signer-backed and targets S3-compatible object storage via a signer
   API (`GET /health`, `POST /v1/sign/upload`, `POST /v1/sign/download`, `POST /v1/delete`) that mints
   short-lived URLs. Alternative backends are still possible by supplying a custom `RemoteStorageAdapter`.
+  When `remote: false` is configured, FileSync uses an internal disabled adapter and the orchestration
+  layer avoids remote calls entirely.
 
 - `SyncExecutor` (internal): manages upload/download queues with concurrency limits and retry/backoff logic.
   Worker fibers are tracked and can be restarted via `ensureWorkers()` if they exit unexpectedly.
@@ -31,7 +33,20 @@ The services are wired together as Effect layers inside `createFileSync` and the
 - `FileSync`: orchestration service and primary CRUD API. Tracks online state, consumes the
   LiveStore event stream for file events, updates local state incrementally, schedules transfers
   through `SyncExecutor`, updates remote URLs, and runs health checks. It also handles `saveFile`,
-  `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first.
+  `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first. In local-only mode
+  it still writes and resolves local files, but skips health checks and upload/download/delete work.
+
+## Remote Modes
+
+FileSync has two explicit remote modes:
+
+- **Remote-backed**: the default mode. `initFileSync` uses `/api` when `remote` is omitted, and
+  `createFileSync` requires a signer config. Empty `remoteKey` means the local file should upload;
+  remote keys allow other clients to download.
+- **Local-only**: enabled with `remote: false`. `saveFile()` and `updateFile()` keep `remoteKey` as
+  `""`, write `localFileState` as `uploadStatus: "done"` and `downloadStatus: "done"` when local
+  bytes exist, and never calls `/health`, `/v1/sign/upload`, `/v1/sign/download`, or `/v1/delete`.
+  `triggerSync()` and `retryErrors()` are no-ops/harmless for remote transfers in this mode.
 
 ## File Preprocessors
 
@@ -152,6 +167,15 @@ initFileSync(store, {
 })
 ```
 
+Local-only usage for guest/unauthenticated sessions:
+
+```typescript
+initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: false
+})
+```
+
 ### Node.js usage
 
 ```typescript
@@ -187,6 +211,8 @@ Text diagram (arrows show the main direction of calls):
 Notes:
 - `FileSync` is the primary entry point for CRUD; it writes locally first and the leader event stream queues sync.
 - `FileSync` handles background uploads/downloads and keeps metadata in the LiveStore tables.
+- With `remote: false`, the `SyncExecutor` and `RemoteStorage` transfer path is disabled for file
+  records and local state remains stable without queued/error upload states.
 - `LocalFileStorage` is the only layer that touches the filesystem adapter directly.
 - `RemoteStorage` is the only layer that knows about the remote backend API.
 

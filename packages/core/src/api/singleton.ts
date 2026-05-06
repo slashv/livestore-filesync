@@ -14,7 +14,12 @@ import type { SyncSchema } from "../livestore/types.js"
 import { createFileSyncSchema } from "../schema/index.js"
 import type { Hash } from "../services/hash/index.js"
 import type { FileSyncEvent } from "../types/index.js"
-import { createFileSync, type CreateFileSyncConfig, type FileSyncInstance } from "./createFileSync.js"
+import {
+  createFileSync,
+  type CreateFileSyncConfig,
+  type FileSyncInstance,
+  type SignerRemoteConfig
+} from "./createFileSync.js"
 
 const DEFAULT_SIGNER_BASE_URL = "/api"
 const REQUIRED_TABLES = ["files", "localFileState"] as const
@@ -42,13 +47,8 @@ export interface InitFileSyncConfig {
    */
   hashService?: Layer.Layer<Hash>
 
-  remote?: {
-    signerBaseUrl?: string
-    headers?: Record<string, string>
-    authToken?: string
-    /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
-    includeCredentials?: boolean
-  }
+  /** Remote signer config. Pass false for explicit local-only mode. */
+  remote?: false | (Partial<Pick<SignerRemoteConfig, "signerBaseUrl">> & Omit<SignerRemoteConfig, "signerBaseUrl">)
   options?: CreateFileSyncConfig["options"]
   schema?: SchemaFallback
 
@@ -69,6 +69,7 @@ export interface InitFileSyncConfig {
 
 let singleton: FileSyncInstance | null = null
 let singletonUserId: string | null = null
+let singletonRemoteMode: "remote" | "local-only" | null = null
 let singletonRefCount = 0
 
 const retainSingleton = (): () => Promise<void> => {
@@ -85,6 +86,7 @@ const retainSingleton = (): () => Promise<void> => {
     const instance = singleton
     singleton = null
     singletonUserId = null
+    singletonRemoteMode = null
     await instance?.dispose()
   }
 }
@@ -161,6 +163,12 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): SyncSchema =
  *   userId: 'user-123'
  * })
  *
+ * // Local-only / unauthenticated mode
+ * const disposeLocal = initFileSync(store, {
+ *   fileSystem: opfsLayer(),
+ *   remote: false
+ * })
+ *
  * // Later, to clean up:
  * await dispose()
  * ```
@@ -172,13 +180,15 @@ export const initFileSync = (
   config: InitFileSyncConfig
 ): () => Promise<void> => {
   const userId = config.userId ?? null
+  const remoteMode = config.remote === false ? "local-only" : "remote"
 
-  // If singleton exists but for a different user, dispose it first
-  if (singleton && singletonUserId !== userId) {
-    console.log("[FileSync] User changed, disposing old instance")
+  // If singleton exists but for a different user or mode, dispose it first
+  if (singleton && (singletonUserId !== userId || singletonRemoteMode !== remoteMode)) {
+    console.log("[FileSync] User or remote mode changed, disposing old instance")
     singleton.dispose()
     singleton = null
     singletonUserId = null
+    singletonRemoteMode = null
     singletonRefCount = 0
   }
 
@@ -187,6 +197,7 @@ export const initFileSync = (
   }
 
   singletonUserId = userId
+  singletonRemoteMode = remoteMode
 
   if (!config.fileSystem) {
     throw new Error(
@@ -195,12 +206,14 @@ export const initFileSync = (
   }
 
   const schema = resolveSchema(store, config.schema)
-  const remote: CreateFileSyncConfig["remote"] = {
-    signerBaseUrl: config.remote?.signerBaseUrl ?? DEFAULT_SIGNER_BASE_URL,
-    ...(config.remote?.headers ? { headers: config.remote.headers } : {}),
-    ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {}),
-    ...(config.remote?.includeCredentials ? { includeCredentials: config.remote.includeCredentials } : {})
-  }
+  const remote: CreateFileSyncConfig["remote"] = config.remote === false
+    ? false
+    : {
+      signerBaseUrl: config.remote?.signerBaseUrl ?? DEFAULT_SIGNER_BASE_URL,
+      ...(config.remote?.headers ? { headers: config.remote.headers } : {}),
+      ...(config.remote?.authToken ? { authToken: config.remote.authToken } : {}),
+      ...(config.remote?.includeCredentials ? { includeCredentials: config.remote.includeCredentials } : {})
+    }
 
   singleton = createFileSync({
     store,
@@ -245,6 +258,7 @@ export const disposeFileSync = async (): Promise<void> => {
     await singleton.dispose()
     singleton = null
     singletonUserId = null
+    singletonRemoteMode = null
     singletonRefCount = 0
   }
 }

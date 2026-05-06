@@ -181,6 +181,14 @@ const resolveLocalFileUrl = (root: string | undefined, storedPath: string): stri
  */
 export interface FileSyncConfig {
   /**
+   * File transfer mode.
+   * - "remote": normal signer-backed upload/download/delete behavior
+   * - "local-only": local storage only; no remote calls or transfer queue work
+   * @default "remote"
+   */
+  readonly remoteMode?: "remote" | "local-only"
+
+  /**
    * Sync executor configuration
    */
   readonly executorConfig?: Partial<SyncExecutorConfig>
@@ -283,6 +291,7 @@ export const makeFileSync = (
     const remoteStorage = yield* RemoteStorage
     const { schema, store, storeId } = deps
     const { events, queryDb, tables } = schema
+    const isLocalOnly = config.remoteMode === "local-only"
 
     // Local wrapper for hashFile that uses the captured hash service
     const doHashFile = (file: File) => hashService.hashFile(file)
@@ -477,6 +486,7 @@ export const makeFileSync = (
     // but may not have corresponding entries in the executor queues (e.g. after goOffline reset)
     const reEnqueueQueuedTransfers = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (isLocalOnly) return
         const state = yield* stateManager.getState()
         for (const [fileId, localFile] of Object.entries(state)) {
           if (localFile.uploadStatus === "queued") {
@@ -499,6 +509,7 @@ export const makeFileSync = (
 
     const startHealthCheckLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (isLocalOnly) return
         const existing = yield* Ref.get(healthCheckFiberRef)
         if (existing) return
 
@@ -543,6 +554,7 @@ export const makeFileSync = (
     // The transfer may have failed for legitimate reasons (e.g. bad file) while backend is still reachable.
     const checkConnectivityOnFailure = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (isLocalOnly) return
         const isHealthy = yield* remoteStorage.checkHealth()
         if (!isHealthy) {
           yield* goOffline()
@@ -852,6 +864,19 @@ export const makeFileSync = (
         }
       })
 
+    const setLocalOnlyAvailableFileState = (
+      fileId: string,
+      path: string,
+      localHash: string
+    ): Effect.Effect<void> =>
+      stateManager.setFileState(fileId, {
+        path,
+        localHash,
+        uploadStatus: "done",
+        downloadStatus: "done",
+        lastSyncError: ""
+      })
+
     const readLocalHash = (path: string) =>
       Effect.gen(function*() {
         const exists = yield* localStorage.fileExists(path)
@@ -871,6 +896,11 @@ export const makeFileSync = (
         const { exists, localHash } = yield* readLocalHash(payload.path)
         if (!exists) return
 
+        if (isLocalOnly) {
+          yield* setLocalOnlyAvailableFileState(payload.id, payload.path, localHash)
+          return
+        }
+
         yield* applyFileState(payload.id, {
           path: payload.path,
           localHash,
@@ -885,6 +915,15 @@ export const makeFileSync = (
     const handleFileUpdated = (payload: FileUpdatedPayload): Effect.Effect<void> =>
       Effect.gen(function*() {
         const { exists, localHash } = yield* readLocalHash(payload.path)
+
+        if (isLocalOnly) {
+          if (exists) {
+            yield* setLocalOnlyAvailableFileState(payload.id, payload.path, localHash)
+          } else {
+            yield* stateManager.removeFile(payload.id)
+          }
+          return
+        }
 
         if (!exists) {
           if (!payload.remoteKey) return
@@ -998,6 +1037,21 @@ export const makeFileSync = (
           }
 
           const { exists, localHash } = yield* readLocalHash(file.path)
+
+          if (isLocalOnly) {
+            if (exists) {
+              nextState[file.id] = {
+                path: file.path,
+                localHash,
+                uploadStatus: "done",
+                downloadStatus: "done",
+                lastSyncError: ""
+              }
+            } else {
+              delete nextState[file.id]
+            }
+            continue
+          }
 
           if (!exists) {
             if (!file.remoteKey) continue
@@ -1139,6 +1193,34 @@ export const makeFileSync = (
     // Files in "error" state are also reset to give them another chance.
     const recoverStaleTransfers = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (isLocalOnly) {
+          yield* stateManager.atomicUpdate((currentState) => {
+            let hasChanges = false
+            const nextState = { ...currentState }
+
+            for (const [fileId, localFile] of Object.entries(nextState)) {
+              if (
+                localFile.uploadStatus === "done" &&
+                localFile.downloadStatus === "done" &&
+                localFile.lastSyncError === ""
+              ) {
+                continue
+              }
+
+              nextState[fileId] = {
+                ...localFile,
+                uploadStatus: "done",
+                downloadStatus: "done",
+                lastSyncError: ""
+              }
+              hasChanges = true
+            }
+
+            return hasChanges ? nextState : currentState
+          })
+          return
+        }
+
         const retriedFileIds: Array<string> = []
         const queuedUploadFileIds: Array<string> = []
         const queuedDownloadFileIds: Array<string> = []
@@ -1330,11 +1412,13 @@ export const makeFileSync = (
         // Run one-time stale transfer recovery before any transfers begin
         yield* maybeRecoverStaleTransfers()
 
-        const isOnline = yield* Ref.get(onlineRef)
-        if (isOnline) {
-          yield* executor.resume()
-        } else {
-          yield* executor.pause()
+        if (!isLocalOnly) {
+          const isOnline = yield* Ref.get(onlineRef)
+          if (isOnline) {
+            yield* executor.resume()
+          } else {
+            yield* executor.pause()
+          }
         }
         yield* maybeBootstrapFromTables()
         yield* startEventStream()
@@ -1551,8 +1635,10 @@ export const makeFileSync = (
         const scope = yield* Effect.scope
         yield* Ref.set(mainScopeRef, scope)
 
-        // Start the executor
-        yield* executor.start()
+        // Start transfer workers only when remote transfers are enabled.
+        if (!isLocalOnly) {
+          yield* executor.start()
+        }
 
         // Check initial lock status
         const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
@@ -1606,13 +1692,15 @@ export const makeFileSync = (
       path: string,
       hash: string
     ): Effect.Effect<void> =>
-      stateManager.setFileState(fileId, {
-        path,
-        localHash: hash,
-        downloadStatus: "done",
-        uploadStatus: "queued",
-        lastSyncError: ""
-      })
+      isLocalOnly
+        ? setLocalOnlyAvailableFileState(fileId, path, hash)
+        : stateManager.setFileState(fileId, {
+          path,
+          localHash: hash,
+          downloadStatus: "done",
+          uploadStatus: "queued",
+          lastSyncError: ""
+        })
 
     const saveFile = (file: File): Effect.Effect<FileOperationResult, HashError | StorageError> =>
       Effect.gen(function*() {
@@ -1674,7 +1762,7 @@ export const makeFileSync = (
             yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
           }
 
-          if (existingFile.remoteKey) {
+          if (!isLocalOnly && existingFile.remoteKey) {
             yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
           }
 
@@ -1695,8 +1783,9 @@ export const makeFileSync = (
         yield* deleteFileRecord(fileId)
 
         yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
+        yield* stateManager.removeFile(fileId)
 
-        if (existingFile.remoteKey) {
+        if (!isLocalOnly && existingFile.remoteKey) {
           yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
         }
       })
@@ -1710,6 +1799,15 @@ export const makeFileSync = (
 
         const localState = yield* getLocalFilesState()
         const local = localState[fileId]
+
+        if (isLocalOnly) {
+          const exists = yield* localStorage.fileExists(file.path)
+          if (!exists) return null
+          if (isNode()) {
+            return resolveLocalFileUrl(deps.localPathRoot, file.path)
+          }
+          return yield* localStorage.getFileUrl(file.path)
+        }
 
         if (local?.localHash) {
           const exists = yield* localStorage.fileExists(file.path)
@@ -1741,6 +1839,11 @@ export const makeFileSync = (
 
     const setOnline = (online: boolean): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (isLocalOnly) {
+          yield* Ref.set(onlineRef, true)
+          return
+        }
+
         const wasOnline = yield* Ref.get(onlineRef)
         if (online === wasOnline) return
 
@@ -1764,10 +1867,13 @@ export const makeFileSync = (
       }
     }
 
-    const prioritizeDownload = (fileId: string): Effect.Effect<void> => executor.prioritizeDownload(fileId)
+    const prioritizeDownload = (fileId: string): Effect.Effect<void> =>
+      isLocalOnly ? Effect.void : executor.prioritizeDownload(fileId)
 
     const retryErrors = (): Effect.Effect<ReadonlyArray<string>> =>
       Effect.gen(function*() {
+        if (isLocalOnly) return []
+
         const retriedFileIds: Array<string> = []
         const currentState = yield* stateManager.getState()
 

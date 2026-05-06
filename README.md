@@ -95,6 +95,16 @@ const dispose = initFileSync(store, {
 // await dispose()
 ```
 
+For unauthenticated/local-first use, pass `remote: false`. Files are stored and resolved locally,
+and FileSync will not call the signer API or enqueue uploads/downloads:
+
+```typescript
+const dispose = initFileSync(store, {
+  fileSystem: opfsLayer(),
+  remote: false
+})
+```
+
 ### 3. Use the API
 
 ```typescript
@@ -135,6 +145,11 @@ createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
 
 ## Backend Storage
+
+Backend storage is optional. Use `remote: false` for local-only apps or guest sessions where files
+should be saved, read, updated, and deleted only from local storage. In local-only mode, `remoteKey`
+stays as an empty string and `localFileState` reports local files as `uploadStatus: "done"` and
+`downloadStatus: "done"`.
 
 The client expects a **signer service** running in a server-side process that mints short-lived URLs for uploads/downloads and handles deletes. In the examples, we leverage the existing LiveStore Cloudflare Worker to host this signer service alongside LiveStore sync — see the `src/cf-worker/` folder in each example for the implementation.
 
@@ -215,6 +230,9 @@ const url = await resolveFileUrl(file.id)
 
 **Automatic prioritization:** When `resolveFileUrl()` is called for a file that's queued for download, that file is automatically moved to the front of the queue. This ensures visible files are downloaded before background files.
 
+In local-only mode, `resolveFileUrl()` only resolves local files and returns `null` if the local
+bytes are missing; it never signs a remote download URL.
+
 See `examples/react-filesync` or `examples/vue-filesync` for complete implementations.
 
 ## Handling Upload State
@@ -264,7 +282,8 @@ No configuration required — this works automatically.
 - Mid-session restarts (`syncNow()`, heartbeat recovery) restart `eventsStream` from the stored
   cursor and do **not** rescan every file row.
 - `syncNow()` re-enqueues files already marked as `queued` in `localFileState` before restarting
-  the stream, so pending work resumes without a full bootstrap.
+  the stream, so pending work resumes without a full bootstrap. In local-only mode this is harmless
+  and does not enqueue remote transfers.
 - Internal `localFileState` diff updates are batched into a single `store.commit(...)` call when
   possible, reducing per-file event bursts during reconciliation.
 

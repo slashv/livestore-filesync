@@ -14,6 +14,8 @@ export const healthCheckIntervalMs = urlParams.get("healthCheckIntervalMs")
   ? Number(urlParams.get("healthCheckIntervalMs"))
   : undefined
 
+export const localOnlyFileSync = urlParams.get("localOnly") === "1"
+
 const adapter = makePersistedAdapter({
   storage: { type: "opfs" },
   worker: LiveStoreWorker,

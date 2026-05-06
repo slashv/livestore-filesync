@@ -11,6 +11,8 @@ export {
   createFileSync,
   type CreateFileSyncConfig,
   type FileSyncInstance,
+  type FileSyncRemoteConfig,
+  type SignerRemoteConfig,
   type SyncEvent,
   type SyncFileOperationResult,
   type SyncFileRecord,

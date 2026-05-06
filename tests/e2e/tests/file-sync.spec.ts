@@ -67,6 +67,40 @@ test.describe('File Sync', () => {
     await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
   })
 
+  test('should save and display files in local-only mode without remote requests', async ({ page }) => {
+    const remoteRequests: string[] = []
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.pathname.startsWith('/api') || url.pathname.startsWith('/livestore-filesync-files/')) {
+        remoteRequests.push(url.toString())
+      }
+    })
+
+    const storeId = generateStoreId('local_only')
+    await page.goto(`/?storeId=${storeId}&localOnly=1`)
+    await waitForLiveStoreAndSync(page)
+
+    await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
+
+    const testImage = createTestImage('blue')
+    await page.locator('input[type="file"]').setInputFiles(testImage)
+
+    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(1, {
+      timeout: 10000,
+    })
+    await expect(page.locator('[data-testid="file-metadata"]')).toHaveText('400x400')
+    await waitForImageLoaded(page.locator('[data-testid="file-image"]'), 10000)
+
+    await expect(page.locator('[data-testid="file-remote-key"]')).toHaveText('')
+    await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('done')
+    await expect(page.locator('[data-testid="file-download-status"]')).toHaveText('done')
+    await expect(page.locator('[data-testid="sync-has-pending"]')).toHaveText('No')
+    await expect(page.locator('[data-testid="sync-error-count"]')).toHaveText('0')
+
+    await page.waitForTimeout(500)
+    expect(remoteRequests).toEqual([])
+  })
+
   test('should delete files from remote storage', async ({ page }) => {
     const storeId = generateStoreId()
     await page.goto(`/?storeId=${storeId}`)

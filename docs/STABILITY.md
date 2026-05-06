@@ -2,6 +2,10 @@
 
 This document describes the stability and self-healing mechanisms implemented in FileSync to ensure robust operation in production environments.
 
+These mechanisms apply to remote-backed FileSync unless noted otherwise. When FileSync is initialized
+with `remote: false`, remote transfer queues and signer health checks are disabled; `syncNow()` and
+`retryErrors()` remain safe but do not enqueue uploads or downloads.
+
 ## Recent Feature Implementations
 
 ### 1. Stale Transfer Recovery Gating
@@ -46,6 +50,9 @@ initFileSync(store, {
 ```
 
 **Heartbeat checks (leader-only):**
+
+Heartbeat transfer checks are skipped in local-only mode because no remote transfer workers or queues
+are started.
 
 1. **Event stream liveness**: If the stream fiber is dead (null ref or exited), it is restarted via `startEventStream()`.
 

@@ -6,6 +6,7 @@ import { useAppStore } from "../livestore/store.ts"
 
 type FileSyncProviderProps = {
   signerBaseUrl?: string
+  localOnly?: boolean
   headers?: Record<string, string>
   authHeaders?: () => Record<string, string>
   authToken?: string
@@ -19,6 +20,7 @@ const FileSyncProviderInner = ({
   children,
   headers,
   healthCheckIntervalMs,
+  localOnly = false,
   signerBaseUrl = "/api"
 }: FileSyncProviderProps) => {
   const store = useAppStore()
@@ -28,11 +30,13 @@ const FileSyncProviderInner = ({
     const resolvedHeaders = headers ?? authHeaders?.()
     const dispose = initFileSync(store, {
       fileSystem: opfsLayer(),
-      remote: {
-        signerBaseUrl,
-        ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
-        ...(authToken ? { authToken } : {})
-      },
+      remote: localOnly
+        ? false
+        : {
+          signerBaseUrl,
+          ...(resolvedHeaders ? { headers: resolvedHeaders } : {}),
+          ...(authToken ? { authToken } : {})
+        },
       options: {
         ...(healthCheckIntervalMs !== undefined ? { healthCheckIntervalMs } : {}),
         preprocessors: {
@@ -55,7 +59,7 @@ const FileSyncProviderInner = ({
       window.clearTimeout(retryQueuedTransfers)
       void dispose()
     }
-  }, [store, signerBaseUrl, headers, authHeaders, authToken, healthCheckIntervalMs])
+  }, [store, signerBaseUrl, headers, authHeaders, authToken, healthCheckIntervalMs, localOnly])
 
   return ready ? <>{children}</> : null
 }

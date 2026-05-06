@@ -1,6 +1,7 @@
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
-import { describe, expect, it } from "vitest"
-import { createTestStore } from "../../../test/helpers/livestore.js"
+import { describe, expect, it, vi } from "vitest"
+import { createTestStore, delay } from "../../../test/helpers/livestore.js"
+import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
 import type { FileSyncConfig } from "../../services/file-sync/FileSync.js"
 import { HashServiceLive } from "../../services/hash/index.js"
 import { parseFileMetadata, type PreprocessorMap } from "../../types/index.js"
@@ -8,11 +9,25 @@ import { hashFile, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
 import { LocalFileStateManagerLive } from "../local-file-state/index.js"
 import { LocalFileStorage, LocalFileStorageMemory } from "../local-file-storage/index.js"
-import { RemoteStorageMemory } from "../remote-file-storage/index.js"
+import {
+  type DownloadOptions,
+  RemoteStorage,
+  RemoteStorageMemory,
+  type RemoteStorageService,
+  type UploadOptions
+} from "../remote-file-storage/index.js"
 import { FileSync, FileSyncLive } from "./index.js"
 
 const createRuntime = (
   deps: Parameters<typeof FileSyncLive>[0],
+  config?: Partial<FileSyncConfig>
+) => {
+  return createRuntimeWithRemoteStorage(deps, RemoteStorageMemory, config)
+}
+
+const createRuntimeWithRemoteStorage = (
+  deps: Parameters<typeof FileSyncLive>[0],
+  remoteStorageLayer: Layer.Layer<RemoteStorage>,
   config?: Partial<FileSyncConfig>
 ) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
@@ -21,7 +36,7 @@ const createRuntime = (
     HashServiceLive,
     LocalFileStorageMemory,
     localFileStateManagerLayer,
-    RemoteStorageMemory
+    remoteStorageLayer
   )
   const fileSyncLayer = Layer.provide(baseLayer)(
     FileSyncLive(deps, {
@@ -38,6 +53,35 @@ const createRuntime = (
   )
   const mainLayer = Layer.mergeAll(baseLayer, fileSyncLayer)
   return ManagedRuntime.make(mainLayer)
+}
+
+const createFailingRemoteStorage = () => {
+  const upload = vi.fn((_: File, _options: UploadOptions) =>
+    Effect.fail(new UploadError({ message: "upload should not be called" }))
+  )
+  const download = vi.fn((_key: string, _options?: DownloadOptions) =>
+    Effect.fail(new DownloadError({ message: "download should not be called", url: _key }))
+  )
+  const deleteFile = vi.fn((_key: string) =>
+    Effect.fail(new DeleteError({ message: "delete should not be called", path: _key }))
+  )
+  const getDownloadUrl = vi.fn((_key: string) =>
+    Effect.fail(new DownloadError({ message: "getDownloadUrl should not be called", url: _key }))
+  )
+  const checkHealth = vi.fn(() => Effect.succeed(true))
+  const service: RemoteStorageService = {
+    upload,
+    download,
+    delete: deleteFile,
+    getDownloadUrl,
+    checkHealth,
+    getConfig: () => ({ mode: "local-only" })
+  }
+
+  return {
+    layer: Layer.succeed(RemoteStorage, service),
+    spies: { upload, download, deleteFile, getDownloadUrl, checkHealth }
+  }
 }
 
 // Helper to run hashFile with the HashService layer
@@ -202,6 +246,149 @@ describe("FileSync - File operations", () => {
       )
       expect(records[0]?.path).toBe(remotePath)
     } finally {
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+})
+
+describe("FileSync - Local-only mode", () => {
+  it("saves locally with stable state and no remote calls", async () => {
+    const { deps, shutdown, store, tables } = await createTestStore()
+    const remote = createFailingRemoteStorage()
+    const runtime = createRuntimeWithRemoteStorage(deps, remote.layer, { remoteMode: "local-only" })
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      const result = await runtime.runPromise(
+        Scope.extend(fileSync.saveFile(new File(["guest"], "guest.txt", { type: "text/plain" })), scope)
+      )
+      const url = await runtime.runPromise(Scope.extend(fileSync.resolveFileUrl(result.fileId), scope))
+
+      expect(url?.startsWith("file://")).toBe(true)
+      const storedFile = await runtime.runPromise(localStorage.readFile(result.path))
+      expect(await storedFile.text()).toBe("guest")
+
+      const files = store.query(deps.schema.queryDb(tables.files.where({ id: result.fileId })))
+      expect(files[0]?.remoteKey).toBe("")
+
+      const state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[result.fileId]).toMatchObject({
+        path: result.path,
+        localHash: result.contentHash,
+        uploadStatus: "done",
+        downloadStatus: "done",
+        lastSyncError: ""
+      })
+
+      expect(remote.spies.upload).not.toHaveBeenCalled()
+      expect(remote.spies.download).not.toHaveBeenCalled()
+      expect(remote.spies.deleteFile).not.toHaveBeenCalled()
+      expect(remote.spies.getDownloadUrl).not.toHaveBeenCalled()
+      expect(remote.spies.checkHealth).not.toHaveBeenCalled()
+    } finally {
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("updates and deletes locally without remote storage", async () => {
+    const { deps, events, shutdown, store, tables } = await createTestStore()
+    const remote = createFailingRemoteStorage()
+    const runtime = createRuntimeWithRemoteStorage(deps, remote.layer, { remoteMode: "local-only" })
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const localStorage = await runtime.runPromise(Effect.gen(function*() {
+      return yield* LocalFileStorage
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      const saved = await runtime.runPromise(
+        Scope.extend(fileSync.saveFile(new File(["before"], "guest.txt")), scope)
+      )
+      store.commit(events.fileUpdated({
+        id: saved.fileId,
+        path: saved.path,
+        remoteKey: "stale/remote/key",
+        contentHash: saved.contentHash,
+        updatedAt: new Date()
+      }))
+
+      const updated = await runtime.runPromise(
+        Scope.extend(fileSync.updateFile(saved.fileId, new File(["after"], "guest.txt")), scope)
+      )
+
+      expect(updated.path).not.toBe(saved.path)
+      expect(await runtime.runPromise(localStorage.fileExists(saved.path))).toBe(false)
+      expect(await runtime.runPromise(localStorage.fileExists(updated.path))).toBe(true)
+
+      let files = store.query(deps.schema.queryDb(tables.files.where({ id: saved.fileId })))
+      expect(files[0]?.remoteKey).toBe("")
+
+      let state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[saved.fileId]).toMatchObject({
+        uploadStatus: "done",
+        downloadStatus: "done",
+        lastSyncError: ""
+      })
+
+      await runtime.runPromise(Scope.extend(fileSync.deleteFile(saved.fileId), scope))
+      files = store.query(deps.schema.queryDb(tables.files.where({ id: saved.fileId })))
+      expect(files[0]?.deletedAt).not.toBeNull()
+      expect(await runtime.runPromise(localStorage.fileExists(updated.path))).toBe(false)
+      state = await runtime.runPromise(fileSync.getLocalFilesState())
+      expect(state[saved.fileId]).toBeUndefined()
+
+      expect(remote.spies.upload).not.toHaveBeenCalled()
+      expect(remote.spies.download).not.toHaveBeenCalled()
+      expect(remote.spies.deleteFile).not.toHaveBeenCalled()
+      expect(remote.spies.getDownloadUrl).not.toHaveBeenCalled()
+      expect(remote.spies.checkHealth).not.toHaveBeenCalled()
+    } finally {
+      await runtime.runPromise(Scope.close(scope, Exit.void))
+      await runtime.dispose()
+      await shutdown()
+    }
+  })
+
+  it("start, syncNow, and retryErrors do not enqueue remote work", async () => {
+    const { deps, shutdown } = await createTestStore()
+    const remote = createFailingRemoteStorage()
+    const runtime = createRuntimeWithRemoteStorage(deps, remote.layer, {
+      healthCheckIntervalMs: 10,
+      heartbeatIntervalMs: 10,
+      remoteMode: "local-only"
+    })
+    const fileSync = await runtime.runPromise(Effect.gen(function*() {
+      return yield* FileSync
+    }))
+    const scope = await runtime.runPromise(Scope.make())
+
+    try {
+      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.extend(fileSync.syncNow(), scope))
+      const retried = await runtime.runPromise(fileSync.retryErrors())
+      await delay(30)
+
+      expect(retried).toEqual([])
+      expect(await runtime.runPromise(fileSync.isOnline())).toBe(true)
+      expect(remote.spies.upload).not.toHaveBeenCalled()
+      expect(remote.spies.download).not.toHaveBeenCalled()
+      expect(remote.spies.deleteFile).not.toHaveBeenCalled()
+      expect(remote.spies.getDownloadUrl).not.toHaveBeenCalled()
+      expect(remote.spies.checkHealth).not.toHaveBeenCalled()
+    } finally {
+      await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))
       await runtime.dispose()
       await shutdown()
