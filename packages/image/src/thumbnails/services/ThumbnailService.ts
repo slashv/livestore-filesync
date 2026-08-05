@@ -18,10 +18,10 @@
  * @module
  */
 
-import { FileSystem } from "@effect/platform/FileSystem"
 import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import { Context, Effect, Fiber, Layer, Queue, Ref } from "effect"
+import { FileSystem } from "effect/FileSystem"
 
 import type { ThumbnailEvents, ThumbnailTables } from "../schema/index.js"
 import type {
@@ -134,10 +134,9 @@ export interface ThumbnailServiceService {
 /**
  * ThumbnailService service tag
  */
-export class ThumbnailService extends Context.Tag("ThumbnailService")<
-  ThumbnailService,
-  ThumbnailServiceService
->() {}
+export class ThumbnailService extends Context.Service<ThumbnailService, ThumbnailServiceService>()(
+  "ThumbnailService"
+) {}
 
 // ============================================
 // Queue Item Types
@@ -515,7 +514,7 @@ export const makeThumbnailService = (
           const allStates = readAllFileThumbnailStates()
           for (const fileState of Object.values(allStates)) {
             yield* storage.deleteThumbnails(fileState.contentHash).pipe(
-              Effect.catchAll(() => Effect.void)
+              Effect.catch(() => Effect.void)
             )
           }
 
@@ -536,10 +535,10 @@ export const makeThumbnailService = (
     // Helper to read local file
     const readLocalFile = (path: string): Effect.Effect<ArrayBuffer | null> =>
       Effect.gen(function*() {
-        const exists = yield* fs.exists(path).pipe(Effect.catchAll(() => Effect.succeed(false)))
+        const exists = yield* fs.exists(path).pipe(Effect.catch(() => Effect.succeed(false)))
         if (!exists) return null
 
-        const data = yield* fs.readFile(path).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        const data = yield* fs.readFile(path).pipe(Effect.catch(() => Effect.succeed(null)))
         if (!data) return null
 
         // Convert to regular ArrayBuffer if it's a SharedArrayBuffer
@@ -603,7 +602,7 @@ export const makeThumbnailService = (
         const result = yield* workerClient
           .generate(fileData, path, contentHash, config.sizes, config.format, config.qualitySettings)
           .pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.succeed<GeneratedThumbnails | null>(null).pipe(
                 Effect.tap(() =>
                   Effect.sync(() => {
@@ -635,7 +634,7 @@ export const makeThumbnailService = (
         for (const thumbnail of result.thumbnails) {
           const thumbnailPath = yield* storage
             .writeThumbnail(contentHash, thumbnail.sizeName, config.format, new Uint8Array(thumbnail.data))
-            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)))
+            .pipe(Effect.catch(() => Effect.succeed<string | null>(null)))
 
           if (thumbnailPath) {
             // Update state to done
@@ -685,7 +684,7 @@ export const makeThumbnailService = (
         yield* Effect.all(items.map(processGenerationItem), { concurrency: "unbounded" })
       }).pipe(
         Effect.forever,
-        Effect.catchAll(() => Effect.void)
+        Effect.catch(() => Effect.void)
       )
 
     // Queue a file for thumbnail generation
@@ -774,7 +773,7 @@ export const makeThumbnailService = (
         if (!state) return
 
         // Delete thumbnail files
-        yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catchAll(() => Effect.void))
+        yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catch(() => Effect.void))
 
         // Remove from state
         commitRemoveFileThumbnailState(fileId)
@@ -837,7 +836,7 @@ export const makeThumbnailService = (
         // Get URL from storage
         return yield* storage
           .getThumbnailUrl(state.contentHash, size, config.format)
-          .pipe(Effect.catchAll(() => Effect.succeed(null)))
+          .pipe(Effect.catch(() => Effect.succeed(null)))
       })
 
     const getThumbnailState: ThumbnailServiceService["getThumbnailState"] = (fileId) =>
@@ -862,7 +861,7 @@ export const makeThumbnailService = (
 
           // Delete existing thumbnails if content hash changed
           if (state && state.contentHash !== file.contentHash) {
-            yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catchAll(() => Effect.void))
+            yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catch(() => Effect.void))
           }
 
           // Queue for regeneration
@@ -879,7 +878,7 @@ export const makeThumbnailService = (
         yield* scanExistingFiles()
       }).pipe(
         Effect.forever,
-        Effect.catchAll(() => Effect.void)
+        Effect.catch(() => Effect.void)
       )
 
     const start: ThumbnailServiceService["start"] = () =>
@@ -890,7 +889,7 @@ export const makeThumbnailService = (
         yield* Ref.set(isRunningRef, true)
 
         // Wait for worker to be ready
-        yield* workerClient.waitForReady().pipe(Effect.catchAll(() => Effect.void))
+        yield* workerClient.waitForReady().pipe(Effect.catch(() => Effect.void))
 
         // Check for config changes and clear thumbnails if needed
         yield* checkAndHandleConfigChange()
@@ -898,14 +897,14 @@ export const makeThumbnailService = (
         // Scan existing files
         yield* scanExistingFiles()
 
-        // Start the worker loop (use forkDaemon to ensure it survives after start() returns)
-        const workerFiber = yield* workerLoop().pipe(Effect.forkDaemon)
+        // Keep the background loop alive after this short-lived start effect returns.
+        const workerFiber = yield* workerLoop().pipe(Effect.forkDetach)
         yield* Ref.set(processingFiberRef, workerFiber)
 
         // Start polling for new files if enabled
         const pollInterval = config.pollInterval ?? 2000
         if (pollInterval > 0) {
-          yield* pollForNewFiles(pollInterval).pipe(Effect.forkDaemon)
+          yield* pollForNewFiles(pollInterval).pipe(Effect.forkDetach)
         }
 
         // Mark _cleanupFile as intentionally unused for now (to be wired up later)

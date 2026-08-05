@@ -6,10 +6,10 @@
  * @module
  */
 
-import type { FileSystem } from "@effect/platform/FileSystem"
 import { queryDb } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
+import type { FileSystem } from "effect/FileSystem"
 import type { SyncSchema } from "../livestore/types.js"
 import { createFileSyncSchema } from "../schema/index.js"
 import type { Hash } from "../services/hash/index.js"

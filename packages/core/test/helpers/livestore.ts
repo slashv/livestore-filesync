@@ -1,4 +1,4 @@
-import { makeAdapter } from "@livestore/adapter-node"
+import { makeInMemoryAdapter } from "@livestore/adapter-web"
 import { createStorePromise, makeSchema, queryDb, State } from "@livestore/livestore"
 import type { LiveStoreDeps } from "../../src/livestore/types.js"
 import { createFileSyncSchema } from "../../src/schema/index.js"
@@ -10,7 +10,7 @@ interface TestStoreOptions {
 }
 
 export const createTestStore = async (options: TestStoreOptions = {}) => {
-  const adapter = makeAdapter({ storage: { type: "in-memory" } })
+  const adapter = makeInMemoryAdapter()
   const fileSyncSchema = createFileSyncSchema()
   const { createMaterializers, events, tables } = fileSyncSchema
   const materializers = State.SQLite.materializers(events, createMaterializers(tables))

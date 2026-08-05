@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "noUnusedLocals": false,
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.tsbuildinfo",

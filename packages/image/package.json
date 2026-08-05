@@ -82,9 +82,7 @@
     "@livestore-filesync/core": "workspace:*"
   },
   "devDependencies": {
-    "@effect/platform": "catalog:",
     "@effect/vitest": "catalog:",
-    "@effect/workflow": "catalog:",
     "@livestore/livestore": "catalog:",
     "@livestore/peer-deps": "catalog:",
     "@opentelemetry/api": "catalog:",
@@ -102,7 +100,6 @@
     "wasm-vips": "^0.0.16"
   },
   "peerDependencies": {
-    "@effect/platform": "catalog:",
     "@livestore/livestore": "catalog:",
     "effect": "catalog:",
     "wasm-vips": "^0.0.16"

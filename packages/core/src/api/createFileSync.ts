@@ -10,8 +10,8 @@
  * @module
  */
 
-import type { FileSystem } from "@effect/platform/FileSystem"
 import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
+import type { FileSystem } from "effect/FileSystem"
 import type { LiveStoreDeps, SyncSchema, SyncStore } from "../livestore/types.js"
 import type { FileSyncConfig, FileSyncService } from "../services/file-sync/index.js"
 import {
@@ -247,7 +247,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let online = true // optimistic default; health check will correct if offline
   let unsubscribeEvents: (() => void) | null = null
   let disposed = false
-  let scope: Scope.CloseableScope | null = null
+  let scope: Scope.Closeable | null = null
   let fileSyncService: FileSyncService | null = null
 
   const storeId = sanitizeStoreId(store.storeId)
@@ -301,7 +301,6 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
 
   const BaseLayer = Layer.mergeAll(
-    Layer.scope,
     FileSystemLive,
     HashLive,
     LocalFileStorageLayer,
@@ -352,7 +351,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
         scope = await runEffect(Scope.make())
         const fileSync = await getFileSyncService()
         await ensureEventSubscription()
-        await runEffect(Scope.extend(fileSync.start(), scope))
+        await runEffect(Scope.provide(fileSync.start(), scope))
       } catch (error) {
         console.error("[createFileSync] Error during start:", error)
         // Surface initialization failures to event listeners so callers

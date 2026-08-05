@@ -6,9 +6,9 @@
  * @module
  */
 
-import type { FileSystem } from "@effect/platform/FileSystem"
 import type { Store } from "@livestore/livestore"
 import type { Layer } from "effect"
+import type { FileSystem } from "effect/FileSystem"
 
 import { createThumbnailSchema, type ThumbnailEvents, type ThumbnailTables } from "../schema/index.js"
 import type { FileThumbnailState, InitThumbnailsConfig, ThumbnailEvent } from "../types/index.js"

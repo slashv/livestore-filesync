@@ -2,9 +2,9 @@
 
 File sync for LiveStore apps. This missing piece for local-first apps that need to sync files.
 
-**[!]** This is still under active development and not yet fully tested or ready. Generally the sync functionality on web and desktop (electron) is in a functional state while the expo (mobile) and image packages are less mature.
+**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo currently typechecks but has no adapter runtime tests.
 
-**[!]** This project targets LiveStore 0.4 which is in active development. We pin exact LiveStore npm development release versions in `pnpm-workspace.yaml` so local development, CI, published packages, and downstream apps can resolve the same built LiveStore package graph without relying on a local registry.
+**[!]** This project currently targets an exact LiveStore main snapshot and Effect 4 beta cohort. The pins in `pnpm-workspace.yaml` keep local development and CI on one reproducible package graph. These snapshot pins are development inputs, not a published compatibility promise.
 
 - **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
@@ -37,17 +37,19 @@ cd livestore-filesync
 pnpm install
 ```
 
-### LiveStore development release
+### LiveStore snapshot cohort
 
-LiveStore publishes built npm development releases for 0.4 while it is in active development. This repo uses exact release versions so installs are reproducible:
+This repo follows LiveStore main through exact npm snapshots and immutable Git commits so installs are reproducible:
 
-- LiveStore packages use `0.4.0-dev.23`
+- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4`
+- Effect packages use `4.0.0-beta.99`
+- `@livestore/adapter-node` temporarily uses `livestore-contrib` commit `7003f4e0673c2254a327c9fb4d816cbdd55d8d09` from PR #36. That commit updates the adapter to the same LiveStore core commit and supplies the current `StateHead` service.
 
-Update the LiveStore catalog entries in `pnpm-workspace.yaml` and run `pnpm install` whenever you intentionally move to a newer development release.
+Update the complete LiveStore and Effect catalog cohorts together and run `pnpm install` whenever intentionally moving to a newer snapshot.
 
-Downstream apps must install the same LiveStore development release versions directly, through their own pnpm catalog, or through package-manager overrides. This repo also uses pnpm `overrides` to force transitive LiveStore dependencies from helper packages such as `vue-livestore` onto the same release. `@livestore-filesync/core` and `@livestore-filesync/image` publish LiveStore as peer dependencies, so consumers remain responsible for resolving a compatible LiveStore version.
+Downstream apps must install the same LiveStore snapshot directly, through their own pnpm catalog, or through equivalent package-manager overrides. This repo forces transitive LiveStore and Effect packages onto the selected cohort to avoid duplicate runtime generations. `@livestore-filesync/core` and `@livestore-filesync/image` expose LiveStore as peer dependencies, so consumers remain responsible for resolving a compatible LiveStore version.
 
-Install `@livestore/peer-deps` at the same runtime release in downstream apps to keep Effect and OpenTelemetry peer versions aligned with LiveStore.
+Install `@livestore/peer-deps` from the same snapshot cohort in downstream apps to keep Effect and OpenTelemetry peer versions aligned with LiveStore.
 
 ## Install
 
@@ -124,7 +126,7 @@ See `examples/` for complete implementations:
 
 ## Filesystem Adapters
 
-The core package has a pluggable filesystem architecture. It expects any layer that provides a sub-section of the `@effect/platform` `FileSystem` interface.
+The core package has a pluggable filesystem architecture. It expects any layer that provides the required subset of Effect 4's `effect/FileSystem` interface.
 
 **Browser (OPFS)**: Use the provided `@livestore-filesync/opfs` package:
 ```typescript
@@ -143,6 +145,8 @@ initFileSync(store, { fileSystem: expoLayer(), ... })
 import { NodeFileSystem } from '@effect/platform-node'
 createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
+
+The Node adapter is temporarily installed directly from the immutable `livestore-contrib` PR #36 commit because the last published contrib snapshot predates the selected core snapshot. pnpm overrides its repository-local LiveStore links with the exact npm snapshot cohort used by this workspace. The Node example's `pnpm test` command verifies that the adapter can create and shut down a store. Replace the Git pin with the matching composite npm snapshot after contrib publishes it.
 
 ## Backend Storage
 
@@ -454,7 +458,7 @@ See `examples/react-thumbnail` for the maintained thumbnail example. Vue thumbna
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)
-- Effect 3.x, @effect/platform 0.92+
+- Effect `4.0.0-beta.99` and the matching Effect platform packages
 - For image processing with Vips: wasm-vips ^0.0.16 (~5 MB WASM), SharedArrayBuffer support (requires COOP/COEP headers). Alternatively, use the Canvas processor which has no additional requirements.
 
 ## License

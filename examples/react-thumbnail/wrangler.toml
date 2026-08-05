@@ -5,6 +5,11 @@ compatibility_flags = ["nodejs_compat"]
 main = "src/cf-worker/index.r2.ts"
 # main = "src/cf-worker/index.s3.ts"
 
+# Insecure local default used by the example app and E2E tests. A production
+# secret with the same binding overrides this value.
+[vars]
+WORKER_AUTH_TOKEN = "dev-token-change-in-production"
+
 # R2 bucket for file storage
 # Comment out this section when using S3 Signer mode
 [[r2_buckets]]
@@ -20,5 +25,5 @@ class_name = "SyncBackendDO"
 tag = "v1"
 new_sqlite_classes = ["SyncBackendDO"]
 
-# WORKER_AUTH_TOKEN is set via .dev.vars for local dev
-# For production, use `wrangler secret put WORKER_AUTH_TOKEN`
+# For production, override the local default with:
+# `wrangler secret put WORKER_AUTH_TOKEN`

@@ -69,10 +69,9 @@ export interface ThumbnailWorkerClientService {
 /**
  * ThumbnailWorkerClient service tag
  */
-export class ThumbnailWorkerClient extends Context.Tag("ThumbnailWorkerClient")<
-  ThumbnailWorkerClient,
-  ThumbnailWorkerClientService
->() {}
+export class ThumbnailWorkerClient extends Context.Service<ThumbnailWorkerClient, ThumbnailWorkerClientService>()(
+  "ThumbnailWorkerClient"
+) {}
 
 // ============================================
 // Implementation

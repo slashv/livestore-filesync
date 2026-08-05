@@ -108,10 +108,9 @@ export interface LocalFileStateManagerService {
 /**
  * LocalFileStateManager service tag
  */
-export class LocalFileStateManager extends Context.Tag("LocalFileStateManager")<
-  LocalFileStateManager,
-  LocalFileStateManagerService
->() {}
+export class LocalFileStateManager extends Context.Service<LocalFileStateManager, LocalFileStateManagerService>()(
+  "LocalFileStateManager"
+) {}
 
 /**
  * Create the LocalFileStateManager service

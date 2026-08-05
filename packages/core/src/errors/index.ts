@@ -10,7 +10,7 @@
 import { Data } from "effect"
 
 // Re-export PlatformError for filesystem operations
-export { BadArgument, PlatformError, SystemError } from "@effect/platform/Error"
+export { BadArgument, PlatformError, SystemError } from "effect/PlatformError"
 
 /**
  * Base error for all file storage operations

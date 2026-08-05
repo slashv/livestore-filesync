@@ -56,19 +56,21 @@ pnpm test
 
 All checks must pass before publishing.
 
-## LiveStore Development Dependencies
+## LiveStore Snapshot Dependencies
 
-This project develops against exact LiveStore npm development releases rather than a local Verdaccio registry or a git checkout. The LiveStore pins live in the `catalog` section of `pnpm-workspace.yaml`.
+This project develops against exact LiveStore npm snapshots rather than a local registry. LiveStore core packages are pinned to snapshot `63cb2f26448608d4747d5ec881d7188f3a81bfa4`, with Effect pinned to `4.0.0-beta.99`, in the `catalog` section of `pnpm-workspace.yaml`. The development-only Node adapter is temporarily sourced from immutable `livestore-contrib` commit `7003f4e0673c2254a327c9fb4d816cbdd55d8d09` until that compatible adapter is published as a composite snapshot.
 
 Before publishing `@livestore-filesync/*` packages:
 
-- Keep the LiveStore runtime packages on the same exact development release version.
-- Keep `@livestore/peer-deps` on that same runtime release so Effect and OpenTelemetry peer versions stay aligned.
+- Keep the LiveStore runtime packages on the same exact snapshot version.
+- Keep `@livestore/peer-deps`, Effect, and Effect platform packages on the matching cohort.
 - Run `pnpm install` after changing LiveStore pins so `pnpm-lock.yaml` and the publish-time `catalog:` replacements are updated.
 - Keep pnpm `overrides` aligned with the catalog so helper packages with hard-pinned LiveStore dependencies cannot pull a second LiveStore version into examples or downstream workspaces.
-- Republish filesync packages after changing LiveStore versions if downstream apps need the published peer dependency metadata to reference the new release.
+- Keep the temporary Node Git dependency pinned to an immutable commit and keep its catalog and override entries identical. Its repository-local `link:` dependencies must continue to resolve through the exact LiveStore overrides.
+- Run the Node example smoke test before treating a contrib `@livestore/adapter-node` commit or snapshot as compatible. Replace the Git dependency with a published composite snapshot when one contains the same fix.
+- Republish filesync packages after changing LiveStore versions if downstream apps need the published peer dependency metadata to reference the new snapshot.
 
-Downstream pnpm workspaces should copy the same LiveStore catalog pins or add equivalent direct dependencies/overrides. Use exact LiveStore development release versions for reproducible app deployments.
+Downstream pnpm workspaces should copy the same LiveStore and Effect catalog pins or add equivalent direct dependencies/overrides. Use exact snapshot versions for reproducible development deployments.
 
 ## Versioning
 

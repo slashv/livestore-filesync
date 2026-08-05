@@ -4,7 +4,6 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@effect/workflow": "catalog:",
     "@livestore-filesync/core": "workspace:*",
     "@livestore-filesync/image": "workspace:*",
     "@livestore-filesync/opfs": "workspace:*",
@@ -30,14 +29,14 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.19.0",
-    "@cloudflare/workers-types": "^4.20251118.0",
+    "@cloudflare/vite-plugin": "catalog:",
+    "@cloudflare/workers-types": "catalog:",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^5.0.3",
+    "@vitejs/plugin-react": "catalog:",
     "typescript": "^5.6.2",
-    "vite": "7.3.1",
-    "wrangler": "^4.56.0"
+    "vite": "catalog:",
+    "wrangler": "catalog:"
   },
   "scripts": {
     "dev": "vite --force",

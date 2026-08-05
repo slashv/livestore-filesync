@@ -54,7 +54,13 @@ import { Events, EventSequenceNumber, Schema, State } from "@livestore/livestore
 /**
  * Transfer status schema - tracks the state of file uploads/downloads
  */
-export const TransferStatusSchema = Schema.Literal("pending", "queued", "inProgress", "done", "error")
+export const TransferStatusSchema = Schema.Union([
+  Schema.Literal("pending"),
+  Schema.Literal("queued"),
+  Schema.Literal("inProgress"),
+  Schema.Literal("done"),
+  Schema.Literal("error")
+])
 
 /**
  * Local file state schema - tracks sync status for a single file
@@ -84,17 +90,14 @@ export const LocalFileStateRowSchema = Schema.Struct({
  * Map of file IDs to local file states schema
  * This type is kept for backwards compatibility with consumers.
  */
-export const LocalFilesStateSchema = Schema.Record({
-  key: Schema.String,
-  value: LocalFileStateSchema
-})
+export const LocalFilesStateSchema = Schema.Record(Schema.String, LocalFileStateSchema)
 
 /**
  * File sync cursor schema - tracks last processed event sequence
  */
 export const FileSyncCursorSchema = Schema.Struct({
   lastEventSequence: Schema.String,
-  updatedAt: Schema.Date
+  updatedAt: Schema.DateFromMillis
 })
 
 /**
@@ -108,10 +111,7 @@ export const FileMetadataSchema = Schema.Struct({
     width: Schema.Number,
     height: Schema.Number
   })),
-  custom: Schema.optional(Schema.Record({
-    key: Schema.String,
-    value: Schema.Unknown
-  }))
+  custom: Schema.optional(Schema.Record(Schema.String, Schema.Unknown))
 })
 
 // ============================================
@@ -126,8 +126,8 @@ export const FileCreatedPayloadSchema = Schema.Struct({
   path: Schema.String,
   contentHash: Schema.String,
   metadataJson: Schema.optional(Schema.NullOr(Schema.String)),
-  createdAt: Schema.Date,
-  updatedAt: Schema.Date
+  createdAt: Schema.DateFromString,
+  updatedAt: Schema.DateFromString
 })
 
 /**
@@ -139,7 +139,7 @@ export const FileUpdatedPayloadSchema = Schema.Struct({
   remoteKey: Schema.String,
   contentHash: Schema.String,
   metadataJson: Schema.optional(Schema.NullOr(Schema.String)),
-  updatedAt: Schema.Date
+  updatedAt: Schema.DateFromString
 })
 
 /**
@@ -147,7 +147,7 @@ export const FileUpdatedPayloadSchema = Schema.Struct({
  */
 export const FileDeletedPayloadSchema = Schema.Struct({
   id: Schema.String,
-  deletedAt: Schema.Date
+  deletedAt: Schema.DateFromString
 })
 
 // ============================================
@@ -181,9 +181,9 @@ export function createFileSyncSchema() {
         remoteKey: State.SQLite.text({ default: "" }),
         contentHash: State.SQLite.text({ default: "" }),
         metadataJson: State.SQLite.text({ nullable: true }),
-        createdAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
-        updatedAt: State.SQLite.integer({ schema: Schema.DateFromNumber }),
-        deletedAt: State.SQLite.integer({ nullable: true, schema: Schema.DateFromNumber })
+        createdAt: State.SQLite.integer({ schema: Schema.DateFromMillis }),
+        updatedAt: State.SQLite.integer({ schema: Schema.DateFromMillis }),
+        deletedAt: State.SQLite.integer({ nullable: true, schema: Schema.DateFromMillis })
       }
     }),
     /**

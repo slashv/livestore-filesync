@@ -1,7 +1,7 @@
-import { SystemError } from "@effect/platform/Error"
-import { FileSystem, Size } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
+import { FileSystem, Size } from "effect/FileSystem"
+import type * as FS from "effect/FileSystem"
+import { systemError } from "effect/PlatformError"
 import { describe, expect, it } from "vitest"
 import { FileNotFoundError } from "../../errors/index.js"
 import { joinPath, makeStoreRoot } from "../../utils/index.js"
@@ -79,8 +79,8 @@ describe("LocalFileStorage", () => {
     }
 
     const toError = (method: string, path: string, cause: unknown) =>
-      new SystemError({
-        reason: "Unknown",
+      systemError({
+        _tag: "Unknown",
         module: "FileSystem",
         method,
         pathOrDescriptor: path,
@@ -247,12 +247,9 @@ describe("LocalFileStorage", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) {
-        const error = exit.cause
-        expect(error._tag).toBe("Fail")
-        if (error._tag === "Fail") {
-          expect(error.error).toBeInstanceOf(FileNotFoundError)
-          expect((error.error as FileNotFoundError).path).toBe("nonexistent.txt")
-        }
+        const error = Option.getOrThrow(Cause.findErrorOption(exit.cause))
+        expect(error).toBeInstanceOf(FileNotFoundError)
+        expect((error as FileNotFoundError).path).toBe("nonexistent.txt")
       }
     })
   })

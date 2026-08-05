@@ -6,9 +6,9 @@
  * @module
  */
 
-import type { FileSystem } from "@effect/platform/FileSystem"
 import type { Store } from "@livestore/livestore"
 import { Effect, Layer, ManagedRuntime } from "effect"
+import type { FileSystem } from "effect/FileSystem"
 
 import type { ThumbnailEvents, ThumbnailTables } from "../schema/index.js"
 import {

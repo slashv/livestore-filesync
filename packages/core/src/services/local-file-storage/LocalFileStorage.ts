@@ -8,9 +8,9 @@
  * @module
  */
 
-import { FileSystem } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
 import { Context, Effect, Layer } from "effect"
+import { FileSystem } from "effect/FileSystem"
+import type * as FS from "effect/FileSystem"
 import { DirectoryNotFoundError, FileNotFoundError, StorageError } from "../../errors/index.js"
 import { MemoryFile } from "../../utils/MemoryFile.js"
 import { joinPath, parsePath } from "../../utils/path.js"
@@ -75,10 +75,9 @@ export interface LocalFileStorageService {
 /**
  * LocalFileStorage service tag
  */
-export class LocalFileStorage extends Context.Tag("LocalFileStorage")<
-  LocalFileStorage,
-  LocalFileStorageService
->() {}
+export class LocalFileStorage extends Context.Service<LocalFileStorage, LocalFileStorageService>()(
+  "LocalFileStorage"
+) {}
 
 const encodeMetadata = (metadata: FileMetadata): Uint8Array => new TextEncoder().encode(JSON.stringify(metadata))
 

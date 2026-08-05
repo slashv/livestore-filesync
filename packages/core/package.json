@@ -38,10 +38,9 @@
     "test": "vitest"
   },
   "devDependencies": {
-    "@effect/platform": "catalog:",
     "@effect/vitest": "catalog:",
-    "@effect/workflow": "catalog:",
     "@livestore/adapter-node": "catalog:",
+    "@livestore/adapter-web": "catalog:",
     "@livestore/livestore": "catalog:",
     "@livestore/peer-deps": "catalog:",
     "@opentelemetry/api": "catalog:",
@@ -58,7 +57,6 @@
     "vitest": "^3.2.0"
   },
   "peerDependencies": {
-    "@effect/platform": "catalog:",
     "@livestore/livestore": "catalog:",
     "effect": "catalog:"
   },

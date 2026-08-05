@@ -1,4 +1,4 @@
-import { makeAdapter } from "@livestore/adapter-node"
+import { makeInMemoryAdapter } from "@livestore/adapter-web"
 import { createStorePromise, makeSchema, queryDb, State } from "@livestore/livestore"
 import { Deferred, Effect, Exit, Layer, ManagedRuntime, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
@@ -17,7 +17,7 @@ import { sanitizeStoreId } from "../src/utils/index.js"
 
 describe("FileSync remote delete", () => {
   it("deletes the remote file if the file is deleted during an in-flight upload", async () => {
-    const adapter = makeAdapter({ storage: { type: "in-memory" } })
+    const adapter = makeInMemoryAdapter()
     const fileSyncSchema = createFileSyncSchema()
     const { createMaterializers, events, tables } = fileSyncSchema
     const materializers = State.SQLite.materializers(events, createMaterializers(tables))
@@ -48,7 +48,6 @@ describe("FileSync remote delete", () => {
     const RemoteStorageLayer = Layer.succeed(RemoteStorage, remoteWithDelay)
     const LocalFileStateManagerLayer = LocalFileStateManagerLive(deps)
     const BaseLayer = Layer.mergeAll(
-      Layer.scope,
       HashServiceLive,
       LocalFileStorageMemory,
       LocalFileStateManagerLayer,
@@ -78,7 +77,7 @@ describe("FileSync remote delete", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
 
       let targetFileId = ""
       const uploadCompleted = new Promise<void>((resolve) => {

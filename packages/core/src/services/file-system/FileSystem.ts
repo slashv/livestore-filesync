@@ -8,5 +8,5 @@
  * @module
  */
 
-export { FileSystem } from "@effect/platform/FileSystem"
-export type { FileSystem as FileSystemService } from "@effect/platform/FileSystem"
+export { FileSystem } from "effect/FileSystem"
+export type { FileSystem as FileSystemService } from "effect/FileSystem"

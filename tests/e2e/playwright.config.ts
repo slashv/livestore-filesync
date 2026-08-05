@@ -47,7 +47,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   // React examples use LiveStore SharedWorker heavily in multi-tab tests; run them
   // serially to avoid cross-test timing interference in the shared browser process.
-  workers: process.env.CI ? 1 : framework === 'react' ? 1 : undefined,
+  workers: process.env.CI ? 1 : framework.startsWith('react') ? 1 : undefined,
   reporter: 'html',
 
   use: {

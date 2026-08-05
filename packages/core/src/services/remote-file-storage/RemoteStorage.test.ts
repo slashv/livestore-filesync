@@ -1,10 +1,15 @@
-import { Effect, Exit, Ref } from "effect"
+import { Cause, Effect, Exit, Option, Ref } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { makeMemoryRemoteStorage, makeS3SignerRemoteStorage, type MemoryRemoteStorageOptions } from "./index.js"
 
 describe("RemoteStorage", () => {
+  const failureOrThrow = <E>(exit: Exit.Exit<unknown, E>): E => {
+    if (Exit.isSuccess(exit)) throw new Error("Expected effect to fail")
+    return Option.getOrThrow(Cause.findErrorOption(exit.cause))
+  }
+
   const createTestStorage = () =>
     Effect.gen(function*() {
       const storeRef = yield* Ref.make(new Map<string, { data: Uint8Array; mimeType: string; name: string }>())
@@ -64,8 +69,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DownloadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(DownloadError)
       }
     })
   })
@@ -82,8 +87,8 @@ describe("RemoteStorage", () => {
           yield* service.delete(key)
 
           // Attempting to download should fail
-          const downloadResult = yield* Effect.either(service.download(key))
-          expect(downloadResult._tag).toBe("Left")
+          const downloadResult = yield* Effect.result(service.download(key))
+          expect(downloadResult._tag).toBe("Failure")
         })
       )
     })
@@ -127,8 +132,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(UploadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(UploadError)
       }
     })
 
@@ -149,8 +154,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DownloadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(DownloadError)
       }
     })
 
@@ -164,8 +169,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DeleteError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(DeleteError)
       }
     })
   })
@@ -189,10 +194,10 @@ describe("RemoteStorage", () => {
           expect(downloaded.name).toBe("test.txt")
 
           // Uploads should fail
-          const uploadResult = yield* Effect.either(
+          const uploadResult = yield* Effect.result(
             service.upload(new File(["new"], "new.txt"), { key: makeStoredPath("store-1", "new-file") })
           )
-          expect(uploadResult._tag).toBe("Left")
+          expect(uploadResult._tag).toBe("Failure")
         })
       )
     })
@@ -223,8 +228,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DownloadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(DownloadError)
       }
     })
   })
@@ -449,8 +454,8 @@ describe("RemoteStorage", () => {
       const exit = await Effect.runPromiseExit(storage.delete("file"))
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DeleteError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(DeleteError)
       }
     })
 
@@ -482,9 +487,10 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(UploadError)
-        expect(exit.cause.error.message).toContain("Failed to sign upload")
+      if (Exit.isFailure(exit)) {
+        const error = failureOrThrow(exit)
+        expect(error).toBeInstanceOf(UploadError)
+        expect(error.message).toContain("Failed to sign upload")
       }
     })
 
@@ -505,8 +511,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(UploadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(UploadError)
       }
     })
 
@@ -525,9 +531,10 @@ describe("RemoteStorage", () => {
       const exit = await Effect.runPromiseExit(storage.download("some-key"))
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(DownloadError)
-        expect(exit.cause.error.message).toContain("Failed to sign download")
+      if (Exit.isFailure(exit)) {
+        const error = failureOrThrow(exit)
+        expect(error).toBeInstanceOf(DownloadError)
+        expect(error.message).toContain("Failed to sign download")
       }
     })
 
@@ -548,8 +555,8 @@ describe("RemoteStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(UploadError)
+      if (Exit.isFailure(exit)) {
+        expect(failureOrThrow(exit)).toBeInstanceOf(UploadError)
       }
     })
   })

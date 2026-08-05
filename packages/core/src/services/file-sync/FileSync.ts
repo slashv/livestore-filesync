@@ -13,20 +13,7 @@
 
 import { EventSequenceNumber } from "@livestore/livestore"
 import type { LiveStoreEvent } from "@livestore/livestore"
-import {
-  Chunk,
-  Context,
-  Duration,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Ref,
-  Schedule,
-  Scope,
-  Stream,
-  SubscriptionRef
-} from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Scope, Stream, SubscriptionRef } from "effect"
 import { StorageError } from "../../errors/index.js"
 import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
@@ -155,10 +142,7 @@ export interface FileSyncService {
 /**
  * FileSync service tag
  */
-export class FileSync extends Context.Tag("FileSync")<
-  FileSync,
-  FileSyncService
->() {}
+export class FileSync extends Context.Service<FileSync, FileSyncService>()("FileSync") {}
 
 const isNode = (): boolean => typeof process !== "undefined" && !!process.versions?.node
 
@@ -326,16 +310,16 @@ export const makeFileSync = (
     const onlineRef = yield* Ref.make(true)
     const runningRef = yield* Ref.make(false)
     const isLeaderRef = yield* Ref.make(false)
-    const leaderWatcherFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
-    const eventStreamFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, unknown> | null>(null)
+    const leaderWatcherFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
+    const eventStreamFiberRef = yield* Ref.make<Fiber.Fiber<void, unknown> | null>(null)
     const cursorRef = yield* Ref.make<string>("")
 
     // Event callbacks
     const eventCallbacks = yield* Ref.make<Array<FileSyncEventCallback>>([])
 
     // Background fibers
-    const healthCheckFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
-    const heartbeatFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const healthCheckFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
+    const heartbeatFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
 
     // Stuck-queue detection: consecutive heartbeats where items are queued but nothing is inflight
     const stuckCounterRef = yield* Ref.make(0)
@@ -445,11 +429,7 @@ export const makeFileSync = (
         return doc.lastEventSequence ?? ""
       })
 
-    const getUpstreamHeadCursor = (): Effect.Effect<string> =>
-      Effect.gen(function*() {
-        const upstreamState = yield* clientSession.leaderThread.syncState
-        return EventSequenceNumber.Client.toString(upstreamState.upstreamHead)
-      }).pipe(Effect.orDie)
+    const getUpstreamHeadCursor = (): Effect.Effect<string> => Effect.sync(() => store.syncStatus().upstreamHead)
 
     const setCursorAfterBootstrap = (upstreamCursor: string): Effect.Effect<string> =>
       Effect.gen(function*() {
@@ -533,7 +513,7 @@ export const makeFileSync = (
               yield* goOffline()
             }
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.logWarning("[FileSync] Health check tick failed", { error }).pipe(Effect.asVoid)
             )
           )
@@ -560,7 +540,7 @@ export const makeFileSync = (
           yield* goOffline()
         }
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning("[FileSync] Connectivity check after transfer failure failed", { error }).pipe(
             Effect.asVoid
           )
@@ -658,7 +638,7 @@ export const makeFileSync = (
 
         yield* emit({ type: "download:complete", fileId })
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.gen(function*() {
             // Check if file was deleted during download - if so, clean up silently
             const file = yield* getFile(fileId)
@@ -711,7 +691,7 @@ export const makeFileSync = (
 
         console.log(`[FileSync] Reading local file: ${file.path}`)
         const localFile = yield* localStorage.readFile(file.path).pipe(
-          Effect.tap(() => console.log(`[FileSync] Local file read successfully`)),
+          Effect.tap(() => Effect.sync(() => console.log(`[FileSync] Local file read successfully`))),
           Effect.tapError((e) => Effect.sync(() => console.error(`[FileSync] Local file read FAILED:`, e)))
         )
         console.log(`[FileSync] Local file size: ${localFile.size}`)
@@ -740,7 +720,7 @@ export const makeFileSync = (
 
         const latestFile = yield* getFile(fileId)
         if (!latestFile || latestFile.deletedAt) {
-          yield* remoteStorage.delete(uploadResult.key).pipe(Effect.catchAll(() => Effect.void))
+          yield* remoteStorage.delete(uploadResult.key).pipe(Effect.catch(() => Effect.void))
           yield* stateManager.removeFile(fileId)
           yield* emit({ type: "upload:complete", fileId })
           return
@@ -765,7 +745,7 @@ export const makeFileSync = (
         yield* emit({ type: "upload:complete", fileId })
         console.log(`[FileSync] Upload complete event emitted for: ${fileId}`)
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.gen(function*() {
             console.error(`[FileSync] Upload error for ${fileId}:`, error)
             yield* stateManager.setTransferError(
@@ -884,7 +864,7 @@ export const makeFileSync = (
         const file = yield* localStorage.readFile(path)
         const localHash = yield* doHashFile(file)
         return { exists: true, localHash }
-      }).pipe(Effect.catchAll((error) =>
+      }).pipe(Effect.catch((error) =>
         Effect.gen(function*() {
           yield* Effect.logWarning("[FileSync] readLocalHash failed, treating as non-existent", { path, error })
           return { exists: false, localHash: "" }
@@ -1121,7 +1101,7 @@ export const makeFileSync = (
           yield* executor.enqueueDownload(fileId)
         }
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.gen(function*() {
             yield* Effect.logError("[FileSync] Bootstrap from tables failed", { error })
             yield* emit({ type: "sync:error", error, context: "bootstrap" })
@@ -1153,7 +1133,7 @@ export const makeFileSync = (
                 break
             }
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.gen(function*() {
                 yield* Effect.logError("[FileSync] Failed to process event", { eventName: event.name, error })
                 yield* emit({ type: "sync:error", error, context: `event:${event.name}` })
@@ -1177,7 +1157,7 @@ export const makeFileSync = (
 
         yield* emit({ type: "sync:complete" })
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.gen(function*() {
             yield* Effect.logError("[FileSync] Event batch processing failed", { error })
             yield* emit({ type: "sync:error", error, context: "event-batch" })
@@ -1326,9 +1306,10 @@ export const makeFileSync = (
         // Create retry schedule with exponential backoff
         const retrySchedule = Schedule.exponential(Duration.millis(baseDelayMs)).pipe(
           Schedule.jittered,
-          Schedule.either(Schedule.spaced(Duration.millis(maxDelayMs))),
-          Schedule.upTo(Duration.millis(maxDelayMs * 2)),
-          Schedule.intersect(Schedule.recurs(maxAttempts - 1))
+          Schedule.upTo({
+            duration: Duration.millis(maxDelayMs * 2),
+            times: maxAttempts - 1
+          })
         )
 
         // Track recovery attempts for logging
@@ -1356,7 +1337,7 @@ export const makeFileSync = (
               }
             })
           ),
-          Stream.catchAll((error) =>
+          Stream.catchCause((error) =>
             Effect.gen(function*() {
               const attempts = yield* Ref.get(attemptRef)
               yield* Effect.logError("[FileSync] Stream recovery exhausted", { error, attempts })
@@ -1374,14 +1355,12 @@ export const makeFileSync = (
           console.warn("[FileSync] Cannot start event stream - main scope not available")
           return
         }
-        const streamEffect = stream.pipe(
-          Stream.runForEachChunk((chunk) => handleEventBatch(Chunk.toReadonlyArray(chunk)))
-        )
+        const streamEffect = stream.pipe(Stream.runForEach((event) => handleEventBatch([event])))
         const fiber = yield* Effect.forkIn(streamEffect, mainScope)
 
         yield* Ref.set(eventStreamFiberRef, fiber)
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.gen(function*() {
             yield* Effect.logError("[FileSync] Failed to start event stream", { error })
             yield* emit({ type: "sync:error", error, context: "stream-start" })
@@ -1458,8 +1437,14 @@ export const makeFileSync = (
     // Watch for leadership changes
     const watchLeadership = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Use SubscriptionRef's changes stream to watch lockStatus
-        yield* clientSession.lockStatus.changes.pipe(
+        // Include the current value before following changes. Effect 4's
+        // SubscriptionRef.changes only emits future PubSub values, so a lock
+        // acquired between the startup read and stream subscription would
+        // otherwise be missed and leave transfers permanently queued.
+        yield* Stream.concat(
+          Stream.fromEffect(SubscriptionRef.get(clientSession.lockStatus)),
+          SubscriptionRef.changes(clientSession.lockStatus)
+        ).pipe(
           Stream.tap((status) =>
             Effect.gen(function*() {
               const wasLeader = yield* Ref.get(isLeaderRef)
@@ -1502,8 +1487,7 @@ export const makeFileSync = (
           return
         }
 
-        const poll = yield* Fiber.poll(streamFiber)
-        if (Option.isSome(poll)) {
+        if (streamFiber.pollUnsafe() !== undefined) {
           yield* Ref.set(eventStreamFiberRef, null)
           yield* Effect.logWarning("[FileSync] Heartbeat: event stream fiber exited, restarting")
           yield* emit({ type: "sync:heartbeat-recovery", reason: "stream-dead" })
@@ -1567,8 +1551,7 @@ export const makeFileSync = (
         const lastBatchCursor = yield* Ref.get(lastBatchCursorRef)
         if (!lastBatchCursor) return
 
-        const upstreamState = yield* Effect.orDie(clientSession.leaderThread.syncState)
-        const upstreamHead = upstreamState.upstreamHead
+        const upstreamHead = resolveCursor(store.syncStatus().upstreamHead)
 
         // Compare only the global (synced) component — local events and rebase generations
         // should not affect stall detection since the upstream head only tracks synced events
@@ -1603,7 +1586,7 @@ export const makeFileSync = (
           yield* checkStuckQueue()
           yield* checkStreamStall()
         }).pipe(
-          Effect.catchAll((error) => Effect.logError("[FileSync] Heartbeat tick failed", { error }))
+          Effect.catch((error) => Effect.logError("[FileSync] Heartbeat tick failed", { error }))
         )
 
         const loop = Effect.forever(
@@ -1759,11 +1742,11 @@ export const makeFileSync = (
           yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
 
           if (path !== existingFile.path) {
-            yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
+            yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
           }
 
           if (!isLocalOnly && existingFile.remoteKey) {
-            yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
+            yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
           }
 
           yield* markLocalFileChanged(fileId, path, contentHash)
@@ -1782,11 +1765,11 @@ export const makeFileSync = (
 
         yield* deleteFileRecord(fileId)
 
-        yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catchAll(() => Effect.void))
+        yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
         yield* stateManager.removeFile(fileId)
 
         if (!isLocalOnly && existingFile.remoteKey) {
-          yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catchAll(() => Effect.void))
+          yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
         }
       })
 
@@ -1934,5 +1917,5 @@ export const makeFileSync = (
 export const FileSyncLive = (
   deps: LiveStoreDeps,
   config: FileSyncConfig = defaultFileSyncConfig
-): Layer.Layer<FileSync, never, Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage | Scope.Scope> =>
-  Layer.scoped(FileSync, makeFileSync(deps, config))
+): Layer.Layer<FileSync, never, Hash | LocalFileStorage | LocalFileStateManager | RemoteStorage> =>
+  Layer.effect(FileSync, makeFileSync(deps, config))

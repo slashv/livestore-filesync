@@ -36,8 +36,9 @@ export interface LiveStoreDeps {
 }
 
 /**
- * Get the ClientSession from a Store instance.
- * This provides access to lockStatus for leader election.
+ * Get the ClientSession from a Store instance for leader election.
+ * Sync cursor reads use Store.syncStatus(); lockStatus does not yet have a
+ * public Store-level equivalent in the current LiveStore snapshot.
  */
 export const getClientSession = (store: SyncStore): ClientSession => {
   return (store as any)[StoreInternalsSymbol].clientSession
