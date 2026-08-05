@@ -74,7 +74,7 @@ Downstream pnpm workspaces should copy the same LiveStore and Effect catalog pin
 
 ## Versioning
 
-We use **synchronized versioning** - all packages share the same version number to avoid compatibility confusion.
+We use **synchronized versioning** - all maintained workspace packages share the same version number to avoid compatibility confusion. Historical Vue examples are excluded from the maintained workspace and release flow.
 
 ### Bumping Versions
 
@@ -90,8 +90,8 @@ pnpm -r exec npm version minor
 # Major release (0.0.1 -> 1.0.0) - breaking changes
 pnpm -r exec npm version major
 
-# Specific version
-pnpm -r exec npm version 1.2.3
+# Specific version without creating per-workspace Git tags
+pnpm -r exec npm version 1.2.3 --no-git-tag-version
 ```
 
 This updates `package.json` in all packages simultaneously.
@@ -104,6 +104,24 @@ Follow [Semantic Versioning](https://semver.org/):
 - **Minor** (`x.1.x`): New features, new exports, deprecations (backwards compatible)
 - **Major** (`1.x.x`): Breaking API changes, removed features, major refactors
 
+### Prerelease versions
+
+Use a prerelease version and a non-default npm dist-tag when code on `main` is deployable but is
+not ready to replace `latest`. For example:
+
+```bash
+pnpm -r exec npm version 0.9.0-next.0 --no-git-tag-version
+pnpm install
+pnpm build:packages
+pnpm -r publish --dry-run --access public --tag next
+pnpm -r publish --access public --tag next
+```
+
+Publishing with `--tag next` leaves the existing `latest` tag unchanged. Consumers opt in with
+`pnpm add @livestore-filesync/core@next @livestore-filesync/opfs@next`, or install the exact
+prerelease versions. Increment the prerelease suffix (`next.1`, `next.2`, and so on) for subsequent
+builds; npm package versions are immutable.
+
 ## Publishing
 
 ### Dry Run (Recommended First)
@@ -111,8 +129,11 @@ Follow [Semantic Versioning](https://semver.org/):
 Preview what will be published without actually publishing:
 
 ```bash
-# Dry run for all packages
+# Dry run for all stable packages
 pnpm -r publish --dry-run --access public
+
+# Dry run for a prerelease without changing `latest`
+pnpm -r publish --dry-run --access public --tag next
 ```
 
 Review the output to ensure:
