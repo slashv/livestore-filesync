@@ -1,12 +1,10 @@
 {
   "name": "livestore-filesync-node-example",
-  "version": "0.8.0",
+  "version": "0.9.0-next.0",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@effect/platform": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@effect/workflow": "catalog:",
     "@livestore-filesync/core": "workspace:*",
     "@livestore/adapter-node": "catalog:",
     "@livestore/livestore": "catalog:",
@@ -20,6 +18,8 @@
     "typescript": "^5.6.2"
   },
   "scripts": {
-    "dev": "tsx src/main.ts"
+    "check": "tsc --noEmit",
+    "dev": "tsx src/main.ts",
+    "test": "tsx src/smoke.ts"
   }
 }

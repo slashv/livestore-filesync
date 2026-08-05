@@ -46,7 +46,6 @@ const createRuntimeWithConfig = async (
   const remoteLayer = Layer.succeed(RemoteStorage, service)
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
   const baseLayer = Layer.mergeAll(
-    Layer.scope,
     HashServiceLive,
     LocalFileStorageMemory,
     localFileStateManagerLayer,
@@ -112,7 +111,7 @@ describe("FileSync", () => {
 
     try {
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
@@ -153,7 +152,7 @@ describe("FileSync", () => {
     try {
       await runtime.runPromise(localStorage.writeFile(path, new File(["local"], "local.txt")))
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
@@ -203,7 +202,7 @@ describe("FileSync", () => {
     try {
       await runtime.runPromise(localStorage.writeFile(path, new File(["local"], "local.txt")))
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const state = await runtime.runPromise(fileSync.getLocalFilesState())
@@ -247,7 +246,7 @@ describe("FileSync", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const cursorDoc = store.query(deps.schema.queryDb(tables.fileSyncCursor.get()))
@@ -301,7 +300,7 @@ describe("FileSync", () => {
     const commitSpy = vi.spyOn(store, "commit")
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await waitFor(
         () => runtime.runPromise(fileSync.getLocalFilesState()),
         (state) => Object.keys(state).length === 2,
@@ -354,7 +353,7 @@ describe("FileSync", () => {
     const commitSpy = vi.spyOn(store, "commit")
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await waitFor(
         () => runtime.runPromise(fileSync.getLocalFilesState()),
         (state) => Object.keys(state).length === 1,
@@ -394,7 +393,7 @@ describe("FileSync", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
       await runtime.runPromise(fileSync.setOnline(false))
       await runtime.runPromise(fileSync.setOnline(true))
@@ -451,7 +450,7 @@ describe("FileSync - Offline Transition", () => {
 
       // Start offline so uploads queue but don't run
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Manually set file1 to "error" state (simulating a non-network failure)
@@ -524,7 +523,7 @@ describe("FileSync - Transfer Progress Events", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Save a file
@@ -636,7 +635,7 @@ describe("FileSync - Transfer Progress Events", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Wait for download to complete
@@ -701,7 +700,7 @@ describe("FileSync - Transfer Progress Events", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const files = generateTestFiles(1)
@@ -752,7 +751,7 @@ describe("FileSync - Multi-file upload sync status", () => {
 
     try {
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Save 5 files concurrently (like Gallery.vue does with Promise.all)
@@ -810,7 +809,7 @@ describe("FileSync - Multi-file upload sync status", () => {
 
     try {
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       const fileCount = 5
@@ -860,7 +859,7 @@ describe("FileSync - Multi-file upload sync status", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Save 3 files concurrently
@@ -940,7 +939,7 @@ describe("FileSync - Multi-file upload sync status", () => {
 
     try {
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Add 10 files as fast as possible
@@ -996,7 +995,7 @@ describe("FileSync - Multi-file upload sync status", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Save 5 files
@@ -1124,7 +1123,7 @@ describe("FileSync - Error State Recovery", () => {
       )
 
       // Start FileSync - should auto-retry error files
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(100)
 
       // Check that error-retry-start event was emitted
@@ -1167,7 +1166,7 @@ describe("FileSync - Error State Recovery", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Create two files with error states
@@ -1241,7 +1240,7 @@ describe("FileSync - Error State Recovery", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // No files with errors
@@ -1289,7 +1288,7 @@ describe("FileSync - Error State Recovery", () => {
       )
 
       // Start FileSync
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(100)
 
       // Error message should be cleared
@@ -1333,7 +1332,7 @@ describe("FileSync - Event Callback Safety", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       // setOnline(false) emits an "offline" event
       await runtime.runPromise(fileSync.setOnline(false))
       await delay(50)
@@ -1401,7 +1400,7 @@ describe("FileSync - Per-Event Error Handling", () => {
       }))
 
       await runtime.runPromise(fileSync.setOnline(false))
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(100)
 
       // Both files should have local state — one file's processing shouldn't
@@ -1440,7 +1439,7 @@ describe("FileSync - Sync Error Events", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Verify we can subscribe to events and receive basic events
@@ -1476,7 +1475,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       // Wait for several heartbeat intervals
       await delay(200)
 
@@ -1508,7 +1507,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Restart stream via syncNow — should not cause errors
@@ -1547,7 +1546,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(100)
 
       // No recovery events since heartbeat is disabled
@@ -1580,7 +1579,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Verify stream is running (no recovery yet)
@@ -1638,7 +1637,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Create initial file to process (this sets lastBatchAtRef and lastBatchCursorRef)
@@ -1725,7 +1724,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Create and process initial file
@@ -1786,7 +1785,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       await delay(50)
 
       // Simulate going offline — this starts the health check loop
@@ -1843,7 +1842,7 @@ describe("FileSync - Heartbeat", () => {
     })
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
       // Wait for multiple heartbeat intervals
       await delay(150)
 

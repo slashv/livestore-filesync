@@ -1,5 +1,5 @@
-import { SystemError } from "@effect/platform/Error"
-import { Effect } from "effect"
+import { Cause, Effect, Option } from "effect"
+import { PlatformError } from "effect/PlatformError"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { makeOpfsFileSystem } from "./OpfsFileSystem.js"
 
@@ -201,17 +201,17 @@ describe("OpfsFileSystem", () => {
     expect(fileStat.type).toBe("File")
   })
 
-  it("fails with SystemError when reading missing files", async () => {
+  it("fails with PlatformError when reading missing files", async () => {
     const fs = makeOpfsFileSystem()
 
     const result = await Effect.runPromiseExit(fs.readFile("missing.txt"))
     expect(result._tag).toBe("Failure")
     if (result._tag === "Failure") {
-      const error = result.cause
-      expect(error._tag).toBe("Fail")
-      if (error._tag === "Fail") {
-        expect(error.error).toBeInstanceOf(SystemError)
-        expect((error.error as SystemError).reason).toBe("NotFound")
+      const error = Cause.findErrorOption(result.cause)
+      expect(Option.isSome(error)).toBe(true)
+      if (Option.isSome(error)) {
+        expect(error.value).toBeInstanceOf(PlatformError)
+        expect(error.value.reason._tag).toBe("NotFound")
       }
     }
   })

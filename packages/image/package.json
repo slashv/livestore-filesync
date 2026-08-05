@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/image",
-  "version": "0.8.0",
+  "version": "0.9.0-next.0",
   "type": "module",
   "license": "MIT",
   "description": "Image preprocessing and thumbnail generation for livestore-filesync using wasm-vips",
@@ -70,7 +70,8 @@
   "files": [
     "dist",
     "!dist/**/*.test.*",
-    "!dist/test"
+    "!dist/test",
+    "!dist/src"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
@@ -82,9 +83,7 @@
     "@livestore-filesync/core": "workspace:*"
   },
   "devDependencies": {
-    "@effect/platform": "catalog:",
     "@effect/vitest": "catalog:",
-    "@effect/workflow": "catalog:",
     "@livestore/livestore": "catalog:",
     "@livestore/peer-deps": "catalog:",
     "@opentelemetry/api": "catalog:",
@@ -102,7 +101,6 @@
     "wasm-vips": "^0.0.16"
   },
   "peerDependencies": {
-    "@effect/platform": "catalog:",
     "@livestore/livestore": "catalog:",
     "effect": "catalog:",
     "wasm-vips": "^0.0.16"

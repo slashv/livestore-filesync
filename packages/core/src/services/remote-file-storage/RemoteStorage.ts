@@ -150,10 +150,7 @@ export interface RemoteStorageService extends RemoteStorageAdapter {
 /**
  * RemoteStorage service tag
  */
-export class RemoteStorage extends Context.Tag("RemoteStorage")<
-  RemoteStorage,
-  RemoteStorageService
->() {}
+export class RemoteStorage extends Context.Service<RemoteStorage, RemoteStorageService>()("RemoteStorage") {}
 
 /**
  * Create a signer-backed S3-compatible remote storage implementation.
@@ -501,7 +498,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         return response.ok
       },
       catch: () => false
-    }).pipe(Effect.catchAll(() => Effect.succeed(false)))
+    }).pipe(Effect.catch(() => Effect.succeed(false)))
 
   const getConfig = () => config
 
@@ -574,10 +571,9 @@ export const makeRemoteStorageLive = (
 /**
  * RemoteStorageConfig service tag for dependency injection
  */
-export class RemoteStorageConfigTag extends Context.Tag("RemoteStorageConfig")<
-  RemoteStorageConfigTag,
-  RemoteStorageConfig
->() {}
+export class RemoteStorageConfigTag extends Context.Service<RemoteStorageConfigTag, RemoteStorageConfig>()(
+  "RemoteStorageConfig"
+) {}
 
 /**
  * Layer that reads config from RemoteStorageConfig service

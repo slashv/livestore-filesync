@@ -7,10 +7,10 @@
  * @module
  */
 
-import { SystemError, type SystemErrorReason } from "@effect/platform/Error"
-import { FileSystem, Size } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
 import { Data, Effect, Layer, Option, Stream } from "effect"
+import { FileSystem, Size } from "effect/FileSystem"
+import * as FS from "effect/FileSystem"
+import { PlatformError, systemError, type SystemErrorTag } from "effect/PlatformError"
 
 export interface OpfsFileSystemOptions {
   readonly baseDirectory?: string
@@ -59,19 +59,19 @@ const resolvePath = (baseDirectory: string | undefined, path: string): string =>
 
 const makeSystemError = (
   method: string,
-  reason: SystemErrorReason,
+  reason: SystemErrorTag,
   path: string,
   cause?: unknown
-): SystemError =>
-  new SystemError({
-    reason,
+): PlatformError =>
+  systemError({
+    _tag: reason,
     module: "FileSystem",
     method,
     pathOrDescriptor: path,
     ...(cause !== undefined ? { cause } : {})
   })
 
-const getOPFSRoot = (): Effect.Effect<FileSystemDirectoryHandle, SystemError> =>
+const getOPFSRoot = (): Effect.Effect<FileSystemDirectoryHandle, PlatformError> =>
   Effect.tryPromise({
     try: () => navigator.storage.getDirectory(),
     catch: (cause) => makeSystemError("getRoot", "Unknown", "", cause)
@@ -82,18 +82,17 @@ const getDirectoryHandle = (
   path: string,
   create: boolean,
   recursive: boolean
-): Effect.Effect<FileSystemDirectoryHandle, SystemError> => {
+): Effect.Effect<FileSystemDirectoryHandle, PlatformError> => {
   if (path === "" || path === ".") {
     return Effect.succeed(root)
   }
 
   const segments = normalizePath(path).split("/").filter((s) => s.length > 0)
 
-  return Effect.reduce(
-    segments,
-    root,
-    (current, segment, index) =>
-      Effect.tryPromise({
+  return Effect.gen(function*() {
+    let current = root
+    for (const [index, segment] of segments.entries()) {
+      current = yield* Effect.tryPromise({
         try: () =>
           current.getDirectoryHandle(segment, {
             create: create && (recursive || index === segments.length - 1)
@@ -105,14 +104,16 @@ const getDirectoryHandle = (
           return makeSystemError("getDirectoryHandle", "Unknown", path, cause)
         }
       })
-  )
+    }
+    return current
+  })
 }
 
 const getFileHandle = (
   root: FileSystemDirectoryHandle,
   path: string,
   create: boolean
-): Effect.Effect<FileSystemFileHandle, SystemError> => {
+): Effect.Effect<FileSystemFileHandle, PlatformError> => {
   const { directory, filename } = parsePath(path)
 
   return Effect.gen(function*() {
@@ -164,7 +165,7 @@ export const makeOpfsFileSystem = (
 
       // Try to get the parent directory - if it fails, the path doesn't exist
       const parent = yield* getDirectoryHandle(root, directory, false, true).pipe(
-        Effect.catchAll(() => Effect.fail(makeSystemError("access", "NotFound", path)))
+        Effect.catch(() => Effect.fail(makeSystemError("access", "NotFound", path)))
       )
 
       // Try file first
@@ -173,7 +174,7 @@ export const makeOpfsFileSystem = (
         catch: (cause) => cause
       }).pipe(
         Effect.map(() => true as const),
-        Effect.catchAll(() => Effect.succeed(false as const))
+        Effect.catch(() => Effect.succeed(false as const))
       )
 
       if (fileResult) return
@@ -184,7 +185,7 @@ export const makeOpfsFileSystem = (
         catch: (cause) => cause
       }).pipe(
         Effect.map(() => true as const),
-        Effect.catchAll(() => Effect.succeed(false as const))
+        Effect.catch(() => Effect.succeed(false as const))
       )
 
       if (!dirResult) {
@@ -225,7 +226,7 @@ export const makeOpfsFileSystem = (
       const { directory, filename } = parsePath(resolvedPath)
 
       const parent = yield* getDirectoryHandle(root, directory, false, true).pipe(
-        Effect.catchAll(() => Effect.succeed(null))
+        Effect.catch(() => Effect.succeed(null))
       )
 
       if (!parent) return false
@@ -235,7 +236,7 @@ export const makeOpfsFileSystem = (
         catch: (cause) => cause
       }).pipe(
         Effect.map(() => true),
-        Effect.catchAll((cause) => {
+        Effect.catch((cause) => {
           if (cause instanceof DOMException) {
             if (cause.name === "NotFoundError" || cause.name === "TypeMismatchError") {
               return Effect.succeed(false)
@@ -252,7 +253,7 @@ export const makeOpfsFileSystem = (
         catch: (cause) => cause
       }).pipe(
         Effect.map(() => true),
-        Effect.catchAll((cause) => {
+        Effect.catch((cause) => {
           if (cause instanceof DOMException && cause.name === "NotFoundError") {
             return Effect.succeed(false)
           }
@@ -379,7 +380,7 @@ export const makeOpfsFileSystem = (
       const { directory, filename } = parsePath(resolvedPath)
 
       const dirHandle = yield* getDirectoryHandle(root, directory, false, true).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           if (options?.force) return Effect.succeed(null)
           return Effect.fail(error)
         })
@@ -396,7 +397,7 @@ export const makeOpfsFileSystem = (
           return makeSystemError("remove", "Unknown", path, cause)
         }
       }).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           if (error === null) return Effect.void
           return Effect.fail(error)
         })
@@ -441,13 +442,13 @@ export const makeOpfsFileSystem = (
             catch: (cause) => makeSystemError("stat", "Unknown", path, cause)
           })
         ),
-        Effect.catchAll((cause) => {
+        Effect.catch((cause) => {
           if (cause instanceof DOMException) {
             if (cause.name === "NotFoundError" || cause.name === "TypeMismatchError") {
               return Effect.succeed(null)
             }
           }
-          if (cause instanceof SystemError) {
+          if (cause instanceof PlatformError) {
             return Effect.fail(cause)
           }
           return Effect.fail(makeSystemError("stat", "Unknown", path, cause))
@@ -464,7 +465,7 @@ export const makeOpfsFileSystem = (
         catch: (cause) => cause
       }).pipe(
         Effect.map(() => makeFileInfo("Directory")),
-        Effect.catchAll((cause) => {
+        Effect.catch((cause) => {
           if (cause instanceof DOMException && cause.name === "NotFoundError") {
             return Effect.fail(makeSystemError("stat", "NotFound", path, cause))
           }
@@ -500,7 +501,7 @@ export const makeOpfsFileSystem = (
 
   const utimes: FS.FileSystem["utimes"] = (_path, _atime, _mtime) => Effect.void // OPFS doesn't support utimes
 
-  const watch: FS.FileSystem["watch"] = (_path, _options) =>
+  const watch: FS.FileSystem["watch"] = (_path) =>
     Stream.fail(makeSystemError("watch", "Unknown", "", new Error("OPFS does not support file watching")))
 
   const writeFile: FS.FileSystem["writeFile"] = (path, data, _options) =>
@@ -529,7 +530,7 @@ export const makeOpfsFileSystem = (
   const writeFileString: FS.FileSystem["writeFileString"] = (path, data, options) =>
     writeFile(path, new TextEncoder().encode(data), options)
 
-  return {
+  return FS.makeNoop({
     access,
     copy,
     copyFile,
@@ -559,7 +560,7 @@ export const makeOpfsFileSystem = (
     watch,
     writeFile,
     writeFileString
-  }
+  })
 }
 
 /**

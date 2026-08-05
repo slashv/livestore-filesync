@@ -29,7 +29,7 @@ export interface HashService {
 /**
  * HashService context tag
  */
-export class Hash extends Context.Tag("HashService")<Hash, HashService>() {}
+export class Hash extends Context.Service<Hash, HashService>()("HashService") {}
 
 /**
  * Convert an ArrayBuffer to a hex string

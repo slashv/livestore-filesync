@@ -254,22 +254,25 @@ export interface SyncStatusCounts {
  * Get sync status counts from the UI.
  */
 export async function getSyncStatusCounts(page: Page): Promise<SyncStatusCounts> {
-  const getText = async (testId: string): Promise<string> => {
-    const locator = page.locator(`[data-testid="${testId}"]`)
-    return (await locator.textContent()) || ''
-  }
+  // Read all fields in one browser evaluation. Reading each locator through a
+  // separate Playwright round-trip can combine values from different React
+  // renders while queued work is moving into the in-progress state.
+  return page.locator('[data-testid="sync-status-panel"]').evaluate((panel) => {
+    const getText = (testId: string): string =>
+      panel.querySelector(`[data-testid="${testId}"]`)?.textContent ?? ''
 
-  return {
-    uploading: parseInt(await getText('sync-uploading-count')) || 0,
-    downloading: parseInt(await getText('sync-downloading-count')) || 0,
-    queuedUpload: parseInt(await getText('sync-queued-upload-count')) || 0,
-    queuedDownload: parseInt(await getText('sync-queued-download-count')) || 0,
-    pendingUpload: parseInt(await getText('sync-pending-upload-count')) || 0,
-    pendingDownload: parseInt(await getText('sync-pending-download-count')) || 0,
-    errors: parseInt(await getText('sync-error-count')) || 0,
-    isSyncing: (await getText('sync-is-syncing')) === 'Yes',
-    hasPending: (await getText('sync-has-pending')) === 'Yes',
-  }
+    return {
+      uploading: parseInt(getText('sync-uploading-count')) || 0,
+      downloading: parseInt(getText('sync-downloading-count')) || 0,
+      queuedUpload: parseInt(getText('sync-queued-upload-count')) || 0,
+      queuedDownload: parseInt(getText('sync-queued-download-count')) || 0,
+      pendingUpload: parseInt(getText('sync-pending-upload-count')) || 0,
+      pendingDownload: parseInt(getText('sync-pending-download-count')) || 0,
+      errors: parseInt(getText('sync-error-count')) || 0,
+      isSyncing: getText('sync-is-syncing') === 'Yes',
+      hasPending: getText('sync-has-pending') === 'Yes',
+    }
+  })
 }
 
 /**

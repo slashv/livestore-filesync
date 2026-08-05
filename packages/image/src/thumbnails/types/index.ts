@@ -20,8 +20,8 @@ import type {
 // Service Configuration Types
 // ============================================
 
-import type { FileSystem } from "@effect/platform/FileSystem"
 import type { Layer } from "effect"
+import type { FileSystem } from "effect/FileSystem"
 
 // ============================================
 // Schema-Derived Types

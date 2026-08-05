@@ -1,6 +1,6 @@
-import { FileSystem } from "@effect/platform/FileSystem"
 import type * as LiveStoreModule from "@livestore/livestore"
 import { Effect, Layer } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import { describe, expect, it, vi } from "vitest"
 import { createThumbnailSchema } from "../src/thumbnails/schema/index.js"
 import { LocalThumbnailStorage } from "../src/thumbnails/services/LocalThumbnailStorage.js"

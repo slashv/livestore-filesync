@@ -10,7 +10,6 @@
  * @module
  */
 
-import type { Schema } from "@livestore/livestore"
 import type {
   FileCreatedPayloadSchema,
   FileDeletedPayloadSchema,
@@ -41,7 +40,9 @@ export type LocalFileState = typeof LocalFileStateSchema.Type
 /**
  * Local file state - mutable variant for internal sync operations
  */
-export type LocalFileStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFileStateSchema>>>
+export type LocalFileStateMutable = {
+  -readonly [Key in keyof LocalFileState]: LocalFileState[Key]
+}
 
 /**
  * Local file state row - includes fileId, used for SQLite table operations
@@ -74,7 +75,7 @@ export type FileSyncCursor = typeof FileSyncCursorSchema.Type
 /**
  * Map of file IDs to local file states - mutable variant for internal sync operations
  */
-export type LocalFilesStateMutable = Schema.Schema.Type<ReturnType<typeof Schema.mutable<typeof LocalFilesStateSchema>>>
+export type LocalFilesStateMutable = Record<string, LocalFileStateMutable>
 
 /**
  * File record stored in the files table (synced across clients)

@@ -1,5 +1,5 @@
-import { FileSystem } from "@effect/platform/FileSystem"
 import { Layer } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { disposeThumbnails, initThumbnails } from "../src/thumbnails/api/singleton.js"
 

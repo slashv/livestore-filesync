@@ -7,10 +7,10 @@
  * @module
  */
 
-import { SystemError, type SystemErrorReason } from "@effect/platform/Error"
-import { FileSystem, Size } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
 import { Data, Effect, Layer, Option, Stream } from "effect"
+import { FileSystem, Size } from "effect/FileSystem"
+import * as FS from "effect/FileSystem"
+import { type PlatformError, systemError, type SystemErrorTag } from "effect/PlatformError"
 
 // Expo file system types (minimal interface we need)
 interface ExpoFsFile {
@@ -147,12 +147,12 @@ const resolvePath = (baseDirectory: string, path: string): string => {
 
 const makeSystemError = (
   method: string,
-  reason: SystemErrorReason,
+  reason: SystemErrorTag,
   path: string,
   cause?: unknown
-): SystemError =>
-  new SystemError({
-    reason,
+): PlatformError =>
+  systemError({
+    _tag: reason,
     module: "FileSystem",
     method,
     pathOrDescriptor: path,
@@ -612,7 +612,7 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
 
   const utimes: FS.FileSystem["utimes"] = (_path, _atime, _mtime) => Effect.void // Expo doesn't support utimes
 
-  const watch: FS.FileSystem["watch"] = (_path, _options) =>
+  const watch: FS.FileSystem["watch"] = (_path) =>
     Stream.fail(
       makeSystemError("watch", "Unknown", "", new Error("Expo does not support file watching"))
     )
@@ -654,7 +654,7 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
   const writeFileString: FS.FileSystem["writeFileString"] = (path, data, options) =>
     writeFile(path, new TextEncoder().encode(data), options)
 
-  return {
+  return FS.makeNoop({
     access,
     copy,
     copyFile,
@@ -684,7 +684,7 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
     watch,
     writeFile,
     writeFileString
-  }
+  })
 }
 
 /**

@@ -43,14 +43,14 @@ import { Events, Schema, State } from "@livestore/livestore"
 /**
  * Thumbnail generation status schema
  */
-export const ThumbnailGenerationStatusSchema = Schema.Literal(
-  "pending", // Not yet queued
-  "queued", // In queue for worker
-  "generating", // Worker is processing
-  "done", // Thumbnail exists
-  "error", // Generation failed
-  "skipped" // Not an image or unsupported format
-)
+export const ThumbnailGenerationStatusSchema = Schema.Union([
+  Schema.Literal("pending"), // Not yet queued
+  Schema.Literal("queued"), // In queue for worker
+  Schema.Literal("generating"), // Worker is processing
+  Schema.Literal("done"), // Thumbnail exists
+  Schema.Literal("error"), // Generation failed
+  Schema.Literal("skipped") // Not an image or unsupported format
+])
 
 /**
  * State for a single thumbnail size
@@ -70,20 +70,14 @@ export const FileThumbnailStateSchema = Schema.Struct({
   fileId: Schema.String,
   contentHash: Schema.String, // To detect when source file changes
   mimeType: Schema.String, // Original file mime type
-  sizes: Schema.Record({
-    key: Schema.String, // Size name (e.g., "small")
-    value: ThumbnailSizeStateSchema
-  })
+  sizes: Schema.Record(Schema.String, ThumbnailSizeStateSchema)
 })
 
 /**
  * Map of file IDs to thumbnail states
  * Kept for backwards compatibility with consumers.
  */
-export const ThumbnailFilesStateSchema = Schema.Record({
-  key: Schema.String,
-  value: FileThumbnailStateSchema
-})
+export const ThumbnailFilesStateSchema = Schema.Record(Schema.String, FileThumbnailStateSchema)
 
 /**
  * Stored config - used to detect config changes and provide sizes to components
@@ -92,10 +86,7 @@ export const StoredConfigSchema = Schema.Struct({
   /** Hash of the sizes config (JSON stringified and hashed) */
   configHash: Schema.String,
   /** The configured thumbnail sizes (name → pixels) */
-  sizes: Schema.Record({
-    key: Schema.String,
-    value: Schema.Number
-  })
+  sizes: Schema.Record(Schema.String, Schema.Number)
 })
 
 /**

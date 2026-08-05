@@ -32,7 +32,6 @@ const createRuntimeWithRemoteStorage = (
 ) => {
   const localFileStateManagerLayer = LocalFileStateManagerLive(deps)
   const baseLayer = Layer.mergeAll(
-    Layer.scope,
     HashServiceLive,
     LocalFileStorageMemory,
     localFileStateManagerLayer,
@@ -100,7 +99,7 @@ describe("FileSync - File operations", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope))
+      await runtime.runPromise(Scope.provide(fileSync.saveFile(new File(["data"], "data.txt")), scope))
 
       const files = store.query(
         deps.schema.queryDb(tables.files.select())
@@ -132,10 +131,10 @@ describe("FileSync - File operations", () => {
 
     try {
       const initial = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       const updated = await runtime.runPromise(
-        Scope.extend(fileSync.updateFile(initial.fileId, new File(["next"], "next.txt")), scope)
+        Scope.provide(fileSync.updateFile(initial.fileId, new File(["next"], "next.txt")), scope)
       )
 
       expect(updated.path).not.toBe(initial.path)
@@ -168,7 +167,7 @@ describe("FileSync - File operations", () => {
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       store.commit(
         events.fileUpdated({
@@ -180,7 +179,7 @@ describe("FileSync - File operations", () => {
         })
       )
 
-      await runtime.runPromise(Scope.extend(fileSync.deleteFile(saved.fileId), scope))
+      await runtime.runPromise(Scope.provide(fileSync.deleteFile(saved.fileId), scope))
 
       const records = store.query(
         deps.schema.queryDb(tables.files.where({ id: saved.fileId }))
@@ -206,10 +205,10 @@ describe("FileSync - File operations", () => {
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "data.txt")), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "data.txt")), scope)
       )
       const localUrl = await runtime.runPromise(
-        Scope.extend(fileSync.resolveFileUrl(saved.fileId), scope)
+        Scope.provide(fileSync.resolveFileUrl(saved.fileId), scope)
       )
 
       expect(localUrl?.startsWith("file://")).toBe(true)
@@ -237,7 +236,7 @@ describe("FileSync - File operations", () => {
       )
 
       const remoteUrl = await runtime.runPromise(
-        Scope.extend(fileSync.resolveFileUrl(remoteId), scope)
+        Scope.provide(fileSync.resolveFileUrl(remoteId), scope)
       )
       expect(remoteUrl).toBe(`https://test-storage.local/${stripFilesRoot(remotePath)}`)
 
@@ -268,9 +267,9 @@ describe("FileSync - Local-only mode", () => {
 
     try {
       const result = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["guest"], "guest.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["guest"], "guest.txt", { type: "text/plain" })), scope)
       )
-      const url = await runtime.runPromise(Scope.extend(fileSync.resolveFileUrl(result.fileId), scope))
+      const url = await runtime.runPromise(Scope.provide(fileSync.resolveFileUrl(result.fileId), scope))
 
       expect(url?.startsWith("file://")).toBe(true)
       const storedFile = await runtime.runPromise(localStorage.readFile(result.path))
@@ -314,7 +313,7 @@ describe("FileSync - Local-only mode", () => {
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["before"], "guest.txt")), scope)
+        Scope.provide(fileSync.saveFile(new File(["before"], "guest.txt")), scope)
       )
       store.commit(events.fileUpdated({
         id: saved.fileId,
@@ -325,7 +324,7 @@ describe("FileSync - Local-only mode", () => {
       }))
 
       const updated = await runtime.runPromise(
-        Scope.extend(fileSync.updateFile(saved.fileId, new File(["after"], "guest.txt")), scope)
+        Scope.provide(fileSync.updateFile(saved.fileId, new File(["after"], "guest.txt")), scope)
       )
 
       expect(updated.path).not.toBe(saved.path)
@@ -342,7 +341,7 @@ describe("FileSync - Local-only mode", () => {
         lastSyncError: ""
       })
 
-      await runtime.runPromise(Scope.extend(fileSync.deleteFile(saved.fileId), scope))
+      await runtime.runPromise(Scope.provide(fileSync.deleteFile(saved.fileId), scope))
       files = store.query(deps.schema.queryDb(tables.files.where({ id: saved.fileId })))
       expect(files[0]?.deletedAt).not.toBeNull()
       expect(await runtime.runPromise(localStorage.fileExists(updated.path))).toBe(false)
@@ -375,8 +374,8 @@ describe("FileSync - Local-only mode", () => {
     const scope = await runtime.runPromise(Scope.make())
 
     try {
-      await runtime.runPromise(Scope.extend(fileSync.start(), scope))
-      await runtime.runPromise(Scope.extend(fileSync.syncNow(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.start(), scope))
+      await runtime.runPromise(Scope.provide(fileSync.syncNow(), scope))
       const retried = await runtime.runPromise(fileSync.retryErrors())
       await delay(30)
 
@@ -423,7 +422,7 @@ describe("FileSync - Preprocessor integration", () => {
     try {
       const originalFile = new File(["hello world"], "test.txt", { type: "text/plain" })
       const result = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(originalFile), scope)
+        Scope.provide(fileSync.saveFile(originalFile), scope)
       )
 
       // Verify preprocessor was called
@@ -471,7 +470,7 @@ describe("FileSync - Preprocessor integration", () => {
 
     try {
       const originalFile = new File(["image data"], "test.png", { type: "image/png" })
-      const result = await runtime.runPromise(Scope.extend(fileSync.saveFile(originalFile), scope))
+      const result = await runtime.runPromise(Scope.provide(fileSync.saveFile(originalFile), scope))
 
       const files = store.query(deps.schema.queryDb(tables.files.where({ id: result.fileId })))
       expect(files).toHaveLength(1)
@@ -516,13 +515,13 @@ describe("FileSync - Preprocessor integration", () => {
 
     try {
       const saved = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["one"], "one.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["one"], "one.txt", { type: "text/plain" })), scope)
       )
       const firstRecord = store.query(deps.schema.queryDb(tables.files.where({ id: saved.fileId })))[0]
       expect(parseFileMetadata(firstRecord?.metadataJson)?.image).toEqual({ width: 3, height: 4 })
 
       await runtime.runPromise(
-        Scope.extend(fileSync.updateFile(saved.fileId, new File(["longer"], "two.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.updateFile(saved.fileId, new File(["longer"], "two.txt", { type: "text/plain" })), scope)
       )
       const secondRecord = store.query(deps.schema.queryDb(tables.files.where({ id: saved.fileId })))[0]
       expect(parseFileMetadata(secondRecord?.metadataJson)).toMatchObject({
@@ -531,7 +530,7 @@ describe("FileSync - Preprocessor integration", () => {
       })
 
       await runtime.runPromise(
-        Scope.extend(
+        Scope.provide(
           fileSync.updateFile(saved.fileId, new File(["without"], "nometa.txt", { type: "text/plain" })),
           scope
         )
@@ -631,13 +630,13 @@ describe("FileSync - Preprocessor integration", () => {
     try {
       // Save initial file
       const initial = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["first"], "data.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["first"], "data.txt", { type: "text/plain" })), scope)
       )
       expect(preprocessorCallCount).toBe(1)
 
       // Update the file
       const updated = await runtime.runPromise(
-        Scope.extend(
+        Scope.provide(
           fileSync.updateFile(initial.fileId, new File(["second"], "data.txt", { type: "text/plain" })),
           scope
         )
@@ -681,7 +680,7 @@ describe("FileSync - Preprocessor integration", () => {
     try {
       // Save a text file (should not match image/* pattern)
       await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
       )
 
       expect(preprocessorCalled).toBe(false)
@@ -719,7 +718,7 @@ describe("FileSync - Preprocessor integration", () => {
     try {
       // First save - should process
       const first = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "file.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "file.txt", { type: "text/plain" })), scope)
       )
       expect(processCount).toBe(1)
 
@@ -729,7 +728,7 @@ describe("FileSync - Preprocessor integration", () => {
       // Second save with "already processed" file - should skip
       const alreadyProcessed = new File(["DONE: data"], "processed-file.txt", { type: "text/plain" })
       const second = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(alreadyProcessed), scope)
+        Scope.provide(fileSync.saveFile(alreadyProcessed), scope)
       )
       expect(processCount).toBe(1) // Still 1 - skipped
 
@@ -758,7 +757,7 @@ describe("FileSync - Preprocessor integration", () => {
 
     try {
       const result = runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
       )
 
       // Should fail with a typed StorageError, not crash the runtime with a defect
@@ -790,12 +789,12 @@ describe("FileSync - Preprocessor integration", () => {
     try {
       // First save succeeds
       const saved = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "test.txt", { type: "text/plain" })), scope)
       )
 
       // Second call (update) fails in preprocessor
       const result = runtime.runPromise(
-        Scope.extend(
+        Scope.provide(
           fileSync.updateFile(saved.fileId, new File(["updated"], "test.txt", { type: "text/plain" })),
           scope
         )
@@ -823,7 +822,7 @@ describe("FileSync - Preprocessor integration", () => {
 
     try {
       const result = await runtime.runPromise(
-        Scope.extend(fileSync.saveFile(new File(["data"], "test.txt")), scope)
+        Scope.provide(fileSync.saveFile(new File(["data"], "test.txt")), scope)
       )
 
       const storedFile = await runtime.runPromise(localStorage.readFile(result.path))

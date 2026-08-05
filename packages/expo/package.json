@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/expo",
-  "version": "0.8.0",
+  "version": "0.9.0-next.0",
   "type": "module",
   "license": "MIT",
   "description": "Expo filesystem and image processing adapters for livestore-filesync",
@@ -35,7 +35,6 @@
     "test": "vitest --passWithNoTests"
   },
   "peerDependencies": {
-    "@effect/platform": "catalog:",
     "@livestore-filesync/core": "workspace:*",
     "effect": "catalog:",
     "expo-crypto": "^15.0.0",
@@ -48,10 +47,8 @@
     }
   },
   "devDependencies": {
-    "@effect/platform": "catalog:",
     "@livestore-filesync/core": "workspace:*",
     "effect": "catalog:",
-    "@effect/workflow": "catalog:",
     "@livestore/utils": "catalog:",
     "@livestore/peer-deps": "catalog:",
     "typescript": "^5.6.2",

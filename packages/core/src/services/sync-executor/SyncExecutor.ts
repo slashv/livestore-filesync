@@ -173,10 +173,7 @@ export interface SyncExecutorService {
 /**
  * SyncExecutor service tag
  */
-export class SyncExecutor extends Context.Tag("SyncExecutor")<
-  SyncExecutor,
-  SyncExecutorService
->() {}
+export class SyncExecutor extends Context.Service<SyncExecutor, SyncExecutorService>()("SyncExecutor") {}
 
 /**
  * Internal state for the executor
@@ -216,8 +213,8 @@ export const makeSyncExecutor = (
     })
 
     // Worker fiber tracking for liveness
-    const downloadWorkerFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
-    const uploadWorkerFiberRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null)
+    const downloadWorkerFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
+    const uploadWorkerFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
 
     // Track queued file IDs to avoid duplicates
     const highPriorityDownloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
@@ -232,7 +229,7 @@ export const makeSyncExecutor = (
 
     // Track in-flight task fibers for interruption on leadership loss
     const inflightFibersRef = yield* Ref.make<
-      Map<string, { fiber: Fiber.RuntimeFiber<TransferResult, never>; kind: TransferKind; fileId: string }>
+      Map<string, { fiber: Fiber.Fiber<TransferResult, never>; kind: TransferKind; fileId: string }>
     >(new Map())
 
     // Signal for idle waiting
@@ -241,8 +238,10 @@ export const makeSyncExecutor = (
     // Create retry schedule with exponential backoff
     const retrySchedule = Schedule.exponential(Duration.millis(config.baseDelayMs)).pipe(
       Schedule.jittered,
-      Schedule.upTo(Duration.millis(config.maxDelayMs)),
-      Schedule.intersect(Schedule.recurs(config.maxRetries))
+      Schedule.upTo({
+        duration: Duration.millis(config.maxDelayMs),
+        times: config.maxRetries
+      })
     )
 
     // Check if we're idle and signal if needed
@@ -278,13 +277,6 @@ export const makeSyncExecutor = (
       fileId: string
     ): Effect.Effect<TransferResult> =>
       Effect.gen(function*() {
-        // Update inflight count
-        yield* Ref.update(stateRef, (s) => ({
-          ...s,
-          downloadsInflight: kind === "download" ? s.downloadsInflight + 1 : s.downloadsInflight,
-          uploadsInflight: kind === "upload" ? s.uploadsInflight + 1 : s.uploadsInflight
-        }))
-
         // Remove from queued sets and mark as processed for downloads
         if (kind === "download") {
           yield* Ref.update(downloadQueuedSet, (set) => {
@@ -314,7 +306,7 @@ export const makeSyncExecutor = (
         const result = yield* handler(kind, fileId).pipe(
           Effect.retry(retrySchedule),
           Effect.map(() => ({ kind, fileId, success: true as const })),
-          Effect.catchAll((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
+          Effect.catch((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
         )
 
         // Log and notify when retries are exhausted
@@ -328,7 +320,7 @@ export const makeSyncExecutor = (
         // Notify caller of task completion (success or failure)
         if (onTaskComplete) {
           yield* onTaskComplete(result).pipe(
-            Effect.catchAll((callbackError) => Effect.logWarning("onTaskComplete callback failed", { callbackError }))
+            Effect.catch((callbackError) => Effect.logWarning("onTaskComplete callback failed", { callbackError }))
           )
         }
 
@@ -349,6 +341,15 @@ export const makeSyncExecutor = (
     // and registers/unregisters it in inflightFibersRef for interruption support
     const forkTracked = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
+        // Reserve the in-flight slot before forking. Effect 4 can schedule the
+        // detached task after an awaitIdle caller has already observed the
+        // queue as empty, so incrementing inside the child creates a race.
+        yield* Ref.update(stateRef, (s) => ({
+          ...s,
+          downloadsInflight: kind === "download" ? s.downloadsInflight + 1 : s.downloadsInflight,
+          uploadsInflight: kind === "upload" ? s.uploadsInflight + 1 : s.uploadsInflight
+        }))
+
         const trackedTask = processTask(kind, fileId).pipe(
           Effect.ensuring(
             Ref.update(inflightFibersRef, (map) => {
@@ -358,7 +359,11 @@ export const makeSyncExecutor = (
             })
           )
         )
-        const fiber = yield* Effect.fork(trackedTask)
+        // The enqueue effect returns immediately; attach transfer fibers to the
+        // global scope and retain their handles so they can be interrupted on
+        // leadership loss. A child fiber would be cancelled as soon as this
+        // short-lived enqueue effect completes in Effect 4.
+        const fiber = yield* Effect.forkDetach(trackedTask)
         yield* Ref.update(inflightFibersRef, (map) => {
           const newMap = new Map(map)
           newMap.set(`${kind}:${fileId}`, { fiber, kind, fileId })
@@ -470,13 +475,8 @@ export const makeSyncExecutor = (
 
     // Check if a fiber is dead (null or exited)
     const isFiberDead = (
-      fiber: Fiber.RuntimeFiber<void, never> | null
-    ): Effect.Effect<boolean> =>
-      Effect.gen(function*() {
-        if (!fiber) return true
-        const poll = yield* Fiber.poll(fiber)
-        return Option.isSome(poll)
-      })
+      fiber: Fiber.Fiber<void, never> | null
+    ): Effect.Effect<boolean> => Effect.sync(() => !fiber || fiber.pollUnsafe() !== undefined)
 
     // Ensure workers are running. Restarts any dead workers.
     // Workers check the paused state in their loop, so they can be running but not processing.
@@ -692,8 +692,8 @@ export const makeSyncExecutorLayer = (
   handler: TransferHandler,
   config: SyncExecutorConfig = defaultConfig,
   onTaskComplete?: TaskCompleteCallback
-): Layer.Layer<SyncExecutor, never, Scope.Scope> =>
-  Layer.scoped(
+): Layer.Layer<SyncExecutor> =>
+  Layer.effect(
     SyncExecutor,
     makeSyncExecutor(handler, config, onTaskComplete)
   )

@@ -5,7 +5,7 @@ The services are wired together as Effect layers inside `createFileSync` and the
 
 ## Services
 
-- `FileSystem`: re-exported from `@effect/platform/FileSystem`. This is a low-level read/write/list
+- `FileSystem`: provided by Effect 4's `effect/FileSystem`. This is a low-level read/write/list
   interface. Users must provide a compatible implementation:
   - For browsers: use `@livestore-filesync/opfs` which provides an OPFS-backed implementation
   - For Node.js: use `@effect/platform-node` (`NodeFileSystem.layer`)
@@ -177,6 +177,13 @@ initFileSync(store, {
 ```
 
 ### Node.js usage
+
+The filesystem layer below runs on Effect 4. The Node adapter is temporarily pinned to immutable
+`livestore-contrib` commit `7003f4e0673c2254a327c9fb4d816cbdd55d8d09`, which supplies the
+current core `StateHead` service. Workspace overrides resolve the adapter's repository-local
+LiveStore dependencies to the same `63cb2f26` npm snapshot cohort. The Node example smoke test
+creates and shuts down a store; the Git dependency should be replaced with the corresponding
+composite snapshot after contrib publishes it.
 
 ```typescript
 import { createFileSync } from '@livestore-filesync/core'

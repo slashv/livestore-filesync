@@ -1,6 +1,6 @@
-import { FileSystem, Size } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
+import { FileSystem, Size } from "effect/FileSystem"
+import type * as FS from "effect/FileSystem"
 import { describe, expect, it } from "vitest"
 import { ThumbnailFileNotFoundError } from "../src/thumbnails/errors/index.js"
 import { LocalThumbnailStorage, LocalThumbnailStorageLive } from "../src/thumbnails/services/LocalThumbnailStorage.js"
@@ -192,8 +192,8 @@ describe("LocalThumbnailStorage", () => {
       )
 
       expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-        expect(exit.cause.error).toBeInstanceOf(ThumbnailFileNotFoundError)
+      if (Exit.isFailure(exit)) {
+        expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toBeInstanceOf(ThumbnailFileNotFoundError)
       }
     })
 

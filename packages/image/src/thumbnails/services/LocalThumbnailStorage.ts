@@ -9,9 +9,9 @@
  * @module
  */
 
-import { FileSystem } from "@effect/platform/FileSystem"
-import type * as FS from "@effect/platform/FileSystem"
 import { Context, Effect, Layer } from "effect"
+import { FileSystem } from "effect/FileSystem"
+import type * as FS from "effect/FileSystem"
 
 import { ThumbnailFileNotFoundError, ThumbnailStorageError } from "../errors/index.js"
 import type { ThumbnailFormat } from "../types/index.js"
@@ -80,10 +80,9 @@ export interface LocalThumbnailStorageService {
 /**
  * LocalThumbnailStorage service tag
  */
-export class LocalThumbnailStorage extends Context.Tag("LocalThumbnailStorage")<
-  LocalThumbnailStorage,
-  LocalThumbnailStorageService
->() {}
+export class LocalThumbnailStorage extends Context.Service<LocalThumbnailStorage, LocalThumbnailStorageService>()(
+  "LocalThumbnailStorage"
+) {}
 
 // ============================================
 // Implementation

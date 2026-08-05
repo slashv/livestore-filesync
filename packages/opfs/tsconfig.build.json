@@ -3,7 +3,8 @@
   "compilerOptions": {
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "tsBuildInfoFile": "./.tsbuildinfo/tsconfig.build.tsbuildinfo"
   },
   "exclude": ["**/*.test.ts"]
 }
