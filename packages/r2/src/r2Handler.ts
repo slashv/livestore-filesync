@@ -46,6 +46,7 @@ export type ValidateAuthResult = ReadonlyArray<string> | null
  * Use `validateAuth` + `getSigningSecret` for per-user authentication with key prefix restrictions:
  * - `validateAuth`: Async callback to authenticate requests and return allowed key prefixes
  * - `getSigningSecret`: Static secret for HMAC-signing presigned URLs
+ * - `resolveFilesOrigin`: Optional callback to override the origin used in signed file URLs
  *
  * @example
  * ```typescript
@@ -109,6 +110,23 @@ export type R2HandlerConfig<Env> = {
    */
   readonly validateAuth?: (request: Request, env: Env) => Promise<ValidateAuthResult>
 
+  /**
+   * Resolves the HTTP(S) origin used in signed upload and download URLs.
+   *
+   * Defaults to the incoming request URL's origin. Override this when the public file-transfer
+   * origin differs from the origin observed by the Worker, such as local Wrangler development
+   * behind a production/custom host mapping.
+   *
+   * The returned value must contain only an absolute HTTP(S) origin. A trailing slash is allowed
+   * and normalized away; credentials, paths, query strings, and fragments are rejected.
+   *
+   * @example
+   * ```typescript
+   * resolveFilesOrigin: (_request, env) => env.FILES_ORIGIN
+   * ```
+   */
+  readonly resolveFilesOrigin?: (request: Request, env: Env) => string | URL
+
   /** Base path for the signer API (default: '/api') */
   readonly basePath?: string
   /** Base path for serving files (default: '/livestore-filesync-files') */
@@ -118,6 +136,28 @@ export type R2HandlerConfig<Env> = {
 }
 
 const normalizeBasePath = (path: string): string => (path.endsWith("/") ? path.slice(0, -1) : path)
+
+const normalizeFilesOrigin = (origin: string | URL): string => {
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    throw new TypeError("resolveFilesOrigin must return a valid absolute HTTP(S) origin")
+  }
+
+  const hasOnlyOrigin = (url.protocol === "http:" || url.protocol === "https:") &&
+    url.username === "" &&
+    url.password === "" &&
+    url.pathname === "/" &&
+    url.search === "" &&
+    url.hash === ""
+
+  if (!hasOnlyOrigin) {
+    throw new TypeError("resolveFilesOrigin must return a valid absolute HTTP(S) origin")
+  }
+
+  return url.origin
+}
 
 const addCors = (response: Response): Response => {
   const headers = new Headers(response.headers)
@@ -237,11 +277,13 @@ const isKeyAllowed = (key: string, allowedPrefixes: ReadonlyArray<string>): bool
  * interface Env {
  *   FILE_BUCKET: R2Bucket
  *   FILE_SIGNING_SECRET: string
+ *   FILES_ORIGIN: string
  * }
  *
  * const fileRoutes = createR2Handler<Request, Env, ExecutionContext>({
  *   bucket: (env) => env.FILE_BUCKET,
  *   getSigningSecret: (env) => env.FILE_SIGNING_SECRET,
+ *   resolveFilesOrigin: (_request, env) => env.FILES_ORIGIN,
  *   validateAuth: async (request, env) => {
  *     // Validate session and return allowed key prefixes
  *     const userId = await validateSession(request)
@@ -308,7 +350,8 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
 
         const exp = Math.floor(Date.now() / 1000) + ttlSeconds
         const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `PUT\n${key}\n${exp}`) : null
-        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+        const filesOrigin = normalizeFilesOrigin(config.resolveFilesOrigin?.(req, env) ?? url.origin)
+        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, filesOrigin)
         fileUrl.searchParams.set("exp", String(exp))
         if (sig) fileUrl.searchParams.set("sig", sig)
 
@@ -326,7 +369,8 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
 
       const exp = Math.floor(Date.now() / 1000) + ttlSeconds
       const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `PUT\n${key}\n${exp}`) : null
-      const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+      const filesOrigin = normalizeFilesOrigin(config.resolveFilesOrigin?.(req, env) ?? url.origin)
+      const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, filesOrigin)
       fileUrl.searchParams.set("exp", String(exp))
       if (sig) fileUrl.searchParams.set("sig", sig)
 
@@ -357,7 +401,8 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
 
         const exp = Math.floor(Date.now() / 1000) + ttlSeconds
         const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `GET\n${key}\n${exp}`) : null
-        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+        const filesOrigin = normalizeFilesOrigin(config.resolveFilesOrigin?.(req, env) ?? url.origin)
+        const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, filesOrigin)
         fileUrl.searchParams.set("exp", String(exp))
         if (sig) fileUrl.searchParams.set("sig", sig)
 
@@ -374,7 +419,8 @@ export function createR2Handler<RequestType = Request, Env = unknown, Ctx = unkn
 
       const exp = Math.floor(Date.now() / 1000) + ttlSeconds
       const sig = signingSecret ? await hmacSha256Base64Url(signingSecret, `GET\n${key}\n${exp}`) : null
-      const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, url.origin)
+      const filesOrigin = normalizeFilesOrigin(config.resolveFilesOrigin?.(req, env) ?? url.origin)
+      const fileUrl = new URL(`${filesBasePath}/${encodeKeyPath(key)}`, filesOrigin)
       fileUrl.searchParams.set("exp", String(exp))
       if (sig) fileUrl.searchParams.set("sig", sig)
 

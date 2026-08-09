@@ -179,6 +179,9 @@ export default {
       bucket: (env) => env.FILE_BUCKET,
       // Secret for HMAC-signing presigned URLs
       getSigningSecret: (env) => env.FILE_SIGNING_SECRET,
+      // Optional: override the origin returned in signed upload/download URLs.
+      // Defaults to new URL(request.url).origin.
+      resolveFilesOrigin: (_request, env) => env.FILES_ORIGIN,
       // Async auth validation with optional key prefix restrictions
       validateAuth: async (request, env) => {
         const token = request.headers.get("Authorization")?.replace("Bearer ", "")
@@ -189,6 +192,12 @@ export default {
   )
 }
 ```
+
+`resolveFilesOrigin` is useful when the Worker observes a production/custom request origin but file
+transfers should target another origin. For example, local Wrangler development can return
+`http://localhost:8787` even when `request.url` uses `https://api.privateview.art`. It must return an
+absolute HTTP(S) origin; a trailing slash is normalized, while credentials, paths, queries, and
+fragments are rejected. Omit it to preserve the default `request.url` origin.
 
 ### S3 Signer (`@livestore-filesync/s3-signer`)
 

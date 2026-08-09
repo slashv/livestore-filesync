@@ -84,7 +84,7 @@ describe("createR2Handler", () => {
         getSigningSecret: (e) => e.FILE_SIGNING_SECRET
       })
 
-      const request = new Request("http://localhost/api/v1/sign/upload", {
+      const request = new Request("https://api.example.com/api/v1/sign/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: "test-file.txt" })
@@ -96,9 +96,34 @@ describe("createR2Handler", () => {
 
       const data = await response!.json()
       expect(data.method).toBe("PUT")
+      expect(new URL(data.url).origin).toBe("https://api.example.com")
       expect(data.url).toContain("/livestore-filesync-files/test-file.txt")
       expect(data.url).toContain("sig=")
       expect(data.expiresAt).toBeDefined()
+    })
+
+    it("should use an explicit localhost files origin for upload URLs", async () => {
+      const resolveFilesOrigin = vi.fn((_request: Request, e: MockEnv) => {
+        expect(e).toBe(env)
+        return "http://localhost:8787/"
+      })
+      const handler = createR2Handler<Request, MockEnv, unknown>({
+        bucket: (e) => e.FILE_BUCKET,
+        getSigningSecret: (e) => e.FILE_SIGNING_SECRET,
+        resolveFilesOrigin
+      })
+
+      const request = new Request("https://api.privateview.art/api/v1/sign/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "test-file.txt" })
+      })
+
+      const response = await handler(request, env, {})
+      const data = await response!.json()
+
+      expect(resolveFilesOrigin).toHaveBeenCalledWith(request, env)
+      expect(new URL(data.url).origin).toBe("http://localhost:8787")
     })
 
     it("should reject unauthorized requests when validateAuth returns null", async () => {
@@ -230,6 +255,42 @@ describe("createR2Handler", () => {
       const data = await response!.json()
       expect(data.url).toContain("/livestore-filesync-files/test-file.txt")
       expect(data.url).toContain("sig=")
+    })
+
+    it("should use an explicit localhost files origin for download URLs", async () => {
+      const handler = createR2Handler<Request, MockEnv, unknown>({
+        bucket: (e) => e.FILE_BUCKET,
+        getSigningSecret: (e) => e.FILE_SIGNING_SECRET,
+        resolveFilesOrigin: () => new URL("http://localhost:8787/")
+      })
+
+      const request = new Request("https://api.privateview.art/api/v1/sign/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "test-file.txt" })
+      })
+
+      const response = await handler(request, env, {})
+      const data = await response!.json()
+
+      expect(new URL(data.url).origin).toBe("http://localhost:8787")
+    })
+
+    it("should reject a files origin containing a path", async () => {
+      const handler = createR2Handler<Request, MockEnv, unknown>({
+        bucket: (e) => e.FILE_BUCKET,
+        resolveFilesOrigin: () => "http://localhost:8787/files"
+      })
+
+      const request = new Request("https://api.privateview.art/api/v1/sign/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "test-file.txt" })
+      })
+
+      await expect(handler(request, env, {})).rejects.toThrow(
+        "resolveFilesOrigin must return a valid absolute HTTP(S) origin"
+      )
     })
 
     it("should enforce key prefix restrictions for downloads", async () => {
