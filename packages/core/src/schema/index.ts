@@ -97,7 +97,10 @@ export const LocalFilesStateSchema = Schema.Record(Schema.String, LocalFileState
  */
 export const FileSyncCursorSchema = Schema.Struct({
   lastEventSequence: Schema.String,
-  updatedAt: Schema.DateFromMillis
+  // Decoded dates can cross a JSON worker boundary before being validated
+  // again, which turns them into ISO strings. Keep accepting the original
+  // epoch-millisecond encoding for persisted clients.
+  updatedAt: Schema.Union([Schema.DateFromMillis, Schema.DateFromString])
 })
 
 /**
@@ -257,6 +260,8 @@ export function createFileSyncSchema() {
   // Create materializers function
   const createMaterializers = <T extends typeof tables>(appTables: T) => ({
     // File CRUD materializers
+    // A file ID identifies one lifetime. Historical repeated creates are
+    // replay no-ops so later update/delete state remains authoritative.
     "v1.FileCreated": ({
       contentHash,
       createdAt,
@@ -272,7 +277,7 @@ export function createFileSyncSchema() {
         metadataJson: metadataJson ?? null,
         createdAt,
         updatedAt
-      }),
+      }).onConflict("id", "ignore"),
     "v1.FileUpdated": ({
       contentHash,
       id,
