@@ -122,8 +122,8 @@ const getManipulator = async (): Promise<ImageManipulatorStatic> => {
   if (!_manipulator) {
     // Dynamic import - expo-image-manipulator types provided by consuming app
     // @ts-ignore - expo-image-manipulator is a peer dependency
-    const module = (await import("expo-image-manipulator")) as unknown as ImageManipulatorStatic
-    _manipulator = module
+    const module = (await import("expo-image-manipulator")) as unknown as { ImageManipulator: ImageManipulatorStatic }
+    _manipulator = module.ImageManipulator
   }
   return _manipulator
 }

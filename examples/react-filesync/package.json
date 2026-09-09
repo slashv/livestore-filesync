@@ -1,6 +1,6 @@
 {
   "name": "livestore-filesync-react-example",
-  "version": "0.9.0-next.0",
+  "version": "0.9.0-next.1",
   "type": "module",
   "private": true,
   "dependencies": {

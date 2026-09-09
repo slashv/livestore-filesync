@@ -282,8 +282,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         contentLength: file.size
       })
 
-      // If no progress callback, use simple fetch
-      if (!options.onProgress) {
+      // Node has fetch but no XHR, even when the executor requests progress.
+      if (!options.onProgress || typeof XMLHttpRequest === "undefined") {
         // Convert file to ArrayBuffer to ensure React Native's fetch properly sends the bytes.
         // Passing a File/Blob-like object directly doesn't work reliably in React Native.
         const arrayBuffer = yield* Effect.tryPromise({

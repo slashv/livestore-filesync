@@ -58,7 +58,7 @@ All checks must pass before publishing.
 
 ## LiveStore Snapshot Dependencies
 
-This project develops against exact LiveStore npm snapshots rather than a local registry. LiveStore core packages are pinned to snapshot `63cb2f26448608d4747d5ec881d7188f3a81bfa4`, with Effect pinned to `4.0.0-beta.99`, in the `catalog` section of `pnpm-workspace.yaml`. The development-only Node adapter is temporarily sourced from immutable `livestore-contrib` commit `7003f4e0673c2254a327c9fb4d816cbdd55d8d09` until that compatible adapter is published as a composite snapshot.
+This project develops against exact LiveStore npm snapshots rather than a local registry. LiveStore core packages are pinned to snapshot `97407c6622c93eb1ae4c02a40c79743426ee101f`, with Effect pinned to `4.0.0-rc.111`, in the `catalog` section of `pnpm-workspace.yaml`. The Node adapter uses published contrib snapshot `0.0.0-snapshot-9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f` with core overrides. Tests use Vitest `4.1.10`, satisfying the RC Effect test adapter peer requirement.
 
 Before publishing `@livestore-filesync/*` packages:
 
@@ -66,8 +66,8 @@ Before publishing `@livestore-filesync/*` packages:
 - Keep `@livestore/peer-deps`, Effect, and Effect platform packages on the matching cohort.
 - Run `pnpm install` after changing LiveStore pins so `pnpm-lock.yaml` and the publish-time `catalog:` replacements are updated.
 - Keep pnpm `overrides` aligned with the catalog so helper packages with hard-pinned LiveStore dependencies cannot pull a second LiveStore version into examples or downstream workspaces.
-- Keep the temporary Node Git dependency pinned to an immutable commit and keep its catalog and override entries identical. Its repository-local `link:` dependencies must continue to resolve through the exact LiveStore overrides.
-- Run the Node example smoke test before treating a contrib `@livestore/adapter-node` commit or snapshot as compatible. Replace the Git dependency with a published composite snapshot when one contains the same fix.
+- Keep the Node adapter catalog and override entries identical and pin its transitive core dependencies to the selected snapshot.
+- Run the Node example smoke test before treating a contrib `@livestore/adapter-node` commit or snapshot as compatible.
 - Republish filesync packages after changing LiveStore versions if downstream apps need the published peer dependency metadata to reference the new snapshot.
 
 Downstream pnpm workspaces should copy the same LiveStore and Effect catalog pins or add equivalent direct dependencies/overrides. Use exact snapshot versions for reproducible development deployments.
