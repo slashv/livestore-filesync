@@ -36,6 +36,28 @@ The services are wired together as Effect layers inside `createFileSync` and the
   `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first. In local-only mode
   it still writes and resolves local files, but skips health checks and upload/download/delete work.
 
+## Transfer validity and queue ownership
+
+`FileSync` owns version validity: each attempt captures content hash, local path and remote
+key, and rejects completion or failure updates if that identity changed or the row was deleted.
+Uploads hash local bytes before sending; downloads hash received bytes before writing.
+A download rechecks after the adapter write, removes an unreferenced stale path, and commits
+local availability only for the current version. Publication finishes even if cancellation
+arrives during a filesystem write that cannot be aborted. Metadata-only edits are preserved
+when the upload remote key is committed.
+
+`SyncExecutor` owns concurrency, cancellation, retries and completion accounting. It permits
+one active transfer per file and direction. Enqueueing that direction during an active attempt
+coalesces into one follow-up attempt, which reads the latest row. Priority entries share queue
+identity, so old priority entries cannot consume a newly enqueued request. Cancelling downloads
+interrupts active work and its retry delay as well as invalidating queued requests.
+
+Superseded attempts reconcile the latest row without marking it failed or complete. Checksum
+failures on a current version use the existing retry/error policy. Stale upload objects from
+edits are left alone because content-addressed keys may have other owners; shared-blob garbage
+collection remains separate from transfer validity. Deletion cleanup retains the existing
+best-effort behavior and avoids keys referenced by a currently live row.
+
 ## Remote Modes
 
 FileSync has two explicit remote modes:

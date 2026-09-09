@@ -269,6 +269,15 @@ This ensures a good user experience:
 - Other clients show a placeholder until the upload completes
 - After edits, the correct version is displayed (based on content hash matching)
 
+## Transfer correctness
+
+Transfers validate the captured content hash, path, remote key, and deletion state before
+publishing completion. Editing during an upload or download schedules the latest version;
+a stale attempt cannot attach its remote key or completion state to the replacement.
+Downloads verify SHA-256 before writing locally. A checksum mismatch follows the normal
+retry policy and remains an error if retries are exhausted; `retryErrors()` can retry after
+the remote content is repaired. Deleting a file cancels its queued or active download.
+
 ## Multi-Tab Support
 
 FileSync is designed to work correctly when multiple browser tabs are open to the same app. It uses LiveStore's built-in leader election (via Web Locks API) to ensure only one tab runs the sync loop at a time. This prevents race conditions and duplicate operations.

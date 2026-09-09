@@ -572,7 +572,16 @@ describe("FileSync - Transfer Progress Events", () => {
     })
 
     const fileId = crypto.randomUUID()
-    const path = makeStoredPath(deps.storeId, "download-progress-hash")
+    const contentHash = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode("test content for download progress")
+        )
+      ),
+      (byte) => byte.toString(16).padStart(2, "0")
+    ).join("")
+    const path = makeStoredPath(deps.storeId, contentHash)
     const remoteKey = stripFilesRoot(path)
 
     // Pre-populate remote storage with file
@@ -594,7 +603,7 @@ describe("FileSync - Transfer Progress Events", () => {
       events.fileCreated({
         id: fileId,
         path,
-        contentHash: "download-progress-hash",
+        contentHash,
         createdAt: new Date(),
         updatedAt: new Date()
       })
@@ -604,7 +613,7 @@ describe("FileSync - Transfer Progress Events", () => {
         id: fileId,
         path,
         remoteKey,
-        contentHash: "download-progress-hash",
+        contentHash,
         updatedAt: new Date()
       })
     )
