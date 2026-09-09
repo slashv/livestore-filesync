@@ -137,6 +137,30 @@ const setup = async (blockedKind: "upload" | "download", blockWrite = false, loc
 }
 
 describe("FileSync transfer content versions", () => {
+  it("follows a replacement remote key while a download of the same hash is active", async () => {
+    const t = await setup("download")
+    try {
+      const file = await t.seed("same content")
+      await t.start()
+      await t.gate.entered
+      const remoteKey = "replacement-key"
+      t.remoteFiles.set(remoteKey, t.remoteFiles.get(file.remoteKey)!)
+      t.store.commit(t.events.fileUpdated({
+        id: file.fileId,
+        path: file.path,
+        contentHash: file.contentHash,
+        remoteKey,
+        updatedAt: new Date()
+      }))
+      t.gate.release()
+      await waitFor(() => t.state(file.fileId), (state) => state?.downloadStatus === "done")
+      expect(t.downloads).toEqual([file.remoteKey, remoteKey])
+      expect(await (await t.runtime.runPromise(t.localStorage.readFile(file.path))).text()).toBe("same content")
+    } finally {
+      await t.close()
+    }
+  })
+
   it("uploads the latest edit without attaching the old upload's key to it", async () => {
     const t = await setup("upload")
     try {

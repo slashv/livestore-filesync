@@ -97,6 +97,11 @@ export const LocalFilesStateSchema = Schema.Record(Schema.String, LocalFileState
  */
 export const FileSyncCursorSchema = Schema.Struct({
   lastEventSequence: Schema.String,
+  repairs: Schema.optional(
+    Schema.Array(
+      Schema.Struct({ fileId: Schema.String, attempts: Schema.Number, retryErrors: Schema.optional(Schema.Boolean) })
+    )
+  ),
   updatedAt: Schema.DateFromMillis
 })
 

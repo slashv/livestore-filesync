@@ -95,6 +95,9 @@ export type TransferHandler = (
  * SyncExecutor service interface
  */
 export interface SyncExecutorService {
+  /** Synchronous membership check for durable queue reconstruction; does not schedule a follow-up. */
+  readonly hasTask: (kind: TransferKind, fileId: string) => boolean
+
   /**
    * Enqueue a download task. Enqueues during an active transfer coalesce into
    * one subsequent run so the handler can pick up the latest version.
@@ -352,6 +355,7 @@ export const makeSyncExecutor = (
     yield* Effect.addFinalizer(() => interruptInflight())
 
     return {
+      hasTask: (kind, fileId) => active.has(keyOf(kind, fileId)) || queued.has(keyOf(kind, fileId)),
       enqueueDownload: (fileId) => enqueue("download", fileId),
       enqueueUpload: (fileId) => enqueue("upload", fileId),
       prioritizeDownload,
