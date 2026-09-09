@@ -796,27 +796,31 @@ When the event stream encounters an error:
 3. On successful recovery, a `sync:recovery` event is emitted
 4. If max attempts are reached, `sync:stream-exhausted` is emitted
 
-### Stale Transfer Recovery
+### Durable Work and Reconciliation
 
-On cold start, transfers stuck in `inProgress` or `error` state are automatically recovered:
+`Reconciliation.ts` centralizes file inspection, guarded state patches, targeted repairs and
+executor reconstruction. `localFileState` is authoritative for transfer work; executor queue
+membership is a rebuildable cache. Warm startup reads durable local rows without scanning or
+hashing every `files` row. Bootstrap remains conditional on a root cursor or empty local state.
 
-- Files with `uploadStatus: "inProgress"` are reset to `queued`
-- Files with `downloadStatus: "inProgress"` are reset to `queued`
-- Files with `uploadStatus: "error"` are reset to `queued`
-- Files with `downloadStatus: "error"` are reset to `queued`
-- `lastSyncError` is cleared when retrying error state files
-- A `sync:error-retry-start` event is emitted with the file IDs being retried
-- Transfers are not immediately re-enqueued by stale recovery itself; queued work can be resumed
-  via `syncNow()` (which re-enqueues queued rows before stream restart) or `retryErrors()`
+Every leadership acquisition resets orphaned `inProgress` and `error` statuses to `queued` and
+enqueues both those and pre-existing queued rows. Errors receive one normal bounded executor
+retry cycle per acquisition. Heartbeat and `syncNow()` rebuild missing queued/interrupted work
+without resetting errors or scheduling duplicate follow-ups for active attempts. New file events
+can retry the affected file's error, so corrected remote keys are used immediately.
 
-**Important**: This recovery runs **once per `start()` lifecycle**, at the beginning of
-`startSyncLoop()` when the tab becomes leader. It does **not** run on mid-session stream
-restarts (e.g., `syncNow()`, heartbeat recoveries), which preserves legitimate `inProgress`
-transfers that are actively running.
+Inspection results are committed as a batch only where both the captured metadata and local
+state still match. Rejected patches become targeted repair work. Deletion cleans both the current
+metadata path and previous durable local path through `BlobOwnership`.
 
-This handles cases where:
-- A page was refreshed while a transfer was in progress (stale `inProgress`)
-- A previous transfer failed with an error (auto-retry)
+The optional `fileSyncCursor.repairs` array stores `{ fileId, attempts, retryErrors? }` entries. Existing cursor
+documents without it remain valid. An inspection failure is persisted before advancing the event
+cursor; successful repair publishes local state before retiring its entry. Startup and heartbeat
+retry only these IDs. Inspection attempts are bounded at `max(2, executorConfig.maxRetries + 1)`
+including the initial failure; counts and new-event retry intent survive restart. `retryErrors()` resets this budget as well
+as retrying transfer errors. Disabled heartbeat leaves startup/manual retry as the repair trigger.
+Inspection and repair reads are serialized so heartbeat cannot replay a repair completed by
+manual retry. No-op reconciliation emits no local-state or repair-document changes.
 
 ### Manual Error Retry
 

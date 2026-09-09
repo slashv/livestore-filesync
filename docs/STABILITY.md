@@ -1,5 +1,12 @@
 # Stability Features
 
+Current recovery policy is documented in [ARCHITECTURE.md](./ARCHITECTURE.md#durable-work-and-reconciliation).
+The historical stale-recovery gating notes below are superseded: reconciliation now checks
+executor membership, rebuilds durable work on every leadership acquisition and heartbeat, and
+persists bounded per-file inspection repairs before advancing the cursor. Heartbeats preserve
+terminal transfer errors; acquisition or explicit retry starts a new bounded transfer cycle.
+
+
 This document describes the stability and self-healing mechanisms implemented in FileSync to ensure robust operation in production environments.
 
 These mechanisms apply to remote-backed FileSync unless noted otherwise. When FileSync is initialized

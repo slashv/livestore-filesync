@@ -93,14 +93,15 @@ interface FileSyncConfig {
 
 Event batch re-processing is safe due to:
 
-1. **Idempotent state updates**: `resolveTransferStatus` preserves active transfer states (`queued`, `inProgress`)
-2. **Deduplicated queues**: `SyncExecutor` uses sets to track queued file IDs, preventing duplicate enqueues
-3. **Hash-based decisions**: Upload/download decisions are based on comparing `localHash` vs `contentHash` and checking `remoteKey` existence
+1. **Guarded state updates**: reconciliation checks captured metadata and local state before applying its patch.
+2. **Rebuildable queues**: startup, leadership handoff and heartbeat derive missing work from durable rows; active attempts are not duplicated.
+3. **Hash-based decisions**: upload/download decisions compare local bytes with current metadata, never an obsolete event payload.
 
-When conditional bootstrap runs, the cursor is set to the current upstream head after table
-reconciliation so historical events are skipped. The cursor is then updated after all events in a
-batch are successfully processed. If processing fails, the cursor is not updated, allowing the
-batch to be re-processed on the next attempt.
+Conditional bootstrap retains its upstream-head cursor policy. Before an event cursor advances,
+failed inspections and rejected concurrent patches are persisted in the optional cursor `repairs`
+array. Startup and heartbeat perform bounded targeted repairs; `retryErrors()` resets exhausted
+inspection attempts. Successful repair commits state before clearing the repair ID. See
+[ARCHITECTURE.md](./ARCHITECTURE.md#durable-work-and-reconciliation) for the recovery policy.
 
 ## Remaining tasks / follow-ups
 

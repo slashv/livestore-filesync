@@ -308,11 +308,18 @@ No configuration required — this works automatically.
   cursor is the root cursor or `localFileState` is empty.
 - Mid-session restarts (`syncNow()`, heartbeat recovery) restart `eventsStream` from the stored
   cursor and do **not** rescan every file row.
-- `syncNow()` re-enqueues files already marked as `queued` in `localFileState` before restarting
-  the stream, so pending work resumes without a full bootstrap. In local-only mode this is harmless
-  and does not enqueue remote transfers.
-- Internal `localFileState` diff updates are batched into a single `store.commit(...)` call when
-  possible, reducing per-file event bursts during reconciliation.
+- Startup and each leadership acquisition rebuild executor queues from persisted queued and
+  interrupted rows, even with an advanced cursor. Errors receive one bounded transfer retry
+  cycle per leadership acquisition or explicit `retryErrors()` call.
+- Heartbeat and `syncNow()` restore missing queued work without resetting active attempts or
+  repeatedly retrying terminal errors. A new file event can retry failed work for that file.
+- Failed file inspections persist targeted repair IDs and attempt counts alongside the cursor
+  before it advances. Startup and heartbeat retry those IDs, up to `max(2, maxRetries + 1)`
+  inspections including the first failure. `retryErrors()` resets exhausted inspection attempts.
+  Disabling heartbeat requires startup or `retryErrors()` to resume these repairs.
+- Reconciliation batches changed local rows and compares metadata and local state again before
+  committing. Concurrent changes defer that file to durable repair instead of overwriting it.
+  Unchanged done files are neither inspected on warm startup nor reuploaded.
 
 ## File Preprocessors
 
