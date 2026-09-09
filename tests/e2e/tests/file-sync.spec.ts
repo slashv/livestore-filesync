@@ -101,7 +101,7 @@ test.describe('File Sync', () => {
     expect(remoteRequests).toEqual([])
   })
 
-  test('should delete files from remote storage', async ({ page }) => {
+  test('should delete records while retaining remote bytes for offline owners', async ({ page }) => {
     const storeId = generateStoreId()
     await page.goto(`/?storeId=${storeId}`)
     await waitForLiveStore(page)
@@ -126,7 +126,7 @@ test.describe('File Sync', () => {
     await expect(fileCard).toHaveCount(0, { timeout: 2000 })
     await expect(page.locator('[data-testid="empty-state"]')).toBeVisible()
 
-    await waitForRemoteStatus(page, fileUrl, 404)
+    await waitForRemoteStatus(page, fileUrl, 200)
   })
 
   test('should sync files across browsers', async ({ browser }) => {

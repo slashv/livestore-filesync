@@ -44,6 +44,7 @@ import {
   type SyncExecutorConfig,
   type TransferKind
 } from "../sync-executor/index.js"
+import { makeBlobOwnership } from "./BlobOwnership.js"
 
 /**
  * FileSync service interface
@@ -79,7 +80,7 @@ export interface FileSyncService {
   ) => Effect.Effect<FileOperationResult, Error | HashError | StorageError>
 
   /**
-   * Delete a file (soft delete in store, cleanup local/remote)
+   * Delete a file (soft delete in store, reclaim unowned local bytes; retain remote blobs)
    */
   readonly deleteFile: (fileId: string) => Effect.Effect<void>
 
@@ -276,6 +277,10 @@ export const makeFileSync = (
     const { schema, store, storeId } = deps
     const { events, queryDb, tables } = schema
     const isLocalOnly = config.remoteMode === "local-only"
+
+    const blobs = yield* makeBlobOwnership(localStorage, (path) =>
+      store.query<Array<FileRecord>>(queryDb(tables.files))
+        .some((row) => !row.deletedAt && row.path === path))
 
     // Local wrapper for hashFile that uses the captured hash service
     const doHashFile = (file: File) => hashService.hashFile(file)
@@ -613,121 +618,114 @@ export const makeFileSync = (
             }
           })
 
-        yield* stateManager.setTransferStatus(fileId, kind, "inProgress")
-        yield* emit({ type: kind === "upload" ? "upload:start" : "download:start", fileId })
-
-        const onProgress = (progress: { loaded: number; total: number }) => {
-          if (!isCurrentTransfer(file)) return
-          Effect.runFork(emit({
-            type: kind === "upload" ? "upload:progress" : "download:progress",
-            fileId,
-            progress: { kind, fileId, status: "inProgress", ...progress }
-          }))
-        }
-
-        yield* Effect.gen(function*() {
-          if (kind === "upload") {
-            const localFile = yield* localStorage.readFile(file.path)
-            const hash = yield* doHashFile(localFile)
-            if (!isCurrentTransfer(file)) return yield* reconcileLatest()
-            if (hash !== file.contentHash) {
-              return yield* Effect.fail(new Error("Upload content hash mismatch"))
-            }
-            const uploaded = yield* remoteStorage.upload(localFile, {
-              key: stripFilesRoot(file.path),
-              onProgress
-            })
-            // Commit the key only against the version whose bytes were uploaded.
-            // Do not delete stale content-addressed objects here: other rows may own them.
-            const completed = yield* Effect.sync(() => {
-              if (!isCurrentTransfer(file)) return false
-              const current = readFile(fileId)!
-              store.commit(events.fileUpdated({
-                id: fileId,
-                path: current.path,
-                remoteKey: uploaded.key,
-                contentHash: current.contentHash,
-                metadataJson: current.metadataJson,
-                updatedAt: new Date()
-              }))
-              return true
-            })
-            if (!completed) {
-              const latest = readFile(fileId)
-              const referenced = store.query<Array<FileRecord>>(queryDb(tables.files))
-                .some((row) =>
-                  !row.deletedAt &&
-                  (row.remoteKey === uploaded.key || stripFilesRoot(row.path) === uploaded.key)
-                )
-              if ((!latest || latest.deletedAt) && !referenced) {
-                yield* remoteStorage.delete(uploaded.key).pipe(Effect.catch(() => Effect.void))
-              }
-              return yield* reconcileLatest()
-            }
-            yield* stateManager.atomicUpdate((state) => {
-              const current = readFile(fileId)
-              const local = state[fileId]
-              if (
-                !current || current.deletedAt || current.contentHash !== file.contentHash ||
-                current.path !== file.path || current.remoteKey !== uploaded.key ||
-                !local || local.localHash !== file.contentHash
-              ) return state
-              return { ...state, [fileId]: { ...local, uploadStatus: "done", lastSyncError: "" } }
-            })
-          } else {
-            const downloaded = yield* remoteStorage.download(file.remoteKey, { onProgress })
-            const hash = yield* doHashFile(downloaded)
-            if (!isCurrentTransfer(file)) return yield* reconcileLatest()
-            if (hash !== file.contentHash) {
-              return yield* Effect.fail(new Error("Download content hash mismatch"))
-            }
-            // Finish publication and stale-path cleanup even if cancellation arrives
-            // during an adapter write that cannot itself be aborted.
-            const published = yield* Effect.gen(function*() {
-              yield* localStorage.writeFile(file.path, downloaded)
-              if (!isCurrentTransfer(file)) {
-                const referenced = store.query<Array<FileRecord>>(queryDb(tables.files))
-                  .some((row) => !row.deletedAt && row.path === file.path)
-                if (!referenced) yield* localStorage.deleteFile(file.path).pipe(Effect.catch(() => Effect.void))
-                return false
-              }
-              yield* stateManager.atomicUpdate((state) => {
-                if (!isCurrentTransfer(file)) return state
-                return {
-                  ...state,
-                  [fileId]: {
-                    path: file.path,
-                    localHash: hash,
-                    downloadStatus: "done",
-                    uploadStatus: "done",
-                    lastSyncError: ""
-                  }
-                }
-              })
-              return true
-            }).pipe(Effect.uninterruptible)
-            if (!published) return yield* reconcileLatest()
-          }
-          yield* emit({ type: kind === "upload" ? "upload:complete" : "download:complete", fileId })
-        }).pipe(Effect.catch((error) =>
+        return yield* blobs.duringTransfer(
+          file.path,
           Effect.gen(function*() {
-            if (!isCurrentTransfer(file)) return yield* reconcileLatest()
-            yield* stateManager.atomicUpdate((state) => {
-              if (!isCurrentTransfer(file) || !state[fileId]) return state
-              return {
-                ...state,
-                [fileId]: {
-                  ...state[fileId],
-                  [kind === "upload" ? "uploadStatus" : "downloadStatus"]: "error",
-                  lastSyncError: String(error)
+            yield* stateManager.setTransferStatus(fileId, kind, "inProgress")
+            yield* emit({ type: kind === "upload" ? "upload:start" : "download:start", fileId })
+
+            const onProgress = (progress: { loaded: number; total: number }) => {
+              if (!isCurrentTransfer(file)) return
+              Effect.runFork(emit({
+                type: kind === "upload" ? "upload:progress" : "download:progress",
+                fileId,
+                progress: { kind, fileId, status: "inProgress", ...progress }
+              }))
+            }
+
+            yield* Effect.gen(function*() {
+              if (kind === "upload") {
+                const localFile = yield* blobs.publish(localStorage.readFile(file.path))
+                const hash = yield* doHashFile(localFile)
+                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                if (hash !== file.contentHash) {
+                  return yield* Effect.fail(new Error("Upload content hash mismatch"))
                 }
+                const uploaded = yield* remoteStorage.upload(localFile, {
+                  key: stripFilesRoot(file.path),
+                  onProgress
+                })
+                // Commit the key only against the version whose bytes were uploaded.
+                // Do not delete stale content-addressed objects here: other rows may own them.
+                const completed = yield* Effect.sync(() => {
+                  if (!isCurrentTransfer(file)) return false
+                  const current = readFile(fileId)!
+                  store.commit(events.fileUpdated({
+                    id: fileId,
+                    path: current.path,
+                    remoteKey: uploaded.key,
+                    contentHash: current.contentHash,
+                    metadataJson: current.metadataJson,
+                    updatedAt: new Date()
+                  }))
+                  return true
+                })
+                if (!completed) {
+                  return yield* reconcileLatest()
+                }
+                yield* stateManager.atomicUpdate((state) => {
+                  const current = readFile(fileId)
+                  const local = state[fileId]
+                  if (
+                    !current || current.deletedAt || current.contentHash !== file.contentHash ||
+                    current.path !== file.path || current.remoteKey !== uploaded.key ||
+                    !local || local.localHash !== file.contentHash
+                  ) return state
+                  return { ...state, [fileId]: { ...local, uploadStatus: "done", lastSyncError: "" } }
+                })
+              } else {
+                const downloaded = yield* remoteStorage.download(file.remoteKey, { onProgress })
+                const hash = yield* doHashFile(downloaded)
+                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                if (hash !== file.contentHash) {
+                  return yield* Effect.fail(new Error("Download content hash mismatch"))
+                }
+                // Finish publication and stale-path cleanup even if cancellation arrives
+                // during an adapter write that cannot itself be aborted.
+                const published = yield* Effect.gen(function*() {
+                  yield* localStorage.writeFile(file.path, downloaded)
+                  if (!isCurrentTransfer(file)) {
+                    return false
+                  }
+                  yield* stateManager.atomicUpdate((state) => {
+                    if (!isCurrentTransfer(file)) return state
+                    return {
+                      ...state,
+                      [fileId]: {
+                        path: file.path,
+                        localHash: hash,
+                        downloadStatus: "done",
+                        uploadStatus: "done",
+                        lastSyncError: ""
+                      }
+                    }
+                  })
+                  return true
+                }).pipe(blobs.publish)
+                if (!published) return yield* reconcileLatest()
               }
-            })
-            yield* emit({ type: kind === "upload" ? "upload:error" : "download:error", fileId, error })
-            yield* checkConnectivityOnFailure()
-            return yield* Effect.fail(error)
+              yield* emit({ type: kind === "upload" ? "upload:complete" : "download:complete", fileId })
+            }).pipe(Effect.catch((error) =>
+              Effect.gen(function*() {
+                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                yield* stateManager.atomicUpdate((state) => {
+                  if (!isCurrentTransfer(file) || !state[fileId]) return state
+                  return {
+                    ...state,
+                    [fileId]: {
+                      ...state[fileId],
+                      [kind === "upload" ? "uploadStatus" : "downloadStatus"]: "error",
+                      lastSyncError: String(error)
+                    }
+                  }
+                })
+                yield* emit({ type: kind === "upload" ? "upload:error" : "download:error", fileId, error })
+                yield* checkConnectivityOnFailure()
+                return yield* Effect.fail(error)
+              })
+            ))
           })
-        ))
+        )
       })
 
     // Create sync executor with task completion callback
@@ -933,16 +931,7 @@ export const makeFileSync = (
         const file = localPath ? undefined : yield* getFile(payload.id)
         const path = localPath ?? file?.path
 
-        if (path) {
-          // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
-          const allFiles = store.query<Array<FileRecord>>(queryDb(tables.files.select()))
-          const otherActiveFileWithSamePath = allFiles.some(
-            (f) => f.id !== payload.id && !f.deletedAt && f.path === path
-          )
-          if (!otherActiveFileWithSamePath) {
-            yield* localStorage.deleteFile(path).pipe(Effect.ignore)
-          }
-        }
+        if (path) yield* blobs.cleanup(path)
 
         // Cancel any pending download for this file
         yield* executor.cancelDownload(payload.id)
@@ -963,15 +952,7 @@ export const makeFileSync = (
             const statePath = nextState[file.id]?.path
             const path = statePath ?? file.path
 
-            if (path) {
-              // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
-              const otherActiveFileWithSamePath = files.some(
-                (f) => f.id !== file.id && !f.deletedAt && f.path === path
-              )
-              if (!otherActiveFileWithSamePath) {
-                yield* localStorage.deleteFile(path).pipe(Effect.ignore)
-              }
-            }
+            if (path) yield* blobs.cleanup(path)
 
             // Cancel any pending download for this file
             yield* executor.cancelDownload(file.id)
@@ -1668,8 +1649,10 @@ export const makeFileSync = (
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
-        yield* localStorage.writeFile(path, processedFile)
-        yield* createFileRecord({ id, path, contentHash, metadataJson })
+        yield* blobs.publish(Effect.gen(function*() {
+          yield* localStorage.writeFile(path, processedFile)
+          yield* createFileRecord({ id, path, contentHash, metadataJson })
+        }))
         yield* markLocalFileChanged(id, path, contentHash)
 
         return { fileId: id, path, contentHash }
@@ -1701,16 +1684,11 @@ export const makeFileSync = (
         const path = makeStoredPath(storeId, contentHash)
 
         if (contentHash !== existingFile.contentHash) {
-          yield* localStorage.writeFile(path, processedFile)
-          yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
-
-          if (path !== existingFile.path) {
-            yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
-          }
-
-          if (!isLocalOnly && existingFile.remoteKey) {
-            yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
-          }
+          yield* blobs.publish(Effect.gen(function*() {
+            yield* localStorage.writeFile(path, processedFile)
+            yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
+          }))
+          if (path !== existingFile.path) yield* blobs.cleanup(existingFile.path)
 
           yield* markLocalFileChanged(fileId, path, contentHash)
         }
@@ -1728,12 +1706,8 @@ export const makeFileSync = (
 
         yield* deleteFileRecord(fileId)
 
-        yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
+        yield* blobs.cleanup(existingFile.path)
         yield* stateManager.removeFile(fileId)
-
-        if (!isLocalOnly && existingFile.remoteKey) {
-          yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
-        }
       })
 
     const resolveFileUrl = (

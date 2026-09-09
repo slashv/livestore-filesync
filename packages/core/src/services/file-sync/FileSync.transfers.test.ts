@@ -29,7 +29,7 @@ const barrier = () => {
   }
 }
 
-const setup = async (blockedKind: "upload" | "download", blockWrite = false) => {
+const setup = async (blockedKind: "upload" | "download", blockWrite = false, localOnly = false) => {
   const testStore = await createTestStore()
   const { deps, events, store, tables } = testStore
   const gate = barrier()
@@ -85,6 +85,7 @@ const setup = async (blockedKind: "upload" | "download", blockWrite = false) => 
   const runtime = ManagedRuntime.make(Layer.mergeAll(
     base,
     FileSyncLive(deps, {
+      remoteMode: localOnly ? "local-only" : "remote",
       executorConfig: {
         maxConcurrentDownloads: 1,
         maxConcurrentUploads: 1,
@@ -292,6 +293,54 @@ describe("FileSync transfer content versions", () => {
       })
       expect(t.downloads).toEqual([file.remoteKey, file.remoteKey])
       expect(t.uploads).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+})
+
+describe("FileSync shared blob ownership", () => {
+  for (const localOnly of [false, true]) {
+    for (const operation of ["delete", "update"] as const) {
+      it(`preserves identical-content survivors after ${operation} (${localOnly ? "local" : "remote"})`, async () => {
+        const t = await setup("upload", false, localOnly)
+        try {
+          t.gate.release()
+          const first = await t.runtime.runPromise(t.fileSync.saveFile(new File(["shared"], "one.txt")))
+          const survivor = await t.runtime.runPromise(t.fileSync.saveFile(new File(["shared"], "two.txt")))
+          expect(first.path).toBe(survivor.path)
+          await t.start()
+          await waitFor(() => t.state(survivor.fileId), (state) => state?.uploadStatus === "done")
+          if (operation === "delete") await t.runtime.runPromise(t.fileSync.deleteFile(first.fileId))
+          else await t.runtime.runPromise(t.fileSync.updateFile(first.fileId, new File(["replacement"], "one.txt")))
+          expect(await t.runtime.runPromise(t.fileSync.resolveFileUrl(survivor.fileId))).toBeTruthy()
+          expect(await (await t.runtime.runPromise(t.localStorage.readFile(survivor.path))).text()).toBe("shared")
+          if (!localOnly) {
+            expect(await t.remoteFiles.get(stripFilesRoot(survivor.path))?.text()).toBe("shared")
+          }
+          // Last local owner can be reclaimed, but unseen offline remote owners remain possible.
+          await t.runtime.runPromise(t.fileSync.deleteFile(survivor.fileId))
+          await waitFor(() => t.runtime.runPromise(t.localStorage.fileExists(survivor.path)), (exists) => !exists)
+          if (!localOnly) expect(t.remoteFiles.has(stripFilesRoot(survivor.path))).toBe(true)
+        } finally {
+          await t.close()
+        }
+      })
+    }
+  }
+
+  it("retains a stale upload after deletion for owners on offline devices", async () => {
+    const t = await setup("upload")
+    try {
+      const first = await t.runtime.runPromise(t.fileSync.saveFile(new File(["shared"], "one.txt")))
+      await t.start()
+      await t.gate.entered
+      await t.runtime.runPromise(t.fileSync.deleteFile(first.fileId))
+      expect(await t.runtime.runPromise(t.localStorage.fileExists(first.path))).toBe(true)
+      t.gate.release()
+      await waitFor(() => t.runtime.runPromise(t.localStorage.fileExists(first.path)), (exists) => !exists)
+      expect(await t.remoteFiles.get(stripFilesRoot(first.path))?.text()).toBe("shared")
+      expect(t.record(first.fileId).remoteKey).toBe("")
     } finally {
       await t.close()
     }

@@ -53,10 +53,32 @@ identity, so old priority entries cannot consume a newly enqueued request. Cance
 interrupts active work and its retry delay as well as invalidating queued requests.
 
 Superseded attempts reconcile the latest row without marking it failed or complete. Checksum
-failures on a current version use the existing retry/error policy. Stale upload objects from
-edits are left alone because content-addressed keys may have other owners; shared-blob garbage
-collection remains separate from transfer validity. Deletion cleanup retains the existing
-best-effort behavior and avoids keys referenced by a currently live row.
+failures on a current version use the existing retry/error policy.
+
+### Shared blob lifetime
+
+`BlobOwnership` owns local cleanup for CRUD, tombstone events, bootstrap and transfer
+finalization. A local path is owned while any non-deleted row references it or an active
+transfer leases it. The last transfer releases its lease and attempts cleanup, including
+stale downloads and uploads. Cleanup queries current rows rather than a bootstrap snapshot.
+A per-instance mutex serializes cleanup with local writes and their metadata publication;
+upload reads also wait for pending cleanup. These operations finish across cancellation.
+Cleanup keeps a byte snapshot and rechecks ownership before and after adapter deletion,
+restoring it when synced metadata or a new transfer acquires ownership during the delete.
+Read failures retain bytes; filesystem failures remain best effort and may leave orphaned
+bytes or prevent restoration. This is not an atomic filesystem/LiveStore transaction.
+
+The mutex is scoped to one FileSync instance, not a cross-tab or cross-process lock. Synced
+metadata can arrive outside it; the post-delete check handles references visible when deletion
+settles. References arriving later must download retained remote bytes. In local-only mode,
+applications must re-save bytes for such later references. Independent instances sharing a
+filesystem are not covered by serialization and should not be treated as globally coordinated GC.
+
+Remote objects are never automatically deleted by FileSync, even when the last locally known
+owner is deleted or an upload becomes stale. Offline devices can have unseen references;
+local row scans cannot prove global non-ownership. RemoteStorage.delete and the signer delete
+endpoint remain available for application/server-authoritative garbage collection. No server
+reference registry or remote GC is provided, so retained remote storage can grow over time.
 
 ## Remote Modes
 

@@ -154,7 +154,7 @@ export interface FileSyncInstance {
   /** Update an existing file */
   updateFile: (fileId: string, file: File) => Promise<SyncFileOperationResult>
 
-  /** Delete a file (soft delete in store, cleanup local/remote) */
+  /** Delete a file (soft delete in store, reclaim unowned local bytes; retain remote blobs) */
   deleteFile: (fileId: string) => Promise<void>
 
   /** Read a file from local storage */
