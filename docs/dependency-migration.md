@@ -53,4 +53,6 @@ The image processor now uses Expo's named `ImageManipulator` export for its impe
 Native image resize and JPEG upload also pass in the iOS simulator. All 11 PrivateView
 Electron scenarios pass. FileSync's full package/Node/React/thumbnail tests, typecheck, lint and
 build pass. The six `0.9.0-next.1` package archives have exact portable dependency metadata.
-Publication is still pending npm authentication and final PrivateView browser validation.
+PrivateView's final full browser run passes all 38 tests. An earlier cold-start error was not
+reproduced in 12 fresh-store starts or the final full suite. Publication is still pending npm
+authentication, followed by a clean PrivateView install of the actual published release.
