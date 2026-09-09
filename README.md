@@ -16,6 +16,8 @@ File sync for LiveStore apps. This missing piece for local-first apps that need 
 
 - **Media type support**: An optional image package is available for pre-processing helpers and local thumbnail generation. Artchitecture supports extending to other media types.
 
+See the [9 September correctness report](docs/reviews/2026-09-09-correctness-report.md) for changes, diagrams, validation and remaining limits.
+
 ## Packages
 
 | Package | Description |

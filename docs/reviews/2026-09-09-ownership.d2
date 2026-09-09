@@ -1,0 +1,34 @@
+vars: {
+  d2-config: {
+    layout-engine: tala
+    data: {tala-seeds: [1; 2; 3]}
+  }
+}
+direction: right
+classes: {
+  module: {style.fill: "#EEF4FA"; style.stroke: "#45627E"; style.border-radius: 8}
+  durable: {shape: cylinder; style.fill: "#FDF2D9"; style.stroke: "#927230"}
+}
+app: "Application\ngeneration-bound instance leases" {class: module}
+local: "FileSync responsibilities (logical view)" {
+  api: "FileSync API\nsave / update / delete" {class: module}
+  style.fill: "#F8FAFC"
+  rows: "LiveStore\nfiles · local state\ncursor + repair intent" {class: durable}
+  reconcile: "Reconciliation\nrebuild pending work\nretry bounded repairs" {class: module}
+  executor: "SyncExecutor\nrequest identity\nscoped workers" {class: module}
+  transfer: "Transfer handler\ncheck hash + version\ncheck running leader" {class: module}
+  ownership: "BlobOwnership\nlive rows + transfer leases\ncoordinate local cleanup" {class: module}
+  bytes: "Local file bytes\nOPFS / Node / Expo adapter" {class: durable}
+  api -> rows: Publish metadata
+  api -> ownership: Publish / clean local bytes
+  rows -> reconcile: Required work
+  reconcile -> rows: Guarded state + repair intent
+  reconcile -> executor: Enqueue
+  executor -> transfer: Run attempt
+  transfer -> rows: Publish current result
+  transfer -> ownership: Read / publish bytes
+  ownership -> bytes: Retain or reclaim
+}
+remote: "Remote object storage\nretained for application GC" {class: durable}
+app -> local.api: File operations
+local.transfer -> remote: Upload / download

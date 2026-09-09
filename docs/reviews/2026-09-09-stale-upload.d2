@@ -1,0 +1,25 @@
+vars: {
+  d2-config: {
+    layout-engine: tala
+    data: {tala-seeds: [1; 2; 3]}
+  }
+}
+shape: sequence_diagram
+app: FileSync API
+rows: LiveStore rows
+transfer: Transfer handler
+remote: Remote bytes
+reconcile: Reconciliation
+executor: SyncExecutor
+transfer -> rows: Capture version A
+transfer -> remote: Upload A
+app -> rows: Edit publishes version B
+remote -> transfer: A upload finishes
+transfer -> rows: Recheck content version + running leader
+transfer -> transfer: A is stale: do not attach its key to B
+transfer -> reconcile: Inspect current B
+reconcile -> executor: enqueueUpload(B file ID)
+executor -> transfer: Run next attempt for current B
+transfer -> remote: Upload B
+remote -> transfer: B upload finishes
+transfer -> rows: Publish B key only if B is still current
