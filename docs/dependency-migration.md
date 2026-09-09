@@ -50,4 +50,7 @@ an old PrivateView SQLite store and retained queued/interrupted transfers, offli
 cached bytes without clearing the fixture. All three files uploaded after restart.
 The image processor now uses Expo's named `ImageManipulator` export for its imperative API.
 
-Publication remains gated on completion of PrivateView browser/desktop and native image checks.
+Native image resize and JPEG upload also pass in the iOS simulator. All 11 PrivateView
+Electron scenarios pass. FileSync's full package/Node/React/thumbnail tests, typecheck, lint and
+build pass. The six `0.9.0-next.1` package archives have exact portable dependency metadata.
+Publication is still pending npm authentication and final PrivateView browser validation.
