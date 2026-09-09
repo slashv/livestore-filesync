@@ -13,7 +13,21 @@
 
 import { EventSequenceNumber } from "@livestore/livestore"
 import type { LiveStoreEvent } from "@livestore/livestore"
-import { Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Scope, Stream, SubscriptionRef } from "effect"
+import {
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Ref,
+  Schedule,
+  Scope,
+  Semaphore,
+  Stream,
+  SubscriptionRef
+} from "effect"
 import { StorageError } from "../../errors/index.js"
 import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
@@ -312,6 +326,12 @@ export const makeFileSync = (
     // State
     const onlineRef = yield* Ref.make(true)
     const runningRef = yield* Ref.make(false)
+    const lifecycle = yield* Semaphore.make(1)
+    let generation = 0
+    // Read the actual lock as well: leadership notifications may wait behind I/O.
+    const isRunningLeader = () =>
+      Effect.runSync(Ref.get(runningRef)) &&
+      Effect.runSync(SubscriptionRef.get(clientSession.lockStatus)) === "has-lock"
     const isLeaderRef = yield* Ref.make(false)
     const leaderWatcherFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
     const eventStreamFiberRef = yield* Ref.make<Fiber.Fiber<void, unknown> | null>(null)
@@ -332,7 +352,7 @@ export const makeFileSync = (
     const lastBatchCursorRef = yield* Ref.make<EventSequenceNumber.Client.Composite | null>(null)
 
     // Main scope ref - stores the scope from start() for use in setOnline/health check
-    const mainScopeRef = yield* Ref.make<Scope.Scope | null>(null)
+    const mainScopeRef = yield* Ref.make<Scope.Closeable | null>(null)
 
     const executorConfig: SyncExecutorConfig = {
       ...defaultExecutorConfig,
@@ -499,9 +519,10 @@ export const makeFileSync = (
               // Recovered: transition offline → online
               yield* Ref.set(onlineRef, true)
               yield* emit({ type: "online" })
-              yield* executor.resume()
-              // Re-enqueue transfers that were reset to queued while offline
-              yield* reEnqueueQueuedTransfers()
+              if (isRunningLeader()) {
+                yield* reEnqueueQueuedTransfers()
+                if (isRunningLeader()) yield* executor.resume()
+              }
             } else if (!isHealthy && wasOnline) {
               // Lost connectivity: transition online → offline
               yield* goOffline()
@@ -551,6 +572,8 @@ export const makeFileSync = (
         yield* emit({ type: "offline" })
         yield* executor.pause()
 
+        if (!isRunningLeader()) return
+
         // Only reset inProgress transfers to queued — these are actively running and
         // will fail due to network loss, so they need to be re-queued when back online.
         // Do NOT reset error transfers: they may have failed for non-network reasons
@@ -585,6 +608,10 @@ export const makeFileSync = (
     // fail the replacement version; reconciliation schedules its required transfer.
     const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
+        const transferGeneration = generation
+        const ownsTransfer = () => generation === transferGeneration && isRunningLeader()
+        if (!ownsTransfer()) return
+        const currentTransfer = (file: FileRecord) => ownsTransfer() && isCurrentTransfer(file)
         const file = yield* getFile(fileId)
         if (!file || file.deletedAt) return
         if (kind === "download") {
@@ -598,7 +625,7 @@ export const makeFileSync = (
         if (kind === "upload" && file.remoteKey) {
           yield* stateManager.atomicUpdate((state) => {
             const local = state[fileId]
-            if (!isCurrentTransfer(file) || !local || local.localHash !== file.contentHash) return state
+            if (!currentTransfer(file) || !local || local.localHash !== file.contentHash) return state
             return { ...state, [fileId]: { ...local, uploadStatus: "done", lastSyncError: "" } }
           })
           return
@@ -606,6 +633,7 @@ export const makeFileSync = (
 
         const reconcileLatest = (): Effect.Effect<void> =>
           Effect.gen(function*() {
+            if (!ownsTransfer()) return
             const latest = yield* getFile(fileId)
             if (latest && !latest.deletedAt) {
               yield* handleFileUpdated(latest)
@@ -623,12 +651,19 @@ export const makeFileSync = (
         return yield* blobs.duringTransfer(
           file.path,
           Effect.gen(function*() {
-            yield* stateManager.setTransferStatus(fileId, kind, "inProgress")
+            yield* stateManager.atomicUpdate((state) => {
+              if (!currentTransfer(file) || !state[fileId]) return state
+              return {
+                ...state,
+                [fileId]: { ...state[fileId], [kind === "upload" ? "uploadStatus" : "downloadStatus"]: "inProgress" }
+              }
+            })
+            if (!currentTransfer(file)) return
             yield* emit({ type: kind === "upload" ? "upload:start" : "download:start", fileId })
 
             const onProgress = (progress: { loaded: number; total: number }) => {
-              if (!isCurrentTransfer(file)) return
-              Effect.runFork(emit({
+              if (!currentTransfer(file)) return
+              Effect.runSync(emit({
                 type: kind === "upload" ? "upload:progress" : "download:progress",
                 fileId,
                 progress: { kind, fileId, status: "inProgress", ...progress }
@@ -636,10 +671,11 @@ export const makeFileSync = (
             }
 
             yield* Effect.gen(function*() {
+              if (!currentTransfer(file)) return
               if (kind === "upload") {
                 const localFile = yield* blobs.publish(localStorage.readFile(file.path))
                 const hash = yield* doHashFile(localFile)
-                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                if (!currentTransfer(file)) return yield* reconcileLatest()
                 if (hash !== file.contentHash) {
                   return yield* Effect.fail(new Error("Upload content hash mismatch"))
                 }
@@ -650,7 +686,7 @@ export const makeFileSync = (
                 // Commit the key only against the version whose bytes were uploaded.
                 // Do not delete stale content-addressed objects here: other rows may own them.
                 const completed = yield* Effect.sync(() => {
-                  if (!isCurrentTransfer(file)) return false
+                  if (!currentTransfer(file)) return false
                   const current = readFile(fileId)!
                   store.commit(events.fileUpdated({
                     id: fileId,
@@ -669,7 +705,7 @@ export const makeFileSync = (
                   const current = readFile(fileId)
                   const local = state[fileId]
                   if (
-                    !current || current.deletedAt || current.contentHash !== file.contentHash ||
+                    !ownsTransfer() || !current || current.deletedAt || current.contentHash !== file.contentHash ||
                     current.path !== file.path || current.remoteKey !== uploaded.key ||
                     !local || local.localHash !== file.contentHash
                   ) return state
@@ -678,7 +714,7 @@ export const makeFileSync = (
               } else {
                 const downloaded = yield* remoteStorage.download(file.remoteKey, { onProgress })
                 const hash = yield* doHashFile(downloaded)
-                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                if (!currentTransfer(file)) return yield* reconcileLatest()
                 if (hash !== file.contentHash) {
                   return yield* Effect.fail(new Error("Download content hash mismatch"))
                 }
@@ -686,11 +722,11 @@ export const makeFileSync = (
                 // during an adapter write that cannot itself be aborted.
                 const published = yield* Effect.gen(function*() {
                   yield* localStorage.writeFile(file.path, downloaded)
-                  if (!isCurrentTransfer(file)) {
+                  if (!currentTransfer(file)) {
                     return false
                   }
                   yield* stateManager.atomicUpdate((state) => {
-                    if (!isCurrentTransfer(file)) return state
+                    if (!currentTransfer(file)) return state
                     return {
                       ...state,
                       [fileId]: {
@@ -706,12 +742,13 @@ export const makeFileSync = (
                 }).pipe(blobs.publish)
                 if (!published) return yield* reconcileLatest()
               }
+              if (!ownsTransfer()) return
               yield* emit({ type: kind === "upload" ? "upload:complete" : "download:complete", fileId })
             }).pipe(Effect.catch((error) =>
               Effect.gen(function*() {
-                if (!isCurrentTransfer(file)) return yield* reconcileLatest()
+                if (!currentTransfer(file)) return yield* reconcileLatest()
                 yield* stateManager.atomicUpdate((state) => {
-                  if (!isCurrentTransfer(file) || !state[fileId]) return state
+                  if (!currentTransfer(file) || !state[fileId]) return state
                   return {
                     ...state,
                     [fileId]: {
@@ -735,7 +772,7 @@ export const makeFileSync = (
       result: { kind: "upload" | "download"; fileId: string; success: boolean; error?: unknown }
     ) =>
       Effect.gen(function*() {
-        if (!result.success) {
+        if (!result.success && isRunningLeader()) {
           yield* emit({
             type: "transfer:exhausted",
             kind: result.kind,
@@ -746,6 +783,7 @@ export const makeFileSync = (
       })
 
     const executor = yield* makeSyncExecutor(transferHandler, executorConfig, onTaskComplete)
+    yield* executor.pause()
 
     const setLocalOnlyAvailableFileState = (fileId: string, path: string, localHash: string) =>
       stateManager.setFileState(fileId, {
@@ -877,7 +915,7 @@ export const makeFileSync = (
     const startEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
-        if (!isLeader) return
+        if (!isLeader || !isRunningLeader()) return
 
         yield* stopEventStream()
         const storedCursor = yield* readCursor()
@@ -963,7 +1001,7 @@ export const makeFileSync = (
     const restartEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
-        if (!isLeader) return
+        if (!isLeader || !isRunningLeader()) return
         // Ensure queued transfer state is reflected in executor queues before restart.
         yield* reEnqueueQueuedTransfers()
         yield* startEventStream()
@@ -972,6 +1010,7 @@ export const makeFileSync = (
     // Start the sync loop (only called when we're the leader)
     const startSyncLoop = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
+        if (!isRunningLeader()) return
         // Every leadership acquisition rebuilds work, including a fresh executor.
         const retried = yield* reconciliation.recover(true)
         if (retried.length > 0) yield* emit({ type: "sync:error-retry-start", fileIds: retried })
@@ -979,12 +1018,13 @@ export const makeFileSync = (
 
         if (!isLocalOnly) {
           const isOnline = yield* Ref.get(onlineRef)
-          if (isOnline) {
+          if (isOnline && isRunningLeader()) {
             yield* executor.resume()
           } else {
             yield* executor.pause()
           }
         }
+        if (!isLocalOnly) yield* executor.ensureWorkers()
         yield* maybeBootstrapFromTables()
         yield* startEventStream()
       })
@@ -992,6 +1032,7 @@ export const makeFileSync = (
     // Stop the sync loop (called when we lose leadership)
     const stopSyncLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        generation++
         yield* executor.pause()
 
         // Interrupt in-flight transfers so they don't commit conflicting state
@@ -1023,18 +1064,17 @@ export const makeFileSync = (
     // Watch for leadership changes
     const watchLeadership = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Include the current value before following changes. Effect 4's
-        // SubscriptionRef.changes only emits future PubSub values, so a lock
-        // acquired between the startup read and stream subscription would
-        // otherwise be missed and leave transfers permanently queued.
+        // Subscribe before reading the lock: startup/recovery can await I/O,
+        // during which leadership may change again. Keep those notifications.
+        const subscription = yield* PubSub.subscribe(clientSession.lockStatus.pubsub)
         yield* Stream.concat(
           Stream.fromEffect(SubscriptionRef.get(clientSession.lockStatus)),
-          SubscriptionRef.changes(clientSession.lockStatus)
+          Stream.fromEffectRepeat(PubSub.take(subscription))
         ).pipe(
           Stream.tap((status) =>
             Effect.gen(function*() {
               const wasLeader = yield* Ref.get(isLeaderRef)
-              const isNowLeader = status === "has-lock"
+              const isNowLeader = status === "has-lock" && isRunningLeader()
               if (isNowLeader && !wasLeader) {
                 // Became leader - start sync loop
                 yield* Effect.logDebug("[FileSync] Became leader, starting sync loop")
@@ -1048,8 +1088,7 @@ export const makeFileSync = (
               }
             })
           ),
-          Stream.runDrain,
-          Effect.forkScoped
+          Stream.runDrain
         )
       })
 
@@ -1110,7 +1149,7 @@ export const makeFileSync = (
               yield* Effect.provideService(executor.ensureWorkers(), Scope.Scope, mainScope)
             }
             // Resume executor in case workers stopped polling
-            yield* executor.resume()
+            if (isRunningLeader()) yield* executor.resume()
             yield* Ref.set(stuckCounterRef, 0)
           }
         } else {
@@ -1163,7 +1202,7 @@ export const makeFileSync = (
         const tick: Effect.Effect<void> = Effect.gen(function*() {
           const running = yield* Ref.get(runningRef)
           const isLeader = yield* Ref.get(isLeaderRef)
-          if (!running || !isLeader) {
+          if (!running || !isLeader || !isRunningLeader()) {
             yield* Ref.set(stuckCounterRef, 0)
             return
           }
@@ -1194,67 +1233,52 @@ export const makeFileSync = (
         yield* Ref.set(heartbeatFiberRef, fiber)
       })
 
-    // Service methods
-    const start = (): Effect.Effect<void, never, Scope.Scope> =>
+    // A run owns its workers, watcher and background work. Closing an old caller's
+    // scope must not stop a newer run, and stop waits for non-cancellable writes.
+    const stopRun = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const running = yield* Ref.get(runningRef)
-        if (running) return
-
-        yield* Ref.set(runningRef, true)
-
-        // Capture and store the scope for use in setOnline/health check
-        const scope = yield* Effect.scope
-        yield* Ref.set(mainScopeRef, scope)
-
-        // Start transfer workers only when remote transfers are enabled.
-        if (!isLocalOnly) {
-          yield* executor.start()
-        }
-
-        // Check initial lock status
-        const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
-        const isInitialLeader = initialStatus === "has-lock"
-        yield* Ref.set(isLeaderRef, isInitialLeader)
-
-        if (isInitialLeader) {
-          yield* startSyncLoop()
-        }
-
-        // Watch for leadership changes
-        const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
-        yield* Ref.set(leaderWatcherFiberRef, watchFiber)
-
-        // Start heartbeat to monitor stream and executor liveness
-        yield* startHeartbeat()
-
-        // Start continuous health check to detect connectivity changes
-        yield* startHealthCheckLoop()
-      })
-
-    const stop = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const running = yield* Ref.get(runningRef)
-        if (!running) return
-
         yield* Ref.set(runningRef, false)
-
-        // Stop leader watcher
-        const leaderWatcherFiber = yield* Ref.get(leaderWatcherFiberRef)
-        if (leaderWatcherFiber) {
-          yield* Fiber.interrupt(leaderWatcherFiber)
-          yield* Ref.set(leaderWatcherFiberRef, null)
-        }
-
-        // Stop heartbeat and health check if running
+        generation++
+        const scope = yield* Ref.get(mainScopeRef)
+        const watcher = yield* Ref.get(leaderWatcherFiberRef)
+        if (watcher) yield* Fiber.interrupt(watcher)
+        yield* Ref.set(leaderWatcherFiberRef, null)
         yield* stopHeartbeat()
         yield* stopHealthCheckLoop()
-
-        yield* stopEventStream()
-        yield* executor.pause()
-
-        // Reset leader status
+        yield* stopSyncLoop()
+        if (scope) yield* Scope.close(scope, Exit.void)
+        yield* Ref.set(mainScopeRef, null)
         yield* Ref.set(isLeaderRef, false)
       })
+
+    const stop = (): Effect.Effect<void> => lifecycle.withPermit(stopRun()).pipe(Effect.uninterruptible)
+
+    const start = (): Effect.Effect<void, never, Scope.Scope> =>
+      lifecycle.withPermit(Effect.gen(function*() {
+        if (yield* Ref.get(runningRef)) return
+        const scope = yield* Scope.make()
+        yield* Ref.set(mainScopeRef, scope)
+        yield* Ref.set(runningRef, true)
+        generation++
+        yield* Effect.addFinalizer(() =>
+          lifecycle.withPermit(Effect.gen(function*() {
+            if ((yield* Ref.get(mainScopeRef)) === scope) yield* stopRun()
+          }))
+        )
+        yield* Scope.provide(
+          Effect.gen(function*() {
+            const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
+            const isInitialLeader = initialStatus === "has-lock"
+            yield* Ref.set(isLeaderRef, isInitialLeader)
+            if (isInitialLeader) yield* startSyncLoop()
+            const watcher = yield* Effect.forkIn(watchLeadership(), scope)
+            yield* Ref.set(leaderWatcherFiberRef, watcher)
+            yield* startHeartbeat()
+            yield* startHealthCheckLoop()
+          }),
+          scope
+        ).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? stopRun() : Effect.void))
+      }))
 
     const syncNow = (): Effect.Effect<void> => restartEventStream()
 
@@ -1414,7 +1438,10 @@ export const makeFileSync = (
         if (online) {
           yield* Ref.set(onlineRef, true)
           yield* emit({ type: "online" })
-          yield* executor.resume()
+          if (isRunningLeader()) {
+            yield* reEnqueueQueuedTransfers()
+            if (isRunningLeader()) yield* executor.resume()
+          }
         } else {
           yield* goOffline()
         }

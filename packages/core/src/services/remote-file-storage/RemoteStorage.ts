@@ -225,7 +225,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
     contentLength?: number
   }): Effect.Effect<SignUploadResponse, UploadError> =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         const response = await fetch(signerUrl("/v1/sign/upload"), {
           method: "POST",
           headers: {
@@ -233,7 +233,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             ...makeHeaders()
           },
           body: JSON.stringify(params),
-          ...fetchOptions
+          ...fetchOptions,
+          signal
         })
         if (!response.ok) throw new Error(`Signer upload signing failed: ${response.status}`)
         return validateSignUploadResponse(await response.json())
@@ -247,7 +248,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
   const signDownload = (key: string): Effect.Effect<SignDownloadResponse, DownloadError> =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         const response = await fetch(signerUrl("/v1/sign/download"), {
           method: "POST",
           headers: {
@@ -255,7 +256,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             ...makeHeaders()
           },
           body: JSON.stringify({ key }),
-          ...fetchOptions
+          ...fetchOptions,
+          signal
         })
 
         if (!response.ok) throw new Error(`Signer download signing failed: ${response.status}`)
@@ -294,11 +296,12 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
         })
 
         const response = yield* Effect.tryPromise({
-          try: async () => {
+          try: async (signal) => {
             const r = await fetch(signed.url, {
               method: signed.method,
               ...(signed.headers ? { headers: signed.headers } : {}),
-              body: arrayBuffer
+              body: arrayBuffer,
+              signal
             })
             return r
           },
@@ -333,33 +336,61 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
       })
 
       const result = yield* Effect.tryPromise({
-        try: () =>
+        try: (signal) =>
           new Promise<{ etag?: string }>((resolve, reject) => {
             const xhr = new XMLHttpRequest()
+            let settled = false
+            const cleanup = () => {
+              settled = true
+              signal.removeEventListener("abort", abort)
+              xhr.upload.onprogress = null
+              xhr.onload = null
+              xhr.onerror = null
+              xhr.ontimeout = null
+              xhr.onabort = null
+            }
+            const fail = (error: unknown) => {
+              if (settled) return
+              cleanup()
+              reject(error)
+            }
+            const abort = () => {
+              fail(new Error("Upload aborted"))
+              xhr.abort()
+            }
 
             xhr.upload.onprogress = (event) => {
-              if (event.lengthComputable) {
+              if (!settled && !signal.aborted && event.lengthComputable) {
                 options.onProgress!({ loaded: event.loaded, total: event.total })
               }
             }
-
             xhr.onload = () => {
+              if (settled || signal.aborted) return
               if (xhr.status >= 200 && xhr.status < 300) {
                 const etag = xhr.getResponseHeader("ETag")
+                cleanup()
                 resolve(etag ? { etag } : {})
               } else {
-                reject(new Error(`Upload failed with status: ${xhr.status}`))
+                fail(new Error(`Upload failed with status: ${xhr.status}`))
               }
             }
-
-            xhr.onerror = () => reject(new Error("Upload network error"))
-            xhr.ontimeout = () => reject(new Error("Upload timeout"))
-
-            xhr.open(signed.method, signed.url)
-            if (signed.headers) {
-              Object.entries(signed.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
+            xhr.onerror = () => fail(new Error("Upload network error"))
+            xhr.ontimeout = () => fail(new Error("Upload timeout"))
+            xhr.onabort = () => fail(new Error("Upload aborted"))
+            signal.addEventListener("abort", abort, { once: true })
+            if (signal.aborted) {
+              abort()
+              return
             }
-            xhr.send(xhrArrayBuffer)
+            try {
+              xhr.open(signed.method, signed.url)
+              if (signed.headers) {
+                Object.entries(signed.headers).forEach(([k, v]) => xhr.setRequestHeader(k, v))
+              }
+              xhr.send(xhrArrayBuffer)
+            } catch (error) {
+              fail(error)
+            }
           }),
         catch: (error) =>
           new UploadError({
@@ -374,88 +405,67 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
   const download = (key: string, options?: DownloadOptions): Effect.Effect<File, DownloadError> =>
     Effect.gen(function*() {
       const signed = yield* signDownload(key)
-      const response = yield* Effect.tryPromise({
-        try: async () => {
-          const r = await fetch(signed.url, {
+      // One interruption scope owns both fetch and consumption of its body.
+      return yield* Effect.tryPromise({
+        try: async (signal) => {
+          const response = await fetch(signed.url, {
             method: "GET",
-            ...(signed.headers ? { headers: signed.headers } : {})
+            ...(signed.headers ? { headers: signed.headers } : {}),
+            signal
           })
-          return r
+          signal.throwIfAborted()
+          if (!response.ok) throw new Error(`Download failed with status: ${response.status}`)
+
+          const filename = key.split("/").pop() || "file"
+          const contentType = response.headers.get("Content-Type") || "application/octet-stream"
+          // Do not lock the body with getReader when arrayBuffer will consume it.
+          if (!options?.onProgress || !response.body) {
+            const data = await response.arrayBuffer()
+            signal.throwIfAborted()
+            return new MemoryFile(new Uint8Array(data), filename, contentType) as unknown as File
+          }
+
+          const reader = response.body.getReader()
+          const cancel = () => {
+            // Cancellation can be asynchronous (or reject); shutdown does not wait
+            // for a non-cooperative stream, and no more progress is published.
+            void reader.cancel().catch(() => {})
+          }
+          signal.addEventListener("abort", cancel, { once: true })
+          const chunks: Array<Uint8Array> = []
+          let loaded = 0
+          const total = parseInt(response.headers.get("Content-Length") || "0", 10)
+          try {
+            while (true) {
+              signal.throwIfAborted()
+              const result = await reader.read()
+              signal.throwIfAborted()
+              if (result.done) break
+              chunks.push(result.value)
+              loaded += result.value.length
+              options.onProgress({ loaded, total })
+            }
+          } finally {
+            signal.removeEventListener("abort", cancel)
+            if (!signal.aborted) cancel()
+            reader.releaseLock()
+          }
+
+          const data = new Uint8Array(loaded)
+          let offset = 0
+          for (const chunk of chunks) {
+            data.set(chunk, offset)
+            offset += chunk.length
+          }
+          return new MemoryFile(data, filename, contentType) as unknown as File
         },
         catch: (error) =>
           new DownloadError({
-            message: `Failed to download`,
+            message: "Failed to download",
             url: key,
             cause: error
           })
       })
-
-      if (!response.ok) {
-        return yield* Effect.fail(
-          new DownloadError({
-            message: `Download failed with status: ${response.status}`,
-            url: key
-          })
-        )
-      }
-
-      const contentLength = parseInt(response.headers.get("Content-Length") || "0", 10)
-      const reader = response.body?.getReader()
-
-      // If no progress callback or no reader (streaming not supported), use arrayBuffer
-      if (!options?.onProgress || !reader) {
-        const arrayBuffer = yield* Effect.tryPromise({
-          try: async () => await response.arrayBuffer(),
-          catch: (error) =>
-            new DownloadError({
-              message: `Failed to read response body`,
-              url: key,
-              cause: error
-            })
-        })
-
-        const filename = key.split("/").pop() || "file"
-        const contentType = response.headers.get("Content-Type") || "application/octet-stream"
-        // Use MemoryFile for React Native compatibility
-        // React Native's File/Blob constructors don't properly support ArrayBuffer
-        return new MemoryFile(new Uint8Array(arrayBuffer), filename, contentType) as unknown as File
-      }
-
-      // Stream download with progress tracking
-      const chunks: Array<Uint8Array> = []
-      let loaded = 0
-
-      while (true) {
-        const readResult = yield* Effect.tryPromise({
-          try: () => reader.read(),
-          catch: (error) =>
-            new DownloadError({
-              message: `Stream read failed`,
-              url: key,
-              cause: error
-            })
-        })
-
-        if (readResult.done) break
-
-        chunks.push(readResult.value)
-        loaded += readResult.value.length
-        options.onProgress({ loaded, total: contentLength })
-      }
-
-      // Concatenate chunks into a single Uint8Array
-      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-      const data = new Uint8Array(totalLength)
-      let offset = 0
-      for (const chunk of chunks) {
-        data.set(chunk, offset)
-        offset += chunk.length
-      }
-
-      const filename = key.split("/").pop() || "file"
-      const contentType = response.headers.get("Content-Type") || "application/octet-stream"
-      // Use MemoryFile for React Native compatibility
-      return new MemoryFile(data, filename, contentType) as unknown as File
     })
 
   const getDownloadUrl = (key: string): Effect.Effect<string, DownloadError> =>
@@ -463,7 +473,7 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
   const deleteFile = (key: string): Effect.Effect<void, DeleteError> =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         const response = await fetch(signerUrl("/v1/delete"), {
           method: "POST",
           headers: {
@@ -471,7 +481,8 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
             ...makeHeaders()
           },
           body: JSON.stringify({ key }),
-          ...fetchOptions
+          ...fetchOptions,
+          signal
         })
 
         if (!response.ok) {
@@ -488,13 +499,13 @@ export const makeS3SignerRemoteStorage = (config: RemoteStorageConfig): RemoteSt
 
   const checkHealth = (): Effect.Effect<boolean, never> =>
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         const response = await fetch(signerUrl("/health"), {
           method: "GET",
           headers: makeHeaders(),
-          ...fetchOptions
+          ...fetchOptions,
+          signal
         })
-        console.log("checkHealth", response.ok)
         return response.ok
       },
       catch: () => false

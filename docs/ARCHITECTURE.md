@@ -492,10 +492,11 @@ This prevents race conditions where multiple tabs try to enqueue transfers and m
 1. **Leader Election**: LiveStore's `ClientSession` exposes a `lockStatus` SubscriptionRef that
    indicates whether the current tab holds the leader lock (`'has-lock'` or `'no-lock'`).
 
-2. **Leader-Only Event Stream**: The `FileSync` service subscribes to `lockStatus.changes`:
+2. **Leader-Only Event Stream**: The `FileSync` service subscribes before reading the current lock:
    - When a tab becomes leader, it starts the LiveStore file-event stream and processes batches
      of `v1.FileCreated`, `v1.FileUpdated`, and `v1.FileDeleted` events
-   - When a tab loses leadership, it stops the stream and pauses transfers
+   - When a tab loses leadership, it invalidates transfer publication, interrupts active work,
+     stops the stream, and persists interrupted work as queued
 
 3. **Shared Cursor**: A shared client document (`fileSyncCursor`) stores the last processed
    event sequence so new leaders resume from the right point.
@@ -510,22 +511,17 @@ The `FileSync` service tracks leadership state with:
 - `isLeaderRef`: Whether this tab is currently the leader
 - `leaderWatcherFiberRef`: Background fiber watching for leadership changes
 
-```typescript
-// Simplified flow
-const watchLeadership = () =>
-  clientSession.lockStatus.changes.pipe(
-    Stream.tap((status) => {
-      if (status === 'has-lock' && !wasLeader) {
-        // Became leader - start sync loop
-        startSyncLoop()
-      } else if (status === 'no-lock' && wasLeader) {
-        // Lost leadership - stop sync loop
-        stopSyncLoop()
-      }
-    }),
-    Stream.runDrain
-  )
-```
+Each start owns a nested scope containing the actual leadership watcher, workers, and
+background fibers. `stop()` invalidates the run, interrupts owned work, and closes that scope.
+Old caller-scope finalizers compare ownership before stopping anything, so they cannot stop
+a restarted run. Worker creation is serialized, and transfer fibers belong to the worker
+scope rather than detached execution. Publication checks both captured generation and the
+current lock; health and heartbeat recovery must also pass the running-leader gate.
+
+The public factory serializes lifecycle requests and singleton mount disposers capture their
+originating generation. Replacement startup waits for retired instance cleanup. See
+[instance lifecycle](STABILITY.md#instance-lifecycle-and-singleton-mounts) for configuration
+refresh, failure/restart behavior, and physical cancellation limits.
 
 This ensures:
 - No duplicate sync operations across tabs

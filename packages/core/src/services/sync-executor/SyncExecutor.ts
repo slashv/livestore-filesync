@@ -8,7 +8,7 @@
  */
 
 import type { Scope } from "effect"
-import { Context, Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Schedule } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Schedule, Semaphore } from "effect"
 
 /**
  * Transfer kind
@@ -207,6 +207,7 @@ export const makeSyncExecutor = (
     const queued = new Map<string, Request>()
     const active = new Map<string, { request: Request; fiber: Fiber.Fiber<void, never> }>()
     const idleWaiters = new Set<Deferred.Deferred<void>>()
+    const workerMutex = yield* Semaphore.make(1)
     let paused = false
     let downloadWorker: Fiber.Fiber<void, never> | undefined
     let uploadWorker: Fiber.Fiber<void, never> | undefined
@@ -250,10 +251,14 @@ export const makeSyncExecutor = (
         }
       })
 
-    const forkTracked = (request: Request): Effect.Effect<void> =>
-      Effect.uninterruptible(Effect.gen(function*() {
+    const forkTracked = (request: Request, scope: Scope.Scope): Effect.Effect<void> =>
+      workerMutex.withPermit(Effect.uninterruptible(Effect.gen(function*() {
         const key = keyOf(request.kind, request.fileId)
         if (queued.get(key) !== request || active.has(key)) return
+        if (paused) {
+          yield* offer(request)
+          return
+        }
         // Keep the request queued until its active slot is registered.
         // Gate execution until its handle is registered. Even a synchronous
         // handler must not finalize before it owns an active slot.
@@ -268,7 +273,7 @@ export const makeSyncExecutor = (
             yield* checkIdle
           }))
         )
-        const fiber = yield* Effect.forkDetach(task)
+        const fiber = yield* Effect.forkIn(task, scope)
         active.set(key, { request, fiber })
         if (queued.get(key) !== request) {
           yield* Fiber.interrupt(fiber)
@@ -276,9 +281,9 @@ export const makeSyncExecutor = (
         }
         queued.delete(key)
         yield* Deferred.succeed(ready, undefined)
-      }))
+      })))
 
-    const worker = (kind: TransferKind): Effect.Effect<void> =>
+    const worker = (kind: TransferKind, scope: Scope.Scope): Effect.Effect<void> =>
       Effect.forever(Effect.gen(function*() {
         const limit = kind === "download" ? config.maxConcurrentDownloads : config.maxConcurrentUploads
         if (paused || countKind(kind) >= limit) {
@@ -288,21 +293,22 @@ export const makeSyncExecutor = (
         let next = yield* Queue.poll(kind === "download" ? priorityQueue : uploadQueue)
         if (kind === "download" && Option.isNone(next)) next = yield* Queue.poll(downloadQueue)
         if (Option.isSome(next)) {
-          yield* forkTracked(next.value)
+          yield* forkTracked(next.value, scope)
         } else {
           yield* Effect.sleep("100 millis")
         }
       })).pipe(Effect.interruptible)
 
     const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
+      workerMutex.withPermit(Effect.gen(function*() {
+        const scope = yield* Effect.scope
         if (!downloadWorker || downloadWorker.pollUnsafe() !== undefined) {
-          downloadWorker = yield* Effect.forkScoped(worker("download"))
+          downloadWorker = yield* Effect.forkIn(worker("download", scope), scope)
         }
         if (!uploadWorker || uploadWorker.pollUnsafe() !== undefined) {
-          uploadWorker = yield* Effect.forkScoped(worker("upload"))
+          uploadWorker = yield* Effect.forkIn(worker("upload", scope), scope)
         }
-      })
+      }))
 
     const enqueue = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
       Effect.uninterruptible(Effect.gen(function*() {
@@ -352,7 +358,12 @@ export const makeSyncExecutor = (
         })))
       })
 
-    yield* Effect.addFinalizer(() => interruptInflight())
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function*() {
+        paused = true
+        yield* interruptInflight()
+      })
+    )
 
     return {
       hasTask: (kind, fileId) => active.has(keyOf(kind, fileId)) || queued.has(keyOf(kind, fileId)),
@@ -361,9 +372,9 @@ export const makeSyncExecutor = (
       prioritizeDownload,
       cancelDownload,
       pause: () =>
-        Effect.sync(() => {
+        workerMutex.withPermit(Effect.sync(() => {
           paused = true
-        }),
+        })),
       resume: () =>
         Effect.sync(() => {
           paused = false

@@ -61,7 +61,7 @@ describe("thumbnail singleton API", () => {
     expect(call).toBeDefined()
     expect(call.filesTable).toBe(filesTable)
     expect(call).not.toHaveProperty("queryDb")
-    expect(startMock).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(startMock).toHaveBeenCalledTimes(1))
 
     await dispose()
   })
