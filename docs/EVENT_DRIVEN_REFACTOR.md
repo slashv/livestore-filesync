@@ -8,7 +8,7 @@ This document summarizes the event-stream refactor that replaces the previous re
 - **Shared cursor**: A new client document, `fileSyncCursor`, stores the last processed event sequence so any leader tab can resume the stream.
 - **Conditional bootstrap**: The leader bootstraps from the `files` table only when needed (root cursor or empty `localFileState`). Warm restarts reuse existing state.
 - **Batched local state writes**: `localFileState` diff updates are committed as a single `store.commit(...events)` transaction when possible, instead of one commit per row.
-- **Immediate delete handling**: `v1.FileDeleted` events delete local files immediately and remove local state entries.
+- **Immediate delete handling**: `v1.FileDeleted` events reclaim unowned local bytes through `BlobOwnership` and remove local state entries. Shared paths and active transfers retain their bytes; remote blobs are retained for server-managed GC.
 - **Configuration cleanup**: `gcDelayMs` was removed since periodic cleanup is no longer used.
 
 ## New schema additions

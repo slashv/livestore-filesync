@@ -278,6 +278,20 @@ Downloads verify SHA-256 before writing locally. A checksum mismatch follows the
 retry policy and remains an error if retries are exhausted; `retryErrors()` can retry after
 the remote content is repaired. Deleting a file cancels its queued or active download.
 
+## Shared bytes and cleanup
+
+Records with identical content share a local path and remote key. Deleting or updating one
+record preserves bytes owned by another live record. Local cleanup also protects active
+transfers and serializes deletion with writes and metadata publication within a FileSync
+instance. It rechecks references after asynchronous deletion and restores bytes if a new
+owner appeared while the adapter was deleting.
+
+Remote blobs are **retained**, including replaced content and stale uploads. A client cannot
+know about references on offline devices, so it cannot safely garbage-collect remote keys.
+Applications needing reclamation must implement a server-authoritative retention/GC policy;
+FileSync does not currently provide one. Local cleanup is best effort, and future references
+arriving after reclamation require a download (or re-saving bytes in local-only mode).
+
 ## Multi-Tab Support
 
 FileSync is designed to work correctly when multiple browser tabs are open to the same app. It uses LiveStore's built-in leader election (via Web Locks API) to ensure only one tab runs the sync loop at a time. This prevents race conditions and duplicate operations.

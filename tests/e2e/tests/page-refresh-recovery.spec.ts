@@ -457,7 +457,7 @@ test.describe('Page Refresh Recovery', () => {
     await page.locator('[data-testid="delete-button"]').click()
     await expect(page.locator('[data-testid="file-card"]')).toHaveCount(0, { timeout: 5000 })
 
-    // Wait for delete to fully propagate (remote deletion, event processing)
+    // Wait for the deletion event and local cleanup to propagate
     await page.waitForTimeout(2000)
     console.log('Phase 2 - file deleted')
 
