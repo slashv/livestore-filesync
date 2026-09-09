@@ -36,6 +36,50 @@ The services are wired together as Effect layers inside `createFileSync` and the
   `updateFile`, `deleteFile`, and `resolveFileUrl`, always writing locally first. In local-only mode
   it still writes and resolves local files, but skips health checks and upload/download/delete work.
 
+## Transfer validity and queue ownership
+
+`FileSync` owns version validity: each attempt captures content hash, local path and remote
+key, and rejects completion or failure updates if that identity changed or the row was deleted.
+Uploads hash local bytes before sending; downloads hash received bytes before writing.
+A download rechecks after the adapter write, removes an unreferenced stale path, and commits
+local availability only for the current version. Publication finishes even if cancellation
+arrives during a filesystem write that cannot be aborted. Metadata-only edits are preserved
+when the upload remote key is committed.
+
+`SyncExecutor` owns concurrency, cancellation, retries and completion accounting. It permits
+one active transfer per file and direction. Enqueueing that direction during an active attempt
+coalesces into one follow-up attempt, which reads the latest row. Priority entries share queue
+identity, so old priority entries cannot consume a newly enqueued request. Cancelling downloads
+interrupts active work and its retry delay as well as invalidating queued requests.
+
+Superseded attempts reconcile the latest row without marking it failed or complete. Checksum
+failures on a current version use the existing retry/error policy.
+
+### Shared blob lifetime
+
+`BlobOwnership` owns local cleanup for CRUD, tombstone events, bootstrap and transfer
+finalization. A local path is owned while any non-deleted row references it or an active
+transfer leases it. The last transfer releases its lease and attempts cleanup, including
+stale downloads and uploads. Cleanup queries current rows rather than a bootstrap snapshot.
+A per-instance mutex serializes cleanup with local writes and their metadata publication;
+upload reads also wait for pending cleanup. These operations finish across cancellation.
+Cleanup keeps a byte snapshot and rechecks ownership before and after adapter deletion,
+restoring it when synced metadata or a new transfer acquires ownership during the delete.
+Read failures retain bytes; filesystem failures remain best effort and may leave orphaned
+bytes or prevent restoration. This is not an atomic filesystem/LiveStore transaction.
+
+The mutex is scoped to one FileSync instance, not a cross-tab or cross-process lock. Synced
+metadata can arrive outside it; the post-delete check handles references visible when deletion
+settles. References arriving later must download retained remote bytes. In local-only mode,
+applications must re-save bytes for such later references. Independent instances sharing a
+filesystem are not covered by serialization and should not be treated as globally coordinated GC.
+
+Remote objects are never automatically deleted by FileSync, even when the last locally known
+owner is deleted or an upload becomes stale. Offline devices can have unseen references;
+local row scans cannot prove global non-ownership. RemoteStorage.delete and the signer delete
+endpoint remain available for application/server-authoritative garbage collection. No server
+reference registry or remote GC is provided, so retained remote storage can grow over time.
+
 ## Remote Modes
 
 FileSync has two explicit remote modes:
@@ -448,10 +492,11 @@ This prevents race conditions where multiple tabs try to enqueue transfers and m
 1. **Leader Election**: LiveStore's `ClientSession` exposes a `lockStatus` SubscriptionRef that
    indicates whether the current tab holds the leader lock (`'has-lock'` or `'no-lock'`).
 
-2. **Leader-Only Event Stream**: The `FileSync` service subscribes to `lockStatus.changes`:
+2. **Leader-Only Event Stream**: The `FileSync` service subscribes before reading the current lock:
    - When a tab becomes leader, it starts the LiveStore file-event stream and processes batches
      of `v1.FileCreated`, `v1.FileUpdated`, and `v1.FileDeleted` events
-   - When a tab loses leadership, it stops the stream and pauses transfers
+   - When a tab loses leadership, it invalidates transfer publication, interrupts active work,
+     stops the stream, and persists interrupted work as queued
 
 3. **Shared Cursor**: A shared client document (`fileSyncCursor`) stores the last processed
    event sequence so new leaders resume from the right point.
@@ -466,22 +511,17 @@ The `FileSync` service tracks leadership state with:
 - `isLeaderRef`: Whether this tab is currently the leader
 - `leaderWatcherFiberRef`: Background fiber watching for leadership changes
 
-```typescript
-// Simplified flow
-const watchLeadership = () =>
-  clientSession.lockStatus.changes.pipe(
-    Stream.tap((status) => {
-      if (status === 'has-lock' && !wasLeader) {
-        // Became leader - start sync loop
-        startSyncLoop()
-      } else if (status === 'no-lock' && wasLeader) {
-        // Lost leadership - stop sync loop
-        stopSyncLoop()
-      }
-    }),
-    Stream.runDrain
-  )
-```
+Each start owns a nested scope containing the actual leadership watcher, workers, and
+background fibers. `stop()` invalidates the run, interrupts owned work, and closes that scope.
+Old caller-scope finalizers compare ownership before stopping anything, so they cannot stop
+a restarted run. Worker creation is serialized, and transfer fibers belong to the worker
+scope rather than detached execution. Publication checks both captured generation and the
+current lock; health and heartbeat recovery must also pass the running-leader gate.
+
+The public factory serializes lifecycle requests and singleton mount disposers capture their
+originating generation. Replacement startup waits for retired instance cleanup. See
+[instance lifecycle](STABILITY.md#instance-lifecycle-and-singleton-mounts) for configuration
+refresh, failure/restart behavior, and physical cancellation limits.
 
 This ensures:
 - No duplicate sync operations across tabs
@@ -752,27 +792,31 @@ When the event stream encounters an error:
 3. On successful recovery, a `sync:recovery` event is emitted
 4. If max attempts are reached, `sync:stream-exhausted` is emitted
 
-### Stale Transfer Recovery
+### Durable Work and Reconciliation
 
-On cold start, transfers stuck in `inProgress` or `error` state are automatically recovered:
+`Reconciliation.ts` centralizes file inspection, guarded state patches, targeted repairs and
+executor reconstruction. `localFileState` is authoritative for transfer work; executor queue
+membership is a rebuildable cache. Warm startup reads durable local rows without scanning or
+hashing every `files` row. Bootstrap remains conditional on a root cursor or empty local state.
 
-- Files with `uploadStatus: "inProgress"` are reset to `queued`
-- Files with `downloadStatus: "inProgress"` are reset to `queued`
-- Files with `uploadStatus: "error"` are reset to `queued`
-- Files with `downloadStatus: "error"` are reset to `queued`
-- `lastSyncError` is cleared when retrying error state files
-- A `sync:error-retry-start` event is emitted with the file IDs being retried
-- Transfers are not immediately re-enqueued by stale recovery itself; queued work can be resumed
-  via `syncNow()` (which re-enqueues queued rows before stream restart) or `retryErrors()`
+Every leadership acquisition resets orphaned `inProgress` and `error` statuses to `queued` and
+enqueues both those and pre-existing queued rows. Errors receive one normal bounded executor
+retry cycle per acquisition. Heartbeat and `syncNow()` rebuild missing queued/interrupted work
+without resetting errors or scheduling duplicate follow-ups for active attempts. New file events
+can retry the affected file's error, so corrected remote keys are used immediately.
 
-**Important**: This recovery runs **once per `start()` lifecycle**, at the beginning of
-`startSyncLoop()` when the tab becomes leader. It does **not** run on mid-session stream
-restarts (e.g., `syncNow()`, heartbeat recoveries), which preserves legitimate `inProgress`
-transfers that are actively running.
+Inspection results are committed as a batch only where both the captured metadata and local
+state still match. Rejected patches become targeted repair work. Deletion cleans both the current
+metadata path and previous durable local path through `BlobOwnership`.
 
-This handles cases where:
-- A page was refreshed while a transfer was in progress (stale `inProgress`)
-- A previous transfer failed with an error (auto-retry)
+The optional `fileSyncCursor.repairs` array stores `{ fileId, attempts, retryErrors? }` entries. Existing cursor
+documents without it remain valid. An inspection failure is persisted before advancing the event
+cursor; successful repair publishes local state before retiring its entry. Startup and heartbeat
+retry only these IDs. Inspection attempts are bounded at `max(2, executorConfig.maxRetries + 1)`
+including the initial failure; counts and new-event retry intent survive restart. `retryErrors()` resets this budget as well
+as retrying transfer errors. Disabled heartbeat leaves startup/manual retry as the repair trigger.
+Inspection and repair reads are serialized so heartbeat cannot replay a repair completed by
+manual retry. No-op reconciliation emits no local-state or repair-document changes.
 
 ### Manual Error Retry
 

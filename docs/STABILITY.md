@@ -1,5 +1,12 @@
 # Stability Features
 
+Current recovery policy is documented in [ARCHITECTURE.md](./ARCHITECTURE.md#durable-work-and-reconciliation).
+The historical stale-recovery gating notes below are superseded: reconciliation now checks
+executor membership, rebuilds durable work on every leadership acquisition and heartbeat, and
+persists bounded per-file inspection repairs before advancing the cursor. Heartbeats preserve
+terminal transfer errors; acquisition or explicit retry starts a new bounded transfer cycle.
+
+
 This document describes the stability and self-healing mechanisms implemented in FileSync to ensure robust operation in production environments.
 
 These mechanisms apply to remote-backed FileSync unless noted otherwise. When FileSync is initialized
@@ -341,3 +348,65 @@ The knobs below live in the host app's LiveStore worker/monitor code (not in thi
      behavior on transient sync errors.
    - For most apps, prefer non-shutdown behavior and surface persistent failures via monitoring
      (`sync:error`, `sync:stream-exhausted`, `sync:heartbeat-recovery`).
+
+## Instance lifecycle and singleton mounts
+
+`createFileSync().start()` and `.stop()` (and their singleton helpers) now return
+`Promise<void>`. Existing callers may continue ignoring the result; await it when ordering
+startup or shutdown matters. Transitions are serialized, repeated calls share ownership,
+and `dispose()` is permanent and idempotent. Startup failures are reported as `sync:error`
+and a later `start()` can retry. `stop()` leaves local file APIs usable.
+
+Singleton mounts share an instance only for the same store object, user ID (including no
+user ID), and remote/local-only mode. Each returned disposer releases its originating
+mount exactly once. Store/user/mode replacement and explicit global disposal detach the
+old generation before asynchronous cleanup, so stale cleanup cannot dispose the replacement.
+The first configuration for a shared generation wins; use `disposeFileSync()` followed by
+`initFileSync()` to change filesystem, preprocessing, concurrency, or signer configuration.
+`remote.authToken` also accepts a getter for token refresh within the same user session.
+Configured callbacks and event subscribers are isolated from one another when they throw.
+
+Only a running leader may execute background transfers. Health recovery and queue repair
+cannot enable a follower executor. Each run owns its workers, watcher, and transfer fibers;
+stop and leadership loss invalidate old progress and completion before joining cleanup.
+Restart and leadership acquisition reconstruct persisted interrupted work through
+Reconciliation, including with an advanced event cursor.
+
+The signer adapter aborts fetch and XHR on interruption and cancels streamed download
+readers. Adapter filesystem writes and image processing may not support immediate physical
+cancellation. Shutdown can wait for protected local storage operations to finish; it does
+not undo bytes already written or a remote upload already accepted by the server. Old work
+cannot publish transfer completion or progress into a replacement run. Remote retention
+continues to protect shared and offline references.
+
+## Adapter completion and test boundaries
+
+OPFS writes and truncation publish only after writable close succeeds. On write,
+truncate, or close failure, the adapter attempts abort and preserves the original
+error. Tests stage bytes until close, verify old bytes during a blocked close, and
+verify failed partial writes do not close and publish staged content. A failed
+creation of a new file can still leave an empty directory entry.
+
+Expo awaits native mutators (creation, writes, copy, move, removal, and truncation)
+whether they return immediately or return a promise. File stats treat Expo `type`
+as a MIME type and convert millisecond timestamps into `Date` values. Controlled module tests exercise byte round trips, ordered
+directory/write completion, and synchronous/asynchronous failures. These are not
+real-device tests and do not establish native atomicity, mobile permission behavior,
+or recovery from an OS kill. Expo writes may leave partial bytes on native failure.
+
+Thumbnail configuration tests use real in-memory LiveStore materializers and the
+production service/storage with controlled filesystem and generation adapters. They
+assert persisted state and output bytes across unchanged and changed configuration,
+without duplicating the production hash. Browser tests exercise real canvas workers,
+OPFS, and the local Worker storage backend.
+
+File URL resolution rejects tombstoned rows even when shared local bytes or retained
+remote objects still exist. It rechecks the live row's content hash, path, and remote
+key after local reads or signing, returning `null` if that version changed, including
+when the obsolete read fails. A previously returned URL cannot be revoked by a later
+delete; these lookup guards do not change remote retention or access policy.
+
+Expo truncation zero-fills extensions and preserves the prefix when shrinking; a
+zero length empties the file. Invalid negative, fractional, non-finite, or unsafe
+lengths fail without writing. Contract tests cover shrink/zero/grow and the OPFS fake
+models native zero-filled extension, in addition to completion/failure boundaries.

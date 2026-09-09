@@ -418,60 +418,49 @@ test.describe('Image Thumbnails', () => {
 test.describe('Image Thumbnails - Cross-browser sync', () => {
   test.skip(!shouldRun, 'Thumbnail tests only run with E2E_FRAMEWORK=thumbnail')
 
-  // This test requires a real sync backend (R2/S3) to transfer files between browser contexts.
-  // Each browser has its own OPFS, so Browser 2 needs to download the file from remote storage
-  // before it can generate thumbnails. Skip for now until we have backend integration tests.
-  test.skip('thumbnail state is local only - other browser generates its own', async ({ browser }) => {
-    const storeId = generateStoreId('thumb-cross')
-    const url = `/?storeId=${storeId}`
-
-    // Create two separate browser contexts
+  test('thumbnail state is local only - other browser generates its own', async ({ browser }) => {
     const context1 = await browser.newContext()
     const context2 = await browser.newContext()
-
     const page1 = await context1.newPage()
     const page2 = await context2.newPage()
-
-    await page1.goto(url)
-    await page2.goto(url)
-
-    await waitForLiveStore(page1)
-    await waitForLiveStore(page2)
-
-    // Upload a file in browser 1
-    const testImage = createTestImage('blue')
-    await page1.locator('input[type="file"]').setInputFiles(testImage)
-
-    // Wait for thumbnail in browser 1
-    await expect.poll(
-      async () => {
-        const status = await page1.locator('[data-testid="thumbnail-status"]').textContent()
-        return status?.trim()
-      },
-      { timeout: 30000, intervals: [500, 1000] }
-    ).toBe('done')
-
-    // Browser 2 should see the file (synced via LiveStore)
-    await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, {
-      timeout: 30000,
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => { release = resolve })
+    let downloads = 0
+    await context2.route('**/livestore-filesync-files/**', async (route) => {
+      if (route.request().method() === 'GET') {
+        downloads++
+        await barrier
+      }
+      await route.continue()
     })
-
-    // Browser 2 should generate its own thumbnail independently
-    // (thumbnails are NOT synced between clients)
-    await expect.poll(
-      async () => {
-        const status = await page2.locator('[data-testid="thumbnail-status"]').textContent()
-        return status?.trim()
-      },
-      { timeout: 30000, intervals: [500, 1000] }
-    ).toBe('done')
-
-    // Both should have thumbnail badges
-    await expect(page1.locator('[data-testid="thumbnail-badge"]')).toBeVisible()
-    await expect(page2.locator('[data-testid="thumbnail-badge"]')).toBeVisible()
-
-    // Cleanup
-    await context1.close()
-    await context2.close()
+    try {
+      const url = `/?storeId=${generateStoreId('thumb-cross')}`
+      await page1.goto(url)
+      await page2.goto(url)
+      await waitForLiveStore(page1)
+      await waitForLiveStore(page2)
+      await page1.locator('input[type="file"]').setInputFiles(createTestImage('blue'))
+      await expect(page1.locator('[data-testid="thumbnail-status"]')).toHaveText('done', { timeout: 30000 })
+      await expect(page2.locator('[data-testid="file-card"]')).toHaveCount(1, { timeout: 30000 })
+      await expect.poll(() => downloads, { timeout: 30000 }).toBeGreaterThan(0)
+      // Synced metadata must not copy the first context's completed thumbnail state.
+      await expect(page2.locator('[data-testid="thumbnail-status"]')).not.toHaveText('done')
+      await expect(page2.locator('[data-testid="thumbnail-badge"]')).toHaveCount(0)
+      release()
+      await expect(page2.locator('[data-testid="thumbnail-status"]')).toHaveText('done', { timeout: 30000 })
+      const thumbnailBytes = async (page: typeof page1) => {
+        await expect(page.locator('[data-testid="thumbnail-badge"]')).toBeVisible()
+        const image = page.locator('[data-testid="file-image"]')
+        await waitForImageLoaded(image)
+        return image.evaluate(async (element: HTMLImageElement) => {
+          const response = await fetch(element.src)
+          return { bytes: Array.from(new Uint8Array(await response.arrayBuffer())), width: element.naturalWidth, height: element.naturalHeight }
+        })
+      }
+      const first = await thumbnailBytes(page1)
+      const second = await thumbnailBytes(page2)
+      expect(first.bytes.length).toBeGreaterThan(0)
+      expect(second).toEqual(first)
+    } finally { release(); await context1.close(); await context2.close() }
   })
 })

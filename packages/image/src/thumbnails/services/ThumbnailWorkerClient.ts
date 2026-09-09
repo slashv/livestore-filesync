@@ -7,6 +7,7 @@
  * @module
  */
 
+import type { Scope } from "effect"
 import { Context, Deferred, Effect, Layer, Ref } from "effect"
 
 import type { WorkerTimeoutError } from "../errors/index.js"
@@ -95,10 +96,10 @@ export type WorkerSource = URL | string | (new() => Worker)
 const make = (
   workerSource: WorkerSource,
   timeoutMs: number = DEFAULT_TIMEOUT_MS
-): Effect.Effect<ThumbnailWorkerClientService, never, never> =>
+): Effect.Effect<ThumbnailWorkerClientService, never, Scope.Scope> =>
   Effect.gen(function*() {
     // Create the worker - either from URL or from constructor
-    const worker = typeof workerSource === "function"
+    let worker = typeof workerSource === "function"
       ? new workerSource()
       : new Worker(workerSource, { type: "module" })
 
@@ -106,7 +107,8 @@ const make = (
     const pendingRequestsRef = yield* Ref.make<Map<string, PendingRequest>>(new Map())
 
     // Ready state
-    const readyDeferred = yield* Deferred.make<void, VipsInitializationError>()
+    let readyDeferred = yield* Deferred.make<void, VipsInitializationError>()
+    let initializationFailed = false
     const isReadyRef = yield* Ref.make(false)
 
     // Request ID counter
@@ -124,6 +126,7 @@ const make = (
       }
 
       if (response.type === "error" && response.id === "init") {
+        initializationFailed = true
         // Initialization error
         Effect.runSync(
           Deferred.fail(
@@ -188,6 +191,7 @@ const make = (
           // Also fail ready deferred if not yet ready
           const isReady = yield* Ref.get(isReadyRef)
           if (!isReady) {
+            initializationFailed = true
             yield* Deferred.fail(
               readyDeferred,
               new VipsInitializationError({
@@ -262,13 +266,32 @@ const make = (
         }
 
         // Transfer the ArrayBuffer for performance
-        worker.postMessage(request, [imageData])
-
-        // Wait for response
-        return yield* Deferred.await(deferred)
+        // Interruption detaches the response even if the worker cannot cancel its CPU work.
+        return yield* Effect.sync(() => worker.postMessage(request, [imageData])).pipe(
+          Effect.andThen(Deferred.await(deferred)),
+          Effect.ensuring(Effect.sync(() => {
+            clearTimeout(timeoutId)
+            pendingRequests.delete(requestId)
+          }))
+        )
       })
 
-    const waitForReady: ThumbnailWorkerClientService["waitForReady"] = () => Deferred.await(readyDeferred)
+    const waitForReady: ThumbnailWorkerClientService["waitForReady"] = () =>
+      Effect.gen(function*() {
+        if (initializationFailed) {
+          worker.removeEventListener("message", handleMessage)
+          worker.removeEventListener("error", handleError)
+          worker.terminate()
+          readyDeferred = yield* Deferred.make<void, VipsInitializationError>()
+          initializationFailed = false
+          worker = typeof workerSource === "function"
+            ? new workerSource()
+            : new Worker(workerSource, { type: "module" })
+          worker.addEventListener("message", handleMessage)
+          worker.addEventListener("error", handleError)
+        }
+        yield* Deferred.await(readyDeferred)
+      })
 
     const isReady: ThumbnailWorkerClientService["isReady"] = () => Ref.get(isReadyRef)
 
@@ -278,7 +301,9 @@ const make = (
         const pendingRequests = yield* Ref.get(pendingRequestsRef)
         for (const [, pending] of pendingRequests) {
           clearTimeout(pending.timeoutId)
+          yield* Deferred.fail(pending.deferred, new WorkerCommunicationError({ message: "Worker terminated" }))
         }
+        yield* Deferred.fail(readyDeferred, new VipsInitializationError({ message: "Worker terminated" }))
         yield* Ref.set(pendingRequestsRef, new Map())
 
         // Remove event listeners
@@ -288,6 +313,8 @@ const make = (
         // Terminate worker
         worker.terminate()
       })
+
+    yield* Effect.addFinalizer(() => terminate())
 
     return {
       generate,

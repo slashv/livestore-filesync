@@ -18,9 +18,9 @@
  * @module
  */
 
-import { queryDb } from "@livestore/livestore"
+import { queryDb, StoreInternalsSymbol } from "@livestore/livestore"
 import type { Store } from "@livestore/livestore"
-import { Context, Effect, Fiber, Layer, Queue, Ref } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer, Queue, Ref, SubscriptionRef } from "effect"
 import { FileSystem } from "effect/FileSystem"
 
 import type { ThumbnailEvents, ThumbnailTables } from "../schema/index.js"
@@ -301,9 +301,34 @@ export const makeThumbnailService = (
     const processingFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
     const generationQueue = yield* Queue.unbounded<GenerationQueueItem>()
 
+    const lockStatus = (store as any)[StoreInternalsSymbol]?.clientSession?.lockStatus
+    const isLeader = (): boolean => !lockStatus || Effect.runSync(SubscriptionRef.get(lockStatus)) === "has-lock"
+    const canPublish = (): boolean => Effect.runSync(Ref.get(isRunningRef)) && isLeader()
+    let epoch = 0
+    const ownedFiles = new Map<string, GenerationQueueItem>()
+
+    const readSource = (fileId: string): FileRecord | undefined =>
+      config.filesTable
+        ? store.query<Array<FileRecord>>(queryDb(config.filesTable.where({ id: fileId })))
+          .find((file) => file.id === fileId)
+        : undefined
+
+    // Without filesTable, legacy callers can only validate thumbnail state itself.
+    const isCurrentSource = (fileId: string, contentHash: string, path?: string): boolean => {
+      if (!config.filesTable) return true
+      const file = readSource(fileId)
+      return !!file && !file.deletedAt && file.contentHash === contentHash &&
+        (path === undefined || file.path === path)
+    }
+
     // Helper to emit events
     const emitEvent = (event: ThumbnailEvent): void => {
-      config.onEvent?.(event)
+      if (!canPublish()) return
+      try {
+        config.onEvent?.(event)
+      } catch (error) {
+        console.error("[ThumbnailService] Event listener failed:", error)
+      }
     }
 
     /**
@@ -401,7 +426,7 @@ export const makeThumbnailService = (
      * Commit upserts for multiple file thumbnail states in a single transaction.
      */
     const commitBatchThumbnailState = (states: ReadonlyArray<FileThumbnailState>): void => {
-      if (states.length === 0) return
+      if (states.length === 0 || !canPublish()) return
       store.commit(...states.map(createThumbnailStateUpsertEvent))
     }
 
@@ -409,14 +434,14 @@ export const makeThumbnailService = (
      * Commit an upsert for a single file's thumbnail state
      */
     const commitFileThumbnailState = (state: FileThumbnailState): void => {
-      store.commit(createThumbnailStateUpsertEvent(state))
+      if (canPublish()) store.commit(createThumbnailStateUpsertEvent(state))
     }
 
     /**
      * Commit a remove for a single file's thumbnail state
      */
     const commitRemoveFileThumbnailState = (fileId: string): void => {
-      store.commit(events.thumbnailStateRemove({ fileId }))
+      if (canPublish()) store.commit(events.thumbnailStateRemove({ fileId }))
     }
 
     const getFileThumbnailStateForScan = (
@@ -514,14 +539,17 @@ export const makeThumbnailService = (
           const allStates = readAllFileThumbnailStates()
           for (const fileState of Object.values(allStates)) {
             yield* storage.deleteThumbnails(fileState.contentHash).pipe(
-              Effect.catch(() => Effect.void)
+              Effect.catch(() => Effect.void),
+              Effect.uninterruptible
             )
           }
 
           // Clear all file states
+          if (!canPublish()) return
           store.commit(events.thumbnailStateClear({}))
         }
 
+        if (!canPublish()) return
         // Set new config
         store.commit(
           events.thumbnailConfigSet({
@@ -555,6 +583,11 @@ export const makeThumbnailService = (
     // Process a single generation request
     const processGenerationItem = (item: GenerationQueueItem): Effect.Effect<void> =>
       Effect.gen(function*() {
+        const generation = epoch
+        const valid = () =>
+          generation === epoch && canPublish() && ownedFiles.get(item.fileId) === item &&
+          isCurrentSource(item.fileId, item.contentHash, item.path)
+        if (!valid()) return
         const { contentHash, fileId, mimeType, path } = item
         const sizeNames = Object.keys(config.sizes)
 
@@ -564,6 +597,7 @@ export const makeThumbnailService = (
           sizes: sizeNames
         })
 
+        if (!valid()) return
         // Update status to generating
         updateFileThumbnailState(fileId, (state) => {
           if (!state) {
@@ -585,6 +619,7 @@ export const makeThumbnailService = (
         // The path format is: files/{storeId}/{contentHash}
         const fileData = yield* readLocalFile(path)
 
+        if (!valid()) return
         if (!fileData) {
           // File not available locally, mark as pending to retry later
           updateFileThumbnailState(fileId, (state) => {
@@ -606,6 +641,7 @@ export const makeThumbnailService = (
               Effect.succeed<GeneratedThumbnails | null>(null).pipe(
                 Effect.tap(() =>
                   Effect.sync(() => {
+                    if (!valid()) return
                     const errorMessage = error instanceof Error ? error.message : String(error)
                     emitEvent({
                       type: "thumbnail:generation-error",
@@ -613,6 +649,7 @@ export const makeThumbnailService = (
                       error: errorMessage
                     })
 
+                    if (!valid()) return
                     // Update state to error
                     updateFileThumbnailState(fileId, (state) => {
                       if (!state) return undefined
@@ -628,14 +665,16 @@ export const makeThumbnailService = (
             )
           )
 
-        if (!result) return
+        if (!result || !valid()) return
 
         // Store thumbnails
         for (const thumbnail of result.thumbnails) {
+          if (!valid()) return
           const thumbnailPath = yield* storage
             .writeThumbnail(contentHash, thumbnail.sizeName, config.format, new Uint8Array(thumbnail.data))
-            .pipe(Effect.catch(() => Effect.succeed<string | null>(null)))
+            .pipe(Effect.catch(() => Effect.succeed<string | null>(null)), Effect.uninterruptible)
 
+          if (!valid()) return
           if (thumbnailPath) {
             // Update state to done
             updateFileThumbnailState(fileId, (state) => {
@@ -651,12 +690,15 @@ export const makeThumbnailService = (
           }
         }
 
+        if (!valid()) return
         emitEvent({
           type: "thumbnail:generation-completed",
           fileId,
           sizes: sizeNames
         })
-      })
+      }).pipe(Effect.ensuring(Effect.sync(() => {
+        if (ownedFiles.get(item.fileId) === item) ownedFiles.delete(item.fileId)
+      })))
 
     // Worker loop that processes the queue
     const workerLoop = (): Effect.Effect<void> =>
@@ -690,6 +732,7 @@ export const makeThumbnailService = (
     // Queue a file for thumbnail generation
     const queueFile = (file: FileRecord, scanAccumulator?: ScanAccumulator): Effect.Effect<void> =>
       Effect.gen(function*() {
+        if (!canPublish() || !isCurrentSource(file.id, file.contentHash, file.path)) return
         // Check if thumbnails already exist with matching content hash
         const existingState = scanAccumulator
           ? getFileThumbnailStateForScan(file.id, scanAccumulator)
@@ -700,7 +743,10 @@ export const makeThumbnailService = (
           const allInProgress = Object.keys(config.sizes).every(
             (sizeName) => {
               const status = existingState.sizes[sizeName]?.status
-              return status === "done" || status === "skipped" || status === "queued" || status === "generating"
+              return status === "done" || status === "skipped" ||
+                ((status === "queued" || status === "generating") &&
+                  (ownedFiles.get(file.id)?.contentHash === file.contentHash &&
+                    ownedFiles.get(file.id)?.path === file.path))
             }
           )
           if (allInProgress) return
@@ -722,6 +768,8 @@ export const makeThumbnailService = (
           }
         }
 
+        if (!canPublish() || !isCurrentSource(file.id, file.contentHash, file.path)) return
+
         if (!mimeType || !isSupportedImageMimeType(mimeType)) {
           // File was read but it's not a supported image type - mark as skipped
           console.log(`[ThumbnailService] queueFile: not a supported image, marking as skipped`)
@@ -739,6 +787,7 @@ export const makeThumbnailService = (
           return
         }
 
+        if (!canPublish()) return
         // Initialize state as queued
         const sizes: Record<string, ThumbnailSizeState> = {}
         for (const sizeName of Object.keys(config.sizes)) {
@@ -758,6 +807,7 @@ export const makeThumbnailService = (
           path: file.path,
           mimeType
         }
+        ownedFiles.set(file.id, generationQueueItem)
         if (scanAccumulator) {
           scanAccumulator.deferredGenerationQueueItems.push(generationQueueItem)
         } else {
@@ -811,9 +861,18 @@ export const makeThumbnailService = (
 
           // Commit all state changes first, then enqueue generation work.
           // This avoids stale queued state writes racing with generation updates.
-          commitBatchThumbnailState([...scanAccumulator.dirtyStatesByFileId.values()])
+          commitBatchThumbnailState(
+            [...scanAccumulator.dirtyStatesByFileId.values()].filter((state) =>
+              isCurrentSource(state.fileId, state.contentHash)
+            )
+          )
 
           for (const item of scanAccumulator.deferredGenerationQueueItems) {
+            if (ownedFiles.get(item.fileId) !== item) continue
+            if (!isCurrentSource(item.fileId, item.contentHash, item.path)) {
+              ownedFiles.delete(item.fileId)
+              continue
+            }
             yield* Queue.offer(generationQueue, item)
           }
         } catch (error) {
@@ -826,7 +885,8 @@ export const makeThumbnailService = (
     const resolveThumbnailUrl: ThumbnailServiceService["resolveThumbnailUrl"] = (fileId, size) =>
       Effect.gen(function*() {
         const state = readFileThumbnailState(fileId)
-        if (!state) return null
+        if (!state || !isCurrentSource(fileId, state.contentHash)) return null
+        const sourcePath = readSource(fileId)?.path
 
         const sizeState = state.sizes[size]
         if (!sizeState || sizeState.status !== "done" || !sizeState.path) {
@@ -834,17 +894,28 @@ export const makeThumbnailService = (
         }
 
         // Get URL from storage
-        return yield* storage
+        const url = yield* storage
           .getThumbnailUrl(state.contentHash, size, config.format)
           .pipe(Effect.catch(() => Effect.succeed(null)))
+        const current = readFileThumbnailState(fileId)
+        if (
+          isCurrentSource(fileId, state.contentHash, sourcePath) &&
+          current?.contentHash === state.contentHash && current.sizes[size]?.status === "done" &&
+          current.sizes[size]?.path === sizeState.path
+        ) return url
+        if (url?.startsWith("blob:")) URL.revokeObjectURL(url)
+        return null
       })
 
     const getThumbnailState: ThumbnailServiceService["getThumbnailState"] = (fileId) =>
-      Effect.sync(() => readFileThumbnailState(fileId) ?? null)
+      Effect.sync(() => {
+        const state = readFileThumbnailState(fileId)
+        return state && isCurrentSource(fileId, state.contentHash) ? state : null
+      })
 
     const regenerate: ThumbnailServiceService["regenerate"] = (fileId) =>
       Effect.gen(function*() {
-        if (!config.filesTable) {
+        if (!config.filesTable || !canPublish()) {
           return
         }
 
@@ -857,13 +928,6 @@ export const makeThumbnailService = (
           const file = files.find((f) => !f.deletedAt)
           if (!file) return
 
-          const state = readFileThumbnailState(fileId)
-
-          // Delete existing thumbnails if content hash changed
-          if (state && state.contentHash !== file.contentHash) {
-            yield* storage.deleteThumbnails(state.contentHash).pipe(Effect.catch(() => Effect.void))
-          }
-
           // Queue for regeneration
           yield* queueFile(file)
         } catch {
@@ -871,55 +935,66 @@ export const makeThumbnailService = (
         }
       })
 
-    // Polling loop to scan for new files
-    const pollForNewFiles = (intervalMs: number): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        yield* Effect.sleep(`${intervalMs} millis`)
-        yield* scanExistingFiles()
-      }).pipe(
-        Effect.forever,
-        Effect.catch(() => Effect.void)
-      )
-
+    // One owned supervisor contains startup, scanning and every generation fiber.
+    // The lock is also checked at publication boundaries, between watcher turns.
     const start: ThumbnailServiceService["start"] = () =>
       Effect.gen(function*() {
-        const isRunning = yield* Ref.get(isRunningRef)
-        if (isRunning) return
-
+        if (yield* Ref.get(isRunningRef)) return
         yield* Ref.set(isRunningRef, true)
-
-        // Wait for worker to be ready
-        yield* workerClient.waitForReady().pipe(Effect.catch(() => Effect.void))
-
-        // Check for config changes and clear thumbnails if needed
-        yield* checkAndHandleConfigChange()
-
-        // Scan existing files
-        yield* scanExistingFiles()
-
-        // Keep the background loop alive after this short-lived start effect returns.
-        const workerFiber = yield* workerLoop().pipe(Effect.forkDetach)
-        yield* Ref.set(processingFiberRef, workerFiber)
-
-        // Start polling for new files if enabled
-        const pollInterval = config.pollInterval ?? 2000
-        if (pollInterval > 0) {
-          yield* pollForNewFiles(pollInterval).pipe(Effect.forkDetach)
-        }
-
-        // Mark _cleanupFile as intentionally unused for now (to be wired up later)
+        const initialized = yield* Deferred.make<void>()
+        const supervisor = Effect.scoped(Effect.gen(function*() {
+          let leaderFiber: Fiber.Fiber<void, never> | null = null
+          while (yield* Ref.get(isRunningRef)) {
+            if (isLeader() && !leaderFiber) {
+              epoch++
+              ownedFiles.clear()
+              yield* Queue.clear(generationQueue)
+              leaderFiber = yield* Effect.gen(function*() {
+                yield* workerClient.waitForReady().pipe(Effect.orDie)
+                yield* checkAndHandleConfigChange()
+                yield* scanExistingFiles()
+                yield* Deferred.succeed(initialized, undefined)
+                const pollInterval = config.pollInterval ?? 2000
+                if (pollInterval > 0) {
+                  yield* Effect.gen(function*() {
+                    yield* Effect.sleep(pollInterval)
+                    yield* scanExistingFiles()
+                  }).pipe(Effect.forever, Effect.forkScoped)
+                }
+                yield* workerLoop()
+              }).pipe(Effect.scoped, Effect.forkScoped)
+            } else if (!isLeader() && leaderFiber) {
+              epoch++
+              yield* Fiber.interrupt(leaderFiber)
+              leaderFiber = null
+              ownedFiles.clear()
+              yield* Queue.clear(generationQueue)
+            }
+            if (!isLeader()) yield* Deferred.succeed(initialized, undefined)
+            if (leaderFiber && leaderFiber.pollUnsafe() !== undefined) {
+              // A startup defect must release ownership so a subsequent start can retry.
+              return
+            }
+            yield* Effect.sleep(25)
+          }
+        })).pipe(Effect.ensuring(Effect.gen(function*() {
+          yield* Ref.set(isRunningRef, false)
+          yield* Deferred.succeed(initialized, undefined)
+        })))
+        const fiber = yield* supervisor.pipe(Effect.forkDetach)
+        yield* Ref.set(processingFiberRef, fiber)
+        yield* Deferred.await(initialized)
         void _cleanupFile
       })
 
     const stop: ThumbnailServiceService["stop"] = () =>
       Effect.gen(function*() {
         yield* Ref.set(isRunningRef, false)
-
-        const fiber = yield* Ref.get(processingFiberRef)
-        if (fiber) {
-          yield* Fiber.interrupt(fiber)
-          yield* Ref.set(processingFiberRef, null)
-        }
+        epoch++
+        const fiber = yield* Ref.getAndSet(processingFiberRef, null)
+        if (fiber) yield* Fiber.interrupt(fiber)
+        ownedFiles.clear()
+        yield* Queue.clear(generationQueue)
       })
 
     return {

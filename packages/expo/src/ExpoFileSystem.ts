@@ -17,30 +17,30 @@ interface ExpoFsFile {
   readonly uri: string
   readonly size: number | null
   readonly exists: boolean
-  readonly type: "file" | "directory" | null
+  readonly type: string | null
   readonly md5: string | null
-  readonly creationTime: Date | null
-  readonly modificationTime: Date | null
+  readonly creationTime: number | null
+  readonly modificationTime: number | null
   bytes(): Promise<Uint8Array>
   bytesSync(): Uint8Array
   text(): Promise<string>
   textSync(): string
   base64(): Promise<string>
-  write(content: string | Uint8Array): Promise<void>
-  create(): Promise<void>
-  delete(): Promise<void>
-  copy(destination: ExpoFsFile | ExpoFsDirectory): Promise<void>
-  move(destination: ExpoFsFile | ExpoFsDirectory): Promise<void>
+  write(content: string | Uint8Array): void | Promise<void>
+  create(): void | Promise<void>
+  delete(): void | Promise<void>
+  copy(destination: ExpoFsFile | ExpoFsDirectory): void | Promise<void>
+  move(destination: ExpoFsFile | ExpoFsDirectory): void | Promise<void>
 }
 
 interface ExpoFsDirectory {
   readonly uri: string
   readonly exists: boolean
   list(): Array<ExpoFsFile | ExpoFsDirectory>
-  create(options?: { intermediates?: boolean }): Promise<void>
-  delete(): Promise<void>
-  copy(destination: ExpoFsDirectory): Promise<void>
-  move(destination: ExpoFsDirectory): Promise<void>
+  create(options?: { intermediates?: boolean }): void | Promise<void>
+  delete(): void | Promise<void>
+  copy(destination: ExpoFsDirectory): void | Promise<void>
+  move(destination: ExpoFsDirectory): void | Promise<void>
 }
 
 interface ExpoFsPaths {
@@ -230,7 +230,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       if (sourceFile.exists) {
         const destFile = new fs.File(resolvedTo)
         yield* Effect.tryPromise({
-          try: () => sourceFile.copy(destFile),
+          try: async () => {
+            await sourceFile.copy(destFile)
+          },
           catch: (cause) => makeSystemError("copy", "Unknown", fromPath, cause)
         })
         return
@@ -240,7 +242,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       if (sourceDir.exists) {
         const destDir = new fs.Directory(resolvedTo)
         yield* Effect.tryPromise({
-          try: () => sourceDir.copy(destDir),
+          try: async () => {
+            await sourceDir.copy(destDir)
+          },
           catch: (cause) => makeSystemError("copy", "Unknown", fromPath, cause)
         })
         return
@@ -260,7 +264,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       const destFile = new fs.File(resolvedTo)
 
       yield* Effect.tryPromise({
-        try: () => sourceFile.copy(destFile),
+        try: async () => {
+          await sourceFile.copy(destFile)
+        },
         catch: (cause) => {
           if (!sourceFile.exists) {
             return makeSystemError("copyFile", "NotFound", fromPath, cause)
@@ -314,13 +320,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
         return
       }
 
-      yield* Effect.try({
-        try: () => {
-          // dir.create() may be sync or async depending on expo-file-system version
-          const result = dir.create({ intermediates: options?.recursive ?? false })
-          // If it returns a promise, we need to handle it, but Effect.try expects sync
-          // For now, assume it's sync (expo-file-system v19 style)
-          return result
+      yield* Effect.tryPromise({
+        try: async () => {
+          await dir.create({ intermediates: options?.recursive ?? false })
         },
         catch: (cause) => makeSystemError("makeDirectory", "Unknown", path, cause)
       })
@@ -339,7 +341,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
 
       const dir = new fs.Directory(tempPath)
       yield* Effect.tryPromise({
-        try: () => dir.create({ intermediates: true }),
+        try: async () => {
+          await dir.create({ intermediates: true })
+        },
         catch: (cause) => makeSystemError("makeTempDirectory", "Unknown", tempPath, cause)
       })
 
@@ -363,7 +367,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
 
       const file = new fs.File(tempPath)
       yield* Effect.tryPromise({
-        try: () => file.create(),
+        try: async () => {
+          await file.create()
+        },
         catch: (cause) => makeSystemError("makeTempFile", "Unknown", tempPath, cause)
       })
 
@@ -479,7 +485,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       const file = new fs.File(resolvedPath)
       if (file.exists) {
         yield* Effect.tryPromise({
-          try: () => file.delete(),
+          try: async () => {
+            await file.delete()
+          },
           catch: (cause) => makeSystemError("remove", "Unknown", path, cause)
         })
         return
@@ -498,7 +506,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
           }
         }
         yield* Effect.tryPromise({
-          try: () => dir.delete(),
+          try: async () => {
+            await dir.delete()
+          },
           catch: (cause) => makeSystemError("remove", "Unknown", path, cause)
         })
         return
@@ -522,7 +532,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       if (file.exists) {
         const destFile = new fs.File(resolvedNew)
         yield* Effect.tryPromise({
-          try: () => file.move(destFile),
+          try: async () => {
+            await file.move(destFile)
+          },
           catch: (cause) => makeSystemError("rename", "Unknown", oldPath, cause)
         })
         return
@@ -533,7 +545,9 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       if (dir.exists) {
         const destDir = new fs.Directory(resolvedNew)
         yield* Effect.tryPromise({
-          try: () => dir.move(destDir),
+          try: async () => {
+            await dir.move(destDir)
+          },
           catch: (cause) => makeSystemError("rename", "Unknown", oldPath, cause)
         })
         return
@@ -557,14 +571,15 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
         ? `${baseDir.replace(/\/$/, "")}/${normalizedPath}`
         : baseDir
 
-      // Try as file first - check exists first, then type
-      // Note: file.type may be null even for existing files in expo-file-system v19
+      // Expo File.type is a MIME type, not a filesystem entry kind.
       const file = new fs.File(fullPath)
       if (file.exists) {
-        // If type is "file" or null (for files where type isn't determined), treat as file
-        if (file.type === "file" || file.type === null) {
-          return makeFileInfo("File", file.size ?? 0, file.modificationTime, file.creationTime)
-        }
+        return makeFileInfo(
+          "File",
+          file.size ?? 0,
+          file.modificationTime == null ? null : new Date(file.modificationTime),
+          file.creationTime == null ? null : new Date(file.creationTime)
+        )
       }
 
       // Try as directory
@@ -602,10 +617,16 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       })
 
       const targetLength = Number(length ?? 0n)
-      const truncatedBytes = currentBytes.slice(0, targetLength)
+      if (!Number.isSafeInteger(targetLength) || targetLength < 0) {
+        return yield* Effect.fail(makeSystemError("truncate", "Unknown", path, new Error("Invalid truncate length")))
+      }
+      const truncatedBytes = new Uint8Array(targetLength)
+      truncatedBytes.set(currentBytes.subarray(0, targetLength))
 
       yield* Effect.tryPromise({
-        try: () => file.write(truncatedBytes),
+        try: async () => {
+          await file.write(truncatedBytes)
+        },
         catch: (cause) => makeSystemError("truncate", "Unknown", path, cause)
       })
     })
@@ -636,8 +657,10 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
 
       const dir = new fs.Directory(dirPath)
       if (!dir.exists) {
-        yield* Effect.try({
-          try: () => dir.create({ intermediates: true }),
+        yield* Effect.tryPromise({
+          try: async () => {
+            await dir.create({ intermediates: true })
+          },
           catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
         })
       }
@@ -645,8 +668,10 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       // Build full file path
       const filePath = `${dirPath.replace(/\/$/, "")}/${filename}`
       const file = new fs.File(filePath)
-      yield* Effect.try({
-        try: () => file.write(data),
+      yield* Effect.tryPromise({
+        try: async () => {
+          await file.write(data)
+        },
         catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
       })
     })

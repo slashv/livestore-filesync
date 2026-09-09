@@ -2,7 +2,7 @@
 
 File sync for LiveStore apps. This missing piece for local-first apps that need to sync files.
 
-**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo currently typechecks but has no adapter runtime tests.
+**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo has controlled filesystem module contract tests; real-device behavior is not yet verified. `pnpm test` includes both maintained React examples in Chromium.
 
 **[!]** This project currently targets an exact LiveStore main snapshot and Effect 4 beta cohort. The pins in `pnpm-workspace.yaml` keep local development and CI on one reproducible package graph. These snapshot pins are development inputs, not a published compatibility promise.
 
@@ -15,6 +15,8 @@ File sync for LiveStore apps. This missing piece for local-first apps that need 
 - **R2 and S3 remote storage**: Built in support for Cloudflare R2 and any S3 compatible remote storage service.
 
 - **Media type support**: An optional image package is available for pre-processing helpers and local thumbnail generation. Artchitecture supports extending to other media types.
+
+See the [9 September correctness report](docs/reviews/2026-09-09-correctness-report.md) for changes, diagrams, validation and remaining limits.
 
 ## Packages
 
@@ -269,6 +271,35 @@ This ensures a good user experience:
 - Other clients show a placeholder until the upload completes
 - After edits, the correct version is displayed (based on content hash matching)
 
+## Transfer correctness
+
+Transfers validate the captured content hash, path, remote key, and deletion state before
+publishing completion. Editing during an upload or download schedules the latest version;
+a stale attempt cannot attach its remote key or completion state to the replacement.
+Downloads verify SHA-256 before writing locally. A checksum mismatch follows the normal
+retry policy and remains an error if retries are exhausted; `retryErrors()` can retry after
+the remote content is repaired. Deleting a file cancels its queued or active download.
+
+## Shared bytes and cleanup
+
+Records with identical content share a local path and remote key. Deleting or updating one
+record preserves bytes owned by another live record. Local cleanup also protects active
+transfers and serializes deletion with writes and metadata publication within a FileSync
+instance. It rechecks references after asynchronous deletion and restores bytes if a new
+owner appeared while the adapter was deleting.
+
+`resolveFileUrl()` returns `null` for deleted records and rejects results from reads
+or signing if the source version changes while resolution is in progress. With the
+core `files` table configured, thumbnail generation, state, and URL lookup similarly
+reject deleted or outdated source content; polling generates the current version.
+See [thumbnail guarantees and compatibility limits](docs/image-processing.md).
+
+Remote blobs are **retained**, including replaced content and stale uploads. A client cannot
+know about references on offline devices, so it cannot safely garbage-collect remote keys.
+Applications needing reclamation must implement a server-authoritative retention/GC policy;
+FileSync does not currently provide one. Local cleanup is best effort, and future references
+arriving after reclamation require a download (or re-saving bytes in local-only mode).
+
 ## Multi-Tab Support
 
 FileSync is designed to work correctly when multiple browser tabs are open to the same app. It uses LiveStore's built-in leader election (via Web Locks API) to ensure only one tab runs the sync loop at a time. This prevents race conditions and duplicate operations.
@@ -279,17 +310,38 @@ FileSync is designed to work correctly when multiple browser tabs are open to th
 
 No configuration required — this works automatically.
 
+## Lifecycle and shared mounts
+
+`start()` and `stop()` are awaitable; existing fire-and-forget calls remain supported.
+`dispose()` is permanent and idempotent. Overlapping singleton mounts share the first
+configuration for the same store object, user, and remote mode. Each disposer belongs to
+its original instance, so an old mount cannot dispose a newer user's instance. Explicitly
+dispose and reinitialize to change configuration, or supply an `authToken` getter for
+same-user token refresh. Failed startup can be retried with `start()`.
+
+Background workers run only while this instance is a running leader. Stop and leadership
+loss invalidate old transfer progress/completion and interrupt owned work; restart rebuilds
+persisted work. Fetch/XHR support abort, but shutdown may wait for local storage operations
+that cannot be cancelled immediately. See [lifecycle guarantees](docs/STABILITY.md#instance-lifecycle-and-singleton-mounts).
+
 ## Startup and Stream Restarts
 
 - Startup bootstrap from the `files` table is **conditional**. It runs only when the stored
   cursor is the root cursor or `localFileState` is empty.
 - Mid-session restarts (`syncNow()`, heartbeat recovery) restart `eventsStream` from the stored
   cursor and do **not** rescan every file row.
-- `syncNow()` re-enqueues files already marked as `queued` in `localFileState` before restarting
-  the stream, so pending work resumes without a full bootstrap. In local-only mode this is harmless
-  and does not enqueue remote transfers.
-- Internal `localFileState` diff updates are batched into a single `store.commit(...)` call when
-  possible, reducing per-file event bursts during reconciliation.
+- Startup and each leadership acquisition rebuild executor queues from persisted queued and
+  interrupted rows, even with an advanced cursor. Errors receive one bounded transfer retry
+  cycle per leadership acquisition or explicit `retryErrors()` call.
+- Heartbeat and `syncNow()` restore missing queued work without resetting active attempts or
+  repeatedly retrying terminal errors. A new file event can retry failed work for that file.
+- Failed file inspections persist targeted repair IDs and attempt counts alongside the cursor
+  before it advances. Startup and heartbeat retry those IDs, up to `max(2, maxRetries + 1)`
+  inspections including the first failure. `retryErrors()` resets exhausted inspection attempts.
+  Disabling heartbeat requires startup or `retryErrors()` to resume these repairs.
+- Reconciliation batches changed local rows and compares metadata and local state again before
+  committing. Concurrent changes defer that file to durable repair instead of overwriting it.
+  Unchanged done files are neither inspected on warm startup nor reuploaded.
 
 ## File Preprocessors
 

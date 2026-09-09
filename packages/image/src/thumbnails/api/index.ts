@@ -8,6 +8,7 @@ export { createThumbnails, type CreateThumbnailsConfig, type ThumbnailInstance }
 
 export {
   _broadcastThumbnailEvent,
+  disposeThumbnails,
   getThumbnailState,
   initThumbnails,
   onThumbnailEvent,

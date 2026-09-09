@@ -1,5 +1,4 @@
-import type { Scope } from "effect"
-import { Deferred, Effect, Ref } from "effect"
+import { Deferred, Effect, Exit, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { makeSyncExecutor, type SyncExecutorConfig } from "./index.js"
 
@@ -183,6 +182,116 @@ describe("SyncExecutor", () => {
       )
 
       expect(processCount).toBe(1)
+    })
+  })
+
+  describe("in-flight request ownership", () => {
+    it.each(["download", "upload"] as const)(
+      "coalesces %s edits into a subsequent transfer without overlap",
+      async (kind) => {
+        await runScoped(Effect.gen(function*() {
+          const started = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const otherStarted = yield* Deferred.make<void>()
+          const versions: Array<number> = []
+          let version = 1
+          let active = 0
+          let maximumActive = 0
+          const executor = yield* makeSyncExecutor((_kind, fileId) =>
+            Effect.gen(function*() {
+              if (fileId === "other") {
+                yield* Deferred.succeed(otherStarted, undefined)
+                return
+              }
+              active++
+              maximumActive = Math.max(maximumActive, active)
+              versions.push(version)
+              if (versions.length === 1) {
+                yield* Deferred.succeed(started, undefined)
+                yield* Deferred.await(release)
+              }
+              active--
+            }), testConfig)
+          const enqueue = kind === "download" ? executor.enqueueDownload : executor.enqueueUpload
+          yield* executor.pause()
+          yield* executor.start()
+          yield* enqueue("edited")
+          // Leave a normal-queue alias behind the prioritized request as well.
+          if (kind === "download") yield* executor.prioritizeDownload("edited")
+          yield* executor.resume()
+          yield* Deferred.await(started)
+          version = 2
+          yield* enqueue("edited")
+          version = 3
+          yield* enqueue("edited")
+          yield* enqueue("other")
+          yield* Deferred.await(otherStarted)
+          expect(versions).toEqual([1])
+          expect((yield* executor.getQueuedCount())[kind === "download" ? "downloads" : "uploads"]).toBe(1)
+          yield* Deferred.succeed(release, undefined)
+          yield* executor.awaitIdle()
+          expect(versions).toEqual([1, 3])
+          expect(maximumActive).toBe(1)
+          expect(yield* executor.getInflightCount()).toEqual({ downloads: 0, uploads: 0 })
+        }))
+      }
+    )
+
+    it("cancels in-flight downloads and pending reruns without completion or retries", async () => {
+      await runScoped(Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        let attempts = 0
+        let finalized = 0
+        let completed = 0
+        const executor = yield* makeSyncExecutor(
+          () =>
+            Effect.gen(function*() {
+              attempts++
+              yield* Deferred.succeed(started, undefined)
+              yield* Deferred.await(release)
+              return yield* Effect.fail(new Error("must not retry cancelled work"))
+            }).pipe(Effect.ensuring(Effect.sync(() => {
+              finalized++
+            }))),
+          testConfig,
+          () =>
+            Effect.sync(() => {
+              completed++
+            })
+        )
+        yield* executor.start()
+        yield* executor.enqueueDownload("deleted")
+        yield* Deferred.await(started)
+        yield* executor.enqueueDownload("deleted")
+        yield* executor.cancelDownload("deleted")
+        yield* Deferred.succeed(release, undefined)
+        yield* executor.awaitIdle()
+        expect(attempts).toBe(1)
+        expect(finalized).toBe(1)
+        expect(completed).toBe(0)
+        expect(yield* executor.getQueuedCount()).toEqual({ downloads: 0, uploads: 0 })
+        expect(yield* executor.getInflightCount()).toEqual({ downloads: 0, uploads: 0 })
+      }))
+    })
+
+    it("allows a fresh enqueue after cancelling an obsolete prioritized request", async () => {
+      const processed: Array<string> = []
+      await runScoped(Effect.gen(function*() {
+        const executor = yield* makeSyncExecutor((_kind, fileId) =>
+          Effect.sync(() => {
+            processed.push(fileId)
+          }), testConfig)
+        yield* executor.pause()
+        yield* executor.start()
+        yield* executor.enqueueDownload("file")
+        yield* executor.prioritizeDownload("file")
+        yield* executor.cancelDownload("file")
+        yield* executor.enqueueDownload("file")
+        yield* executor.resume()
+        yield* executor.awaitIdle()
+        expect(processed).toEqual(["file"])
+      }))
     })
   })
 
@@ -965,5 +1074,57 @@ describe("SyncExecutor", () => {
 
       expect(result).toHaveLength(0)
     })
+  })
+})
+
+describe("SyncExecutor worker ownership", () => {
+  it("serializes concurrent worker startup and respects the transfer limit", async () => {
+    let active = 0
+    let maximum = 0
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const release = yield* Deferred.make<void>()
+      const executor = yield* makeSyncExecutor(() =>
+        Effect.gen(function*() {
+          active++
+          maximum = Math.max(maximum, active)
+          yield* Deferred.await(release)
+          active--
+        })
+      )
+      yield* Effect.forEach(Array.from({ length: 20 }), () => executor.ensureWorkers(), { concurrency: "unbounded" })
+      yield* Effect.forEach(Array.from({ length: 10 }, (_, i) => String(i)), executor.enqueueDownload)
+      yield* Effect.sleep("150 millis")
+      expect(active).toBe(2)
+      yield* Deferred.succeed(release, undefined)
+      yield* executor.awaitIdle()
+    })))
+    expect(maximum).toBe(2)
+  })
+
+  it("interrupts transfers when their worker scope closes and can restart in a new scope", async () => {
+    let completions = 0
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const executor = yield* makeSyncExecutor(() =>
+        Effect.gen(function*() {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+          completions++
+        })
+      )
+      const firstRun = yield* Scope.make()
+      yield* Scope.provide(executor.start(), firstRun)
+      yield* executor.enqueueUpload("file")
+      yield* Deferred.await(entered)
+      yield* Scope.close(firstRun, Exit.void)
+      yield* Deferred.succeed(release, undefined)
+      expect(completions).toBe(0)
+      expect(yield* executor.getInflightCount()).toEqual({ downloads: 0, uploads: 0 })
+      yield* executor.start()
+      yield* executor.enqueueUpload("file")
+      yield* executor.awaitIdle()
+      expect(completions).toBe(1)
+    })))
   })
 })

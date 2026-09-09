@@ -13,7 +13,22 @@
 
 import { EventSequenceNumber } from "@livestore/livestore"
 import type { LiveStoreEvent } from "@livestore/livestore"
-import { Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Scope, Stream, SubscriptionRef } from "effect"
+import {
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  PubSub,
+  Ref,
+  Result,
+  Schedule,
+  Scope,
+  Semaphore,
+  Stream,
+  SubscriptionRef
+} from "effect"
 import { StorageError } from "../../errors/index.js"
 import type { FileNotFoundError, HashError } from "../../errors/index.js"
 import { getClientSession, type LiveStoreDeps } from "../../livestore/types.js"
@@ -27,10 +42,7 @@ import type {
   FileSyncEventCallback,
   FileUpdatedPayload,
   LocalFilesState,
-  LocalFilesStateMutable,
-  LocalFileState,
-  PreprocessorMap,
-  TransferStatus
+  PreprocessorMap
 } from "../../types/index.js"
 import { applyPreprocessorWithMetadata, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
@@ -44,6 +56,8 @@ import {
   type SyncExecutorConfig,
   type TransferKind
 } from "../sync-executor/index.js"
+import { makeBlobOwnership } from "./BlobOwnership.js"
+import { type FileRepair, makeReconciliation } from "./Reconciliation.js"
 
 /**
  * FileSync service interface
@@ -79,7 +93,7 @@ export interface FileSyncService {
   ) => Effect.Effect<FileOperationResult, Error | HashError | StorageError>
 
   /**
-   * Delete a file (soft delete in store, cleanup local/remote)
+   * Delete a file (soft delete in store, reclaim unowned local bytes; retain remote blobs)
    */
   readonly deleteFile: (fileId: string) => Effect.Effect<void>
 
@@ -277,6 +291,10 @@ export const makeFileSync = (
     const { events, queryDb, tables } = schema
     const isLocalOnly = config.remoteMode === "local-only"
 
+    const blobs = yield* makeBlobOwnership(localStorage, (path) =>
+      store.query<Array<FileRecord>>(queryDb(tables.files))
+        .some((row) => !row.deletedAt && row.path === path))
+
     // Local wrapper for hashFile that uses the captured hash service
     const doHashFile = (file: File) => hashService.hashFile(file)
 
@@ -309,6 +327,12 @@ export const makeFileSync = (
     // State
     const onlineRef = yield* Ref.make(true)
     const runningRef = yield* Ref.make(false)
+    const lifecycle = yield* Semaphore.make(1)
+    let generation = 0
+    // Read the actual lock as well: leadership notifications may wait behind I/O.
+    const isRunningLeader = () =>
+      Effect.runSync(Ref.get(runningRef)) &&
+      Effect.runSync(SubscriptionRef.get(clientSession.lockStatus)) === "has-lock"
     const isLeaderRef = yield* Ref.make(false)
     const leaderWatcherFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
     const eventStreamFiberRef = yield* Ref.make<Fiber.Fiber<void, unknown> | null>(null)
@@ -328,11 +352,8 @@ export const makeFileSync = (
     const lastBatchAtRef = yield* Ref.make(0)
     const lastBatchCursorRef = yield* Ref.make<EventSequenceNumber.Client.Composite | null>(null)
 
-    // Stale recovery gating: ensures recoverStaleTransfers runs only once per start() lifecycle
-    const staleRecoveryDoneRef = yield* Ref.make(false)
-
     // Main scope ref - stores the scope from start() for use in setOnline/health check
-    const mainScopeRef = yield* Ref.make<Scope.Scope | null>(null)
+    const mainScopeRef = yield* Ref.make<Scope.Closeable | null>(null)
 
     const executorConfig: SyncExecutorConfig = {
       ...defaultExecutorConfig,
@@ -362,22 +383,16 @@ export const makeFileSync = (
 
     const getLocalFilesState = (): Effect.Effect<LocalFilesState> => stateManager.getState()
 
-    const updateFileRemoteKey = (fileId: string, remoteKey: string): Effect.Effect<void> =>
-      Effect.sync(() => {
-        const files = store.query<Array<FileRecord>>(queryDb(tables.files.where({ id: fileId })))
-        const file = files[0]
-        if (!file) return
-        store.commit(
-          events.fileUpdated({
-            id: fileId,
-            path: file.path,
-            remoteKey,
-            contentHash: file.contentHash,
-            metadataJson: file.metadataJson,
-            updatedAt: new Date()
-          })
-        )
-      })
+    // Read and compare in the same synchronous operation that commits completion.
+    // Metadata-only edits are compatible; content, path, remote source and deletion are not.
+    const readFile = (fileId: string): FileRecord | undefined =>
+      store.query<Array<FileRecord>>(queryDb(tables.files.where({ id: fileId })))[0]
+
+    const isCurrentTransfer = (file: Pick<FileRecord, "id" | "contentHash" | "path" | "remoteKey">): boolean => {
+      const current = readFile(file.id)
+      return !!current && !current.deletedAt && current.contentHash === file.contentHash &&
+        current.path === file.path && current.remoteKey === file.remoteKey
+    }
 
     const createFileRecord = (params: { id: string; path: string; contentHash: string; metadataJson: string | null }) =>
       Effect.sync(() => {
@@ -456,27 +471,27 @@ export const makeFileSync = (
       Effect.sync(() => {
         store.commit(
           events.fileSyncCursorSet({
+            repairs: readRepairs(),
             lastEventSequence: sequence,
             updatedAt: new Date()
           })
         )
       })
 
-    // Re-enqueue transfers that are in "queued" state in the state manager
-    // but may not have corresponding entries in the executor queues (e.g. after goOffline reset)
-    const reEnqueueQueuedTransfers = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        if (isLocalOnly) return
-        const state = yield* stateManager.getState()
-        for (const [fileId, localFile] of Object.entries(state)) {
-          if (localFile.uploadStatus === "queued") {
-            yield* executor.enqueueUpload(fileId)
-          }
-          if (localFile.downloadStatus === "queued") {
-            yield* executor.enqueueDownload(fileId)
-          }
-        }
+    const readRepairs = (): ReadonlyArray<FileRepair> =>
+      store.query<{ repairs?: ReadonlyArray<FileRepair> }>(queryDb(tables.fileSyncCursor.get())).repairs ?? []
+
+    const writeRepairs = (update: (repairs: ReadonlyArray<FileRepair>) => ReadonlyArray<FileRepair>) =>
+      Effect.sync(() => {
+        const doc = store.query<{ lastEventSequence: string; repairs?: ReadonlyArray<FileRepair> }>(
+          queryDb(tables.fileSyncCursor.get())
+        )
+        const repairs = update(doc.repairs ?? [])
+        if (JSON.stringify(repairs) === JSON.stringify(doc.repairs ?? [])) return
+        store.commit(events.fileSyncCursorSet({ ...doc, repairs, updatedAt: new Date() }))
       })
+
+    const reEnqueueQueuedTransfers = (): Effect.Effect<void> => reconciliation.recover().pipe(Effect.asVoid)
 
     // Continuous health check loop — runs always, detects connectivity changes
     const stopHealthCheckLoop = (): Effect.Effect<void> =>
@@ -505,9 +520,10 @@ export const makeFileSync = (
               // Recovered: transition offline → online
               yield* Ref.set(onlineRef, true)
               yield* emit({ type: "online" })
-              yield* executor.resume()
-              // Re-enqueue transfers that were reset to queued while offline
-              yield* reEnqueueQueuedTransfers()
+              if (isRunningLeader()) {
+                yield* reEnqueueQueuedTransfers()
+                if (isRunningLeader()) yield* executor.resume()
+              }
             } else if (!isHealthy && wasOnline) {
               // Lost connectivity: transition online → offline
               yield* goOffline()
@@ -557,6 +573,8 @@ export const makeFileSync = (
         yield* emit({ type: "offline" })
         yield* executor.pause()
 
+        if (!isRunningLeader()) return
+
         // Only reset inProgress transfers to queued — these are actively running and
         // will fail due to network loss, so they need to be re-queued when back online.
         // Do NOT reset error transfers: they may have failed for non-network reasons
@@ -587,191 +605,167 @@ export const makeFileSync = (
         })
       })
 
-    // Download a file from remote to local
-    const downloadFile = (fileId: string) =>
+    // Each retry captures the current version. Stale attempts neither complete nor
+    // fail the replacement version; reconciliation schedules its required transfer.
+    const transferHandler = (kind: TransferKind, fileId: string): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
-        yield* stateManager.setTransferStatus(fileId, "download", "inProgress")
-        yield* emit({ type: "download:start", fileId })
-
+        const transferGeneration = generation
+        const ownsTransfer = () => generation === transferGeneration && isRunningLeader()
+        if (!ownsTransfer()) return
+        const currentTransfer = (file: FileRecord) => ownsTransfer() && isCurrentTransfer(file)
         const file = yield* getFile(fileId)
-        if (!file || !file.remoteKey) {
-          const error = new Error("File not found or no remote URL")
-          yield* emit({ type: "download:error", fileId, error })
-          return yield* Effect.fail(error)
-        }
-
-        // Check if file was deleted - if so, clean up silently
-        if (file.deletedAt) {
-          yield* stateManager.removeFile(fileId)
-          yield* emit({ type: "download:complete", fileId })
-          return
-        }
-
-        const downloadedFile = yield* remoteStorage.download(file.remoteKey, {
-          onProgress: (progress) => {
-            // Fire-and-forget progress event - don't block the download
-            Effect.runFork(
-              emit({
-                type: "download:progress",
-                fileId,
-                progress: {
-                  kind: "download",
-                  fileId,
-                  status: "inProgress",
-                  loaded: progress.loaded,
-                  total: progress.total
-                }
-              })
-            )
-          }
-        })
-        yield* localStorage.writeFile(file.path, downloadedFile)
-        const localHash = yield* doHashFile(downloadedFile)
-
-        yield* stateManager.setFileState(fileId, {
-          path: file.path,
-          localHash,
-          downloadStatus: "done",
-          uploadStatus: "done",
-          lastSyncError: ""
-        })
-
-        yield* emit({ type: "download:complete", fileId })
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.gen(function*() {
-            // Check if file was deleted during download - if so, clean up silently
-            const file = yield* getFile(fileId)
-            if (!file || file.deletedAt) {
-              yield* stateManager.removeFile(fileId)
-              // Don't emit error event since this is expected when file is deleted
-              return
-            }
-
-            yield* stateManager.setTransferError(
-              fileId,
-              "download",
-              "error",
-              String(error)
-            )
-
-            yield* emit({ type: "download:error", fileId, error })
-
-            // Check if backend is still reachable — go offline only if not
-            yield* checkConnectivityOnFailure()
-
-            return yield* Effect.fail(error)
-          })
-        )
-      )
-
-    // Upload a file from local to remote
-    const uploadFile = (fileId: string): Effect.Effect<void, unknown> =>
-      Effect.gen(function*() {
-        console.log(`[FileSync] uploadFile called for file: ${fileId}`)
-        yield* stateManager.setTransferStatus(fileId, "upload", "inProgress")
-        yield* emit({ type: "upload:start", fileId })
-
-        console.log(`[FileSync] Getting file record for: ${fileId}`)
-        const file = yield* getFile(fileId)
-        if (!file) {
-          console.log(`[FileSync] File not found: ${fileId}`)
-          const error = new Error("File not found")
-          yield* emit({ type: "upload:error", fileId, error })
-          return yield* Effect.fail(error)
-        }
-        console.log(`[FileSync] File found:`, file.id, file.path)
-
-        if (file.deletedAt) {
-          console.log(`[FileSync] File is deleted, skipping upload: ${fileId}`)
-          yield* stateManager.removeFile(fileId)
-          yield* emit({ type: "upload:complete", fileId })
-          return
-        }
-
-        console.log(`[FileSync] Reading local file: ${file.path}`)
-        const localFile = yield* localStorage.readFile(file.path).pipe(
-          Effect.tap(() => Effect.sync(() => console.log(`[FileSync] Local file read successfully`))),
-          Effect.tapError((e) => Effect.sync(() => console.error(`[FileSync] Local file read FAILED:`, e)))
-        )
-        console.log(`[FileSync] Local file size: ${localFile.size}`)
-        const remoteKey = stripFilesRoot(file.path)
-        console.log(`[FileSync] Uploading to remote key: ${remoteKey}`)
-        const uploadResult = yield* remoteStorage.upload(localFile, {
-          key: remoteKey,
-          onProgress: (progress) => {
-            // Fire-and-forget progress event - don't block the upload
-            Effect.runFork(
-              emit({
-                type: "upload:progress",
-                fileId,
-                progress: {
-                  kind: "upload",
-                  fileId,
-                  status: "inProgress",
-                  loaded: progress.loaded,
-                  total: progress.total
-                }
-              })
-            )
-          }
-        })
-        console.log(`[FileSync] Upload completed for: ${fileId}`)
-
-        const latestFile = yield* getFile(fileId)
-        if (!latestFile || latestFile.deletedAt) {
-          yield* remoteStorage.delete(uploadResult.key).pipe(Effect.catch(() => Effect.void))
-          yield* stateManager.removeFile(fileId)
-          yield* emit({ type: "upload:complete", fileId })
-          return
-        }
-
-        yield* updateFileRemoteKey(fileId, uploadResult.key)
-
-        // Update state with upload completed
-        yield* stateManager.atomicUpdate((state) => {
-          const existing = state[fileId]
-          if (!existing) return state
-          return {
-            ...state,
-            [fileId]: {
-              ...existing,
-              uploadStatus: "done",
-              lastSyncError: ""
-            }
-          }
-        })
-
-        yield* emit({ type: "upload:complete", fileId })
-        console.log(`[FileSync] Upload complete event emitted for: ${fileId}`)
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.gen(function*() {
-            console.error(`[FileSync] Upload error for ${fileId}:`, error)
-            yield* stateManager.setTransferError(
-              fileId,
-              "upload",
-              "error",
-              String(error)
-            )
-            yield* emit({ type: "upload:error", fileId, error })
-
-            // Check if backend is still reachable — go offline only if not
-            yield* checkConnectivityOnFailure()
-
-            return yield* Effect.fail(error)
-          })
-        )
-      )
-
-    // Transfer handler for the sync executor
-    const transferHandler = (kind: TransferKind, fileId: string) =>
-      Effect.gen(function*() {
+        if (!file || file.deletedAt) return
         if (kind === "download") {
-          yield* downloadFile(fileId)
-        } else {
-          yield* uploadFile(fileId)
+          if (!file.remoteKey) return
+          const local = (yield* stateManager.getState())[fileId]
+          // Coalesced follow-ups may outlive completion of the same content.
+          if (local?.downloadStatus === "done" && local.path === file.path && local.localHash === file.contentHash) {
+            return
+          }
         }
+        if (kind === "upload" && file.remoteKey) {
+          yield* stateManager.atomicUpdate((state) => {
+            const local = state[fileId]
+            if (!currentTransfer(file) || !local || local.localHash !== file.contentHash) return state
+            return { ...state, [fileId]: { ...local, uploadStatus: "done", lastSyncError: "" } }
+          })
+          return
+        }
+
+        const reconcileLatest = (): Effect.Effect<void> =>
+          Effect.gen(function*() {
+            if (!ownsTransfer()) return
+            const latest = yield* getFile(fileId)
+            if (latest && !latest.deletedAt) {
+              yield* handleFileUpdated(latest)
+            } else {
+              yield* stateManager.atomicUpdate((state) => {
+                const current = readFile(fileId)
+                if (current && !current.deletedAt) return state
+                const next = { ...state }
+                delete next[fileId]
+                return next
+              })
+            }
+          })
+
+        return yield* blobs.duringTransfer(
+          file.path,
+          Effect.gen(function*() {
+            yield* stateManager.atomicUpdate((state) => {
+              if (!currentTransfer(file) || !state[fileId]) return state
+              return {
+                ...state,
+                [fileId]: { ...state[fileId], [kind === "upload" ? "uploadStatus" : "downloadStatus"]: "inProgress" }
+              }
+            })
+            if (!currentTransfer(file)) return
+            yield* emit({ type: kind === "upload" ? "upload:start" : "download:start", fileId })
+
+            const onProgress = (progress: { loaded: number; total: number }) => {
+              if (!currentTransfer(file)) return
+              Effect.runSync(emit({
+                type: kind === "upload" ? "upload:progress" : "download:progress",
+                fileId,
+                progress: { kind, fileId, status: "inProgress", ...progress }
+              }))
+            }
+
+            yield* Effect.gen(function*() {
+              if (!currentTransfer(file)) return
+              if (kind === "upload") {
+                const localFile = yield* blobs.publish(localStorage.readFile(file.path))
+                const hash = yield* doHashFile(localFile)
+                if (!currentTransfer(file)) return yield* reconcileLatest()
+                if (hash !== file.contentHash) {
+                  return yield* Effect.fail(new Error("Upload content hash mismatch"))
+                }
+                const uploaded = yield* remoteStorage.upload(localFile, {
+                  key: stripFilesRoot(file.path),
+                  onProgress
+                })
+                // Commit the key only against the version whose bytes were uploaded.
+                // Do not delete stale content-addressed objects here: other rows may own them.
+                const completed = yield* Effect.sync(() => {
+                  if (!currentTransfer(file)) return false
+                  const current = readFile(fileId)!
+                  store.commit(events.fileUpdated({
+                    id: fileId,
+                    path: current.path,
+                    remoteKey: uploaded.key,
+                    contentHash: current.contentHash,
+                    metadataJson: current.metadataJson,
+                    updatedAt: new Date()
+                  }))
+                  return true
+                })
+                if (!completed) {
+                  return yield* reconcileLatest()
+                }
+                yield* stateManager.atomicUpdate((state) => {
+                  const current = readFile(fileId)
+                  const local = state[fileId]
+                  if (
+                    !ownsTransfer() || !current || current.deletedAt || current.contentHash !== file.contentHash ||
+                    current.path !== file.path || current.remoteKey !== uploaded.key ||
+                    !local || local.localHash !== file.contentHash
+                  ) return state
+                  return { ...state, [fileId]: { ...local, uploadStatus: "done", lastSyncError: "" } }
+                })
+              } else {
+                const downloaded = yield* remoteStorage.download(file.remoteKey, { onProgress })
+                const hash = yield* doHashFile(downloaded)
+                if (!currentTransfer(file)) return yield* reconcileLatest()
+                if (hash !== file.contentHash) {
+                  return yield* Effect.fail(new Error("Download content hash mismatch"))
+                }
+                // Finish publication and stale-path cleanup even if cancellation arrives
+                // during an adapter write that cannot itself be aborted.
+                const published = yield* Effect.gen(function*() {
+                  yield* localStorage.writeFile(file.path, downloaded)
+                  if (!currentTransfer(file)) {
+                    return false
+                  }
+                  yield* stateManager.atomicUpdate((state) => {
+                    if (!currentTransfer(file)) return state
+                    return {
+                      ...state,
+                      [fileId]: {
+                        path: file.path,
+                        localHash: hash,
+                        downloadStatus: "done",
+                        uploadStatus: "done",
+                        lastSyncError: ""
+                      }
+                    }
+                  })
+                  return true
+                }).pipe(blobs.publish)
+                if (!published) return yield* reconcileLatest()
+              }
+              if (!ownsTransfer()) return
+              yield* emit({ type: kind === "upload" ? "upload:complete" : "download:complete", fileId })
+            }).pipe(Effect.catch((error) =>
+              Effect.gen(function*() {
+                if (!currentTransfer(file)) return yield* reconcileLatest()
+                yield* stateManager.atomicUpdate((state) => {
+                  if (!currentTransfer(file) || !state[fileId]) return state
+                  return {
+                    ...state,
+                    [fileId]: {
+                      ...state[fileId],
+                      [kind === "upload" ? "uploadStatus" : "downloadStatus"]: "error",
+                      lastSyncError: String(error)
+                    }
+                  }
+                })
+                yield* emit({ type: kind === "upload" ? "upload:error" : "download:error", fileId, error })
+                yield* checkConnectivityOnFailure()
+                return yield* Effect.fail(error)
+              })
+            ))
+          })
+        )
       })
 
     // Create sync executor with task completion callback
@@ -779,7 +773,7 @@ export const makeFileSync = (
       result: { kind: "upload" | "download"; fileId: string; success: boolean; error?: unknown }
     ) =>
       Effect.gen(function*() {
-        if (!result.success) {
+        if (!result.success && isRunningLeader()) {
           yield* emit({
             type: "transfer:exhausted",
             kind: result.kind,
@@ -790,65 +784,9 @@ export const makeFileSync = (
       })
 
     const executor = yield* makeSyncExecutor(transferHandler, executorConfig, onTaskComplete)
+    yield* executor.pause()
 
-    // Two-pass reconciliation of local file state
-    const activeTransferStatuses = ["queued", "inProgress"] as const
-
-    const resolveTransferStatus = (
-      current: TransferStatus | undefined,
-      next: TransferStatus
-    ): TransferStatus =>
-      current && activeTransferStatuses.includes(current as (typeof activeTransferStatuses)[number])
-        ? current
-        : next
-
-    const mergeFileState = (
-      existing: LocalFileState | undefined,
-      nextState: {
-        path: string
-        localHash: string
-        uploadStatus: TransferStatus
-        downloadStatus: TransferStatus
-        lastSyncError: string
-      }
-    ): LocalFileState => {
-      if (!existing) {
-        return nextState
-      }
-
-      const uploadStatus = resolveTransferStatus(existing.uploadStatus, nextState.uploadStatus)
-      const downloadStatus = resolveTransferStatus(existing.downloadStatus, nextState.downloadStatus)
-
-      return {
-        ...existing,
-        ...nextState,
-        uploadStatus,
-        downloadStatus
-      }
-    }
-
-    const applyFileState = (
-      fileId: string,
-      nextState: {
-        path: string
-        localHash: string
-        uploadStatus: TransferStatus
-        downloadStatus: TransferStatus
-        lastSyncError: string
-      }
-    ): Effect.Effect<void> =>
-      stateManager.atomicUpdate((currentState) => {
-        return {
-          ...currentState,
-          [fileId]: mergeFileState(currentState[fileId], nextState)
-        }
-      })
-
-    const setLocalOnlyAvailableFileState = (
-      fileId: string,
-      path: string,
-      localHash: string
-    ): Effect.Effect<void> =>
+    const setLocalOnlyAvailableFileState = (fileId: string, path: string, localHash: string) =>
       stateManager.setFileState(fileId, {
         path,
         localHash,
@@ -857,255 +795,51 @@ export const makeFileSync = (
         lastSyncError: ""
       })
 
-    const readLocalHash = (path: string) =>
-      Effect.gen(function*() {
-        const exists = yield* localStorage.fileExists(path)
-        if (!exists) return { exists: false, localHash: "" }
-        const file = yield* localStorage.readFile(path)
-        const localHash = yield* doHashFile(file)
-        return { exists: true, localHash }
-      }).pipe(Effect.catch((error) =>
+    const reconciliation = makeReconciliation({
+      state: stateManager,
+      executor,
+      localOnly: isLocalOnly,
+      readFile,
+      readRepairs,
+      writeRepairs,
+      maxRepairAttempts: Math.max(2, executorConfig.maxRetries + 1),
+      onError: (fileId, error) => emit({ type: "sync:error", error, context: `reconcile:${fileId}` }),
+      remove: (file) =>
         Effect.gen(function*() {
-          yield* Effect.logWarning("[FileSync] readLocalHash failed, treating as non-existent", { path, error })
-          return { exists: false, localHash: "" }
-        })
-      ))
-
-    const handleFileCreated = (payload: FileCreatedPayload): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const { exists, localHash } = yield* readLocalHash(payload.path)
-        if (!exists) return
-
-        if (isLocalOnly) {
-          yield* setLocalOnlyAvailableFileState(payload.id, payload.path, localHash)
-          return
-        }
-
-        yield* applyFileState(payload.id, {
-          path: payload.path,
-          localHash,
-          uploadStatus: "queued",
-          downloadStatus: "done",
-          lastSyncError: ""
-        })
-
-        yield* executor.enqueueUpload(payload.id)
-      })
-
-    const handleFileUpdated = (payload: FileUpdatedPayload): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const { exists, localHash } = yield* readLocalHash(payload.path)
-
-        if (isLocalOnly) {
-          if (exists) {
-            yield* setLocalOnlyAvailableFileState(payload.id, payload.path, localHash)
-          } else {
-            yield* stateManager.removeFile(payload.id)
-          }
-          return
-        }
-
-        if (!exists) {
-          if (!payload.remoteKey) return
-          yield* applyFileState(payload.id, {
-            path: payload.path,
-            localHash: "",
-            uploadStatus: "done",
-            downloadStatus: "queued",
-            lastSyncError: ""
-          })
-          yield* executor.enqueueDownload(payload.id)
-          return
-        }
-
-        if (localHash !== payload.contentHash) {
-          if (payload.remoteKey) {
-            yield* applyFileState(payload.id, {
-              path: payload.path,
-              localHash,
-              uploadStatus: "done",
-              downloadStatus: "queued",
-              lastSyncError: ""
-            })
-            yield* executor.enqueueDownload(payload.id)
-            return
-          }
-
-          yield* applyFileState(payload.id, {
-            path: payload.path,
-            localHash,
-            uploadStatus: "queued",
-            downloadStatus: "done",
-            lastSyncError: ""
-          })
-          yield* executor.enqueueUpload(payload.id)
-          return
-        }
-
-        if (!payload.remoteKey) {
-          yield* applyFileState(payload.id, {
-            path: payload.path,
-            localHash,
-            uploadStatus: "queued",
-            downloadStatus: "done",
-            lastSyncError: ""
-          })
-          yield* executor.enqueueUpload(payload.id)
-          return
-        }
-
-        yield* applyFileState(payload.id, {
-          path: payload.path,
-          localHash,
-          uploadStatus: "done",
-          downloadStatus: "done",
-          lastSyncError: ""
-        })
-      })
-
-    const handleFileDeleted = (payload: FileDeletedPayload): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const state = yield* stateManager.getState()
-        const localPath = state[payload.id]?.path
-        const file = localPath ? undefined : yield* getFile(payload.id)
-        const path = localPath ?? file?.path
-
-        if (path) {
-          // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
-          const allFiles = store.query<Array<FileRecord>>(queryDb(tables.files.select()))
-          const otherActiveFileWithSamePath = allFiles.some(
-            (f) => f.id !== payload.id && !f.deletedAt && f.path === path
-          )
-          if (!otherActiveFileWithSamePath) {
-            yield* localStorage.deleteFile(path).pipe(Effect.ignore)
-          }
-        }
-
-        // Cancel any pending download for this file
-        yield* executor.cancelDownload(payload.id)
-
-        yield* stateManager.removeFile(payload.id)
-      })
-
-    const bootstrapFromTables = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const files = store.query<Array<FileRecord>>(queryDb(tables.files.select()))
-        const currentState = yield* stateManager.getState()
-        const nextState: LocalFilesStateMutable = { ...currentState }
-        const pendingUploads = new Set<string>()
-        const pendingDownloads = new Set<string>()
-
-        for (const file of files) {
-          if (file.deletedAt) {
-            const statePath = nextState[file.id]?.path
-            const path = statePath ?? file.path
-
-            if (path) {
-              // Only delete from OPFS if no other active (non-deleted) file shares the same content-addressable path
-              const otherActiveFileWithSamePath = files.some(
-                (f) => f.id !== file.id && !f.deletedAt && f.path === path
-              )
-              if (!otherActiveFileWithSamePath) {
-                yield* localStorage.deleteFile(path).pipe(Effect.ignore)
-              }
-            }
-
-            // Cancel any pending download for this file
-            yield* executor.cancelDownload(file.id)
-            delete nextState[file.id]
-            continue
-          }
-
-          const { exists, localHash } = yield* readLocalHash(file.path)
-
+          const localPath = (yield* stateManager.getState())[file.id]?.path
+          yield* executor.cancelDownload(file.id)
+          yield* blobs.cleanup(file.path)
+          if (localPath && localPath !== file.path) yield* blobs.cleanup(localPath)
+        }),
+      inspect: (file) =>
+        Effect.gen(function*() {
+          // A failed read is repair work, not evidence that the bytes are missing.
+          const exists = yield* localStorage.fileExists(file.path)
+          const localHash = exists ? yield* doHashFile(yield* localStorage.readFile(file.path)) : ""
           if (isLocalOnly) {
-            if (exists) {
-              nextState[file.id] = {
-                path: file.path,
-                localHash,
-                uploadStatus: "done",
-                downloadStatus: "done",
-                lastSyncError: ""
-              }
-            } else {
-              delete nextState[file.id]
-            }
-            continue
+            return exists
+              ? { path: file.path, localHash, uploadStatus: "done", downloadStatus: "done", lastSyncError: "" }
+              : undefined
           }
-
-          if (!exists) {
-            if (!file.remoteKey) continue
-            nextState[file.id] = mergeFileState(nextState[file.id], {
-              path: file.path,
-              localHash: "",
-              uploadStatus: "done",
-              downloadStatus: "queued",
-              lastSyncError: ""
-            })
-            pendingDownloads.add(file.id)
-            continue
-          }
-
-          if (localHash !== file.contentHash) {
-            if (file.remoteKey) {
-              nextState[file.id] = mergeFileState(nextState[file.id], {
-                path: file.path,
-                localHash,
-                uploadStatus: "done",
-                downloadStatus: "queued",
-                lastSyncError: ""
-              })
-              pendingDownloads.add(file.id)
-              continue
-            }
-
-            nextState[file.id] = mergeFileState(nextState[file.id], {
-              path: file.path,
-              localHash,
-              uploadStatus: "queued",
-              downloadStatus: "done",
-              lastSyncError: ""
-            })
-            pendingUploads.add(file.id)
-            continue
-          }
-
-          if (!file.remoteKey) {
-            nextState[file.id] = mergeFileState(nextState[file.id], {
-              path: file.path,
-              localHash,
-              uploadStatus: "queued",
-              downloadStatus: "done",
-              lastSyncError: ""
-            })
-            pendingUploads.add(file.id)
-            continue
-          }
-
-          nextState[file.id] = mergeFileState(nextState[file.id], {
+          if (!exists && !file.remoteKey) return undefined
+          return {
             path: file.path,
             localHash,
-            uploadStatus: "done",
-            downloadStatus: "done",
+            uploadStatus: file.remoteKey ? "done" : "queued",
+            downloadStatus: file.remoteKey && localHash !== file.contentHash ? "queued" : "done",
             lastSyncError: ""
-          })
-        }
+          }
+        })
+    })
 
-        yield* stateManager.atomicUpdate(() => nextState)
+    // Reconcile current materialized metadata, never an obsolete event payload.
+    const handleFileUpdated = (payload: { id: string }): Effect.Effect<void> =>
+      reconciliation.reconcile([payload.id], true)
 
-        for (const fileId of pendingUploads) {
-          yield* executor.enqueueUpload(fileId)
-        }
-
-        for (const fileId of pendingDownloads) {
-          yield* executor.enqueueDownload(fileId)
-        }
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.gen(function*() {
-            yield* Effect.logError("[FileSync] Bootstrap from tables failed", { error })
-            yield* emit({ type: "sync:error", error, context: "bootstrap" })
-          })
+    const bootstrapFromTables = (): Effect.Effect<void> =>
+      Effect.suspend(() =>
+        reconciliation.reconcile(
+          store.query<Array<FileRecord>>(queryDb(tables.files.select())).map((file) => file.id)
         )
       )
 
@@ -1117,19 +851,19 @@ export const makeFileSync = (
 
         yield* emit({ type: "sync:start" })
 
-        // Process each event individually so that a failure in one event
-        // doesn't prevent the cursor from advancing past already-processed events.
+        // Reconciliation persists failed file IDs before this cursor advances.
+        // Heartbeat/startup repair only those IDs, without replaying unrelated events.
         for (const event of eventsBatch) {
           yield* Effect.gen(function*() {
             switch (event.name) {
               case "v1.FileCreated":
-                yield* handleFileCreated(event.args as FileCreatedPayload)
+                yield* handleFileUpdated(event.args as FileCreatedPayload)
                 break
               case "v1.FileUpdated":
                 yield* handleFileUpdated(event.args as FileUpdatedPayload)
                 break
               case "v1.FileDeleted":
-                yield* handleFileDeleted(event.args as FileDeletedPayload)
+                yield* handleFileUpdated(event.args as FileDeletedPayload)
                 break
             }
           }).pipe(
@@ -1142,10 +876,7 @@ export const makeFileSync = (
           )
         }
 
-        // Advance the cursor to the last successfully processed event,
-        // or to the end of the batch if all events succeeded.
-        // Always advance to the last event in the batch even if some failed,
-        // since re-processing a failed event would likely fail again.
+        // Each file now has either reconciled state or a durable repair entry.
         const cursorEvent = eventsBatch[eventsBatch.length - 1]
         const nextCursor = EventSequenceNumber.Client.toString(cursorEvent.seqNum)
         yield* Ref.set(cursorRef, nextCursor)
@@ -1164,114 +895,6 @@ export const makeFileSync = (
           })
         )
       )
-
-    // Recovery: Reset stale "inProgress" and "error" statuses to "queued"
-    // This handles the case where a page refresh interrupted an in-flight transfer
-    // or where a previous transfer failed with an error.
-    // On a fresh page load, no transfer can actually be in progress, so any
-    // "inProgress" status is stale and should be reset to allow retry.
-    // Files in "error" state are also reset to give them another chance.
-    const recoverStaleTransfers = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        if (isLocalOnly) {
-          yield* stateManager.atomicUpdate((currentState) => {
-            let hasChanges = false
-            const nextState = { ...currentState }
-
-            for (const [fileId, localFile] of Object.entries(nextState)) {
-              if (
-                localFile.uploadStatus === "done" &&
-                localFile.downloadStatus === "done" &&
-                localFile.lastSyncError === ""
-              ) {
-                continue
-              }
-
-              nextState[fileId] = {
-                ...localFile,
-                uploadStatus: "done",
-                downloadStatus: "done",
-                lastSyncError: ""
-              }
-              hasChanges = true
-            }
-
-            return hasChanges ? nextState : currentState
-          })
-          return
-        }
-
-        const retriedFileIds: Array<string> = []
-        const queuedUploadFileIds: Array<string> = []
-        const queuedDownloadFileIds: Array<string> = []
-
-        yield* stateManager.atomicUpdate((currentState) => {
-          let hasChanges = false
-          const nextState = { ...currentState }
-
-          for (const [fileId, localFile] of Object.entries(nextState)) {
-            let updated = false
-            const updatedFile = { ...localFile }
-
-            // Reset "inProgress" to "queued" (existing logic)
-            if (localFile.uploadStatus === "inProgress") {
-              updatedFile.uploadStatus = "queued"
-              updated = true
-              queuedUploadFileIds.push(fileId)
-            }
-            if (localFile.downloadStatus === "inProgress") {
-              updatedFile.downloadStatus = "queued"
-              updated = true
-              queuedDownloadFileIds.push(fileId)
-            }
-
-            // Reset "error" to "queued" for auto-retry
-            if (localFile.uploadStatus === "error") {
-              updatedFile.uploadStatus = "queued"
-              updatedFile.lastSyncError = ""
-              updated = true
-              retriedFileIds.push(fileId)
-            }
-            if (localFile.downloadStatus === "error") {
-              updatedFile.downloadStatus = "queued"
-              updatedFile.lastSyncError = ""
-              updated = true
-              if (!retriedFileIds.includes(fileId)) {
-                retriedFileIds.push(fileId)
-              }
-            }
-
-            if (updated) {
-              nextState[fileId] = updatedFile
-              hasChanges = true
-            }
-          }
-
-          return hasChanges ? nextState : currentState
-        })
-
-        if (retriedFileIds.length > 0) {
-          yield* Effect.logInfo(`[FileSync] Auto-retrying ${retriedFileIds.length} files from error state`)
-          yield* emit({ type: "sync:error-retry-start", fileIds: retriedFileIds })
-        }
-
-        for (const fileId of queuedUploadFileIds) {
-          yield* executor.enqueueUpload(fileId)
-        }
-
-        for (const fileId of queuedDownloadFileIds) {
-          yield* executor.enqueueDownload(fileId)
-        }
-      })
-
-    // Gated wrapper: run recoverStaleTransfers only once per start() lifecycle
-    const maybeRecoverStaleTransfers = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const done = yield* Ref.get(staleRecoveryDoneRef)
-        if (done) return
-        yield* recoverStaleTransfers()
-        yield* Ref.set(staleRecoveryDoneRef, true)
-      })
 
     const maybeBootstrapFromTables = (): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -1293,7 +916,7 @@ export const makeFileSync = (
     const startEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
-        if (!isLeader) return
+        if (!isLeader || !isRunningLeader()) return
 
         yield* stopEventStream()
         const storedCursor = yield* readCursor()
@@ -1379,7 +1002,7 @@ export const makeFileSync = (
     const restartEventStream = (): Effect.Effect<void> =>
       Effect.gen(function*() {
         const isLeader = yield* Ref.get(isLeaderRef)
-        if (!isLeader) return
+        if (!isLeader || !isRunningLeader()) return
         // Ensure queued transfer state is reflected in executor queues before restart.
         yield* reEnqueueQueuedTransfers()
         yield* startEventStream()
@@ -1388,17 +1011,21 @@ export const makeFileSync = (
     // Start the sync loop (only called when we're the leader)
     const startSyncLoop = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Run one-time stale transfer recovery before any transfers begin
-        yield* maybeRecoverStaleTransfers()
+        if (!isRunningLeader()) return
+        // Every leadership acquisition rebuilds work, including a fresh executor.
+        const retried = yield* reconciliation.recover(true)
+        if (retried.length > 0) yield* emit({ type: "sync:error-retry-start", fileIds: retried })
+        yield* reconciliation.repair()
 
         if (!isLocalOnly) {
           const isOnline = yield* Ref.get(onlineRef)
-          if (isOnline) {
+          if (isOnline && isRunningLeader()) {
             yield* executor.resume()
           } else {
             yield* executor.pause()
           }
         }
+        if (!isLocalOnly) yield* executor.ensureWorkers()
         yield* maybeBootstrapFromTables()
         yield* startEventStream()
       })
@@ -1406,6 +1033,7 @@ export const makeFileSync = (
     // Stop the sync loop (called when we lose leadership)
     const stopSyncLoop = (): Effect.Effect<void> =>
       Effect.gen(function*() {
+        generation++
         yield* executor.pause()
 
         // Interrupt in-flight transfers so they don't commit conflicting state
@@ -1437,18 +1065,17 @@ export const makeFileSync = (
     // Watch for leadership changes
     const watchLeadership = (): Effect.Effect<void, never, Scope.Scope> =>
       Effect.gen(function*() {
-        // Include the current value before following changes. Effect 4's
-        // SubscriptionRef.changes only emits future PubSub values, so a lock
-        // acquired between the startup read and stream subscription would
-        // otherwise be missed and leave transfers permanently queued.
+        // Subscribe before reading the lock: startup/recovery can await I/O,
+        // during which leadership may change again. Keep those notifications.
+        const subscription = yield* PubSub.subscribe(clientSession.lockStatus.pubsub)
         yield* Stream.concat(
           Stream.fromEffect(SubscriptionRef.get(clientSession.lockStatus)),
-          SubscriptionRef.changes(clientSession.lockStatus)
+          Stream.fromEffectRepeat(PubSub.take(subscription))
         ).pipe(
           Stream.tap((status) =>
             Effect.gen(function*() {
               const wasLeader = yield* Ref.get(isLeaderRef)
-              const isNowLeader = status === "has-lock"
+              const isNowLeader = status === "has-lock" && isRunningLeader()
               if (isNowLeader && !wasLeader) {
                 // Became leader - start sync loop
                 yield* Effect.logDebug("[FileSync] Became leader, starting sync loop")
@@ -1462,8 +1089,7 @@ export const makeFileSync = (
               }
             })
           ),
-          Stream.runDrain,
-          Effect.forkScoped
+          Stream.runDrain
         )
       })
 
@@ -1524,7 +1150,7 @@ export const makeFileSync = (
               yield* Effect.provideService(executor.ensureWorkers(), Scope.Scope, mainScope)
             }
             // Resume executor in case workers stopped polling
-            yield* executor.resume()
+            if (isRunningLeader()) yield* executor.resume()
             yield* Ref.set(stuckCounterRef, 0)
           }
         } else {
@@ -1577,11 +1203,13 @@ export const makeFileSync = (
         const tick: Effect.Effect<void> = Effect.gen(function*() {
           const running = yield* Ref.get(runningRef)
           const isLeader = yield* Ref.get(isLeaderRef)
-          if (!running || !isLeader) {
+          if (!running || !isLeader || !isRunningLeader()) {
             yield* Ref.set(stuckCounterRef, 0)
             return
           }
 
+          yield* reconciliation.repair()
+          yield* reconciliation.recover()
           yield* checkEventStreamLiveness()
           yield* checkStuckQueue()
           yield* checkStreamStall()
@@ -1606,67 +1234,52 @@ export const makeFileSync = (
         yield* Ref.set(heartbeatFiberRef, fiber)
       })
 
-    // Service methods
-    const start = (): Effect.Effect<void, never, Scope.Scope> =>
+    // A run owns its workers, watcher and background work. Closing an old caller's
+    // scope must not stop a newer run, and stop waits for non-cancellable writes.
+    const stopRun = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const running = yield* Ref.get(runningRef)
-        if (running) return
-
-        yield* Ref.set(runningRef, true)
-
-        // Capture and store the scope for use in setOnline/health check
-        const scope = yield* Effect.scope
-        yield* Ref.set(mainScopeRef, scope)
-
-        // Start transfer workers only when remote transfers are enabled.
-        if (!isLocalOnly) {
-          yield* executor.start()
-        }
-
-        // Check initial lock status
-        const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
-        const isInitialLeader = initialStatus === "has-lock"
-        yield* Ref.set(isLeaderRef, isInitialLeader)
-
-        if (isInitialLeader) {
-          yield* startSyncLoop()
-        }
-
-        // Watch for leadership changes
-        const watchFiber = yield* watchLeadership().pipe(Effect.forkScoped)
-        yield* Ref.set(leaderWatcherFiberRef, watchFiber)
-
-        // Start heartbeat to monitor stream and executor liveness
-        yield* startHeartbeat()
-
-        // Start continuous health check to detect connectivity changes
-        yield* startHealthCheckLoop()
-      })
-
-    const stop = (): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const running = yield* Ref.get(runningRef)
-        if (!running) return
-
         yield* Ref.set(runningRef, false)
-
-        // Stop leader watcher
-        const leaderWatcherFiber = yield* Ref.get(leaderWatcherFiberRef)
-        if (leaderWatcherFiber) {
-          yield* Fiber.interrupt(leaderWatcherFiber)
-          yield* Ref.set(leaderWatcherFiberRef, null)
-        }
-
-        // Stop heartbeat and health check if running
+        generation++
+        const scope = yield* Ref.get(mainScopeRef)
+        const watcher = yield* Ref.get(leaderWatcherFiberRef)
+        if (watcher) yield* Fiber.interrupt(watcher)
+        yield* Ref.set(leaderWatcherFiberRef, null)
         yield* stopHeartbeat()
         yield* stopHealthCheckLoop()
-
-        yield* stopEventStream()
-        yield* executor.pause()
-
-        // Reset leader status
+        yield* stopSyncLoop()
+        if (scope) yield* Scope.close(scope, Exit.void)
+        yield* Ref.set(mainScopeRef, null)
         yield* Ref.set(isLeaderRef, false)
       })
+
+    const stop = (): Effect.Effect<void> => lifecycle.withPermit(stopRun()).pipe(Effect.uninterruptible)
+
+    const start = (): Effect.Effect<void, never, Scope.Scope> =>
+      lifecycle.withPermit(Effect.gen(function*() {
+        if (yield* Ref.get(runningRef)) return
+        const scope = yield* Scope.make()
+        yield* Ref.set(mainScopeRef, scope)
+        yield* Ref.set(runningRef, true)
+        generation++
+        yield* Effect.addFinalizer(() =>
+          lifecycle.withPermit(Effect.gen(function*() {
+            if ((yield* Ref.get(mainScopeRef)) === scope) yield* stopRun()
+          }))
+        )
+        yield* Scope.provide(
+          Effect.gen(function*() {
+            const initialStatus = yield* SubscriptionRef.get(clientSession.lockStatus)
+            const isInitialLeader = initialStatus === "has-lock"
+            yield* Ref.set(isLeaderRef, isInitialLeader)
+            if (isInitialLeader) yield* startSyncLoop()
+            const watcher = yield* Effect.forkIn(watchLeadership(), scope)
+            yield* Ref.set(leaderWatcherFiberRef, watcher)
+            yield* startHeartbeat()
+            yield* startHealthCheckLoop()
+          }),
+          scope
+        ).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? stopRun() : Effect.void))
+      }))
 
     const syncNow = (): Effect.Effect<void> => restartEventStream()
 
@@ -1705,8 +1318,10 @@ export const makeFileSync = (
         const contentHash = yield* doHashFile(processedFile)
         const path = makeStoredPath(storeId, contentHash)
 
-        yield* localStorage.writeFile(path, processedFile)
-        yield* createFileRecord({ id, path, contentHash, metadataJson })
+        yield* blobs.publish(Effect.gen(function*() {
+          yield* localStorage.writeFile(path, processedFile)
+          yield* createFileRecord({ id, path, contentHash, metadataJson })
+        }))
         yield* markLocalFileChanged(id, path, contentHash)
 
         return { fileId: id, path, contentHash }
@@ -1738,16 +1353,11 @@ export const makeFileSync = (
         const path = makeStoredPath(storeId, contentHash)
 
         if (contentHash !== existingFile.contentHash) {
-          yield* localStorage.writeFile(path, processedFile)
-          yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
-
-          if (path !== existingFile.path) {
-            yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
-          }
-
-          if (!isLocalOnly && existingFile.remoteKey) {
-            yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
-          }
+          yield* blobs.publish(Effect.gen(function*() {
+            yield* localStorage.writeFile(path, processedFile)
+            yield* updateFileRecord({ id: fileId, path, contentHash, metadataJson, remoteKey: "" })
+          }))
+          if (path !== existingFile.path) yield* blobs.cleanup(existingFile.path)
 
           yield* markLocalFileChanged(fileId, path, contentHash)
         }
@@ -1765,12 +1375,8 @@ export const makeFileSync = (
 
         yield* deleteFileRecord(fileId)
 
-        yield* localStorage.deleteFile(existingFile.path).pipe(Effect.catch(() => Effect.void))
+        yield* blobs.cleanup(existingFile.path)
         yield* stateManager.removeFile(fileId)
-
-        if (!isLocalOnly && existingFile.remoteKey) {
-          yield* remoteStorage.delete(existingFile.remoteKey).pipe(Effect.catch(() => Effect.void))
-        }
       })
 
     const resolveFileUrl = (
@@ -1778,46 +1384,58 @@ export const makeFileSync = (
     ): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
       Effect.gen(function*() {
         const file = yield* getFile(fileId)
-        if (!file) return null
+        if (!file || file.deletedAt) return null
 
-        const localState = yield* getLocalFilesState()
-        const local = localState[fileId]
+        const result = yield* Effect.gen(function*() {
+          const localState = yield* getLocalFilesState()
+          const local = localState[fileId]
 
-        if (isLocalOnly) {
-          const exists = yield* localStorage.fileExists(file.path)
-          if (!exists) return null
-          if (isNode()) {
-            return resolveLocalFileUrl(deps.localPathRoot, file.path)
-          }
-          return yield* localStorage.getFileUrl(file.path)
-        }
-
-        if (local?.localHash) {
-          const exists = yield* localStorage.fileExists(file.path)
-          if (exists) {
+          if (isLocalOnly) {
+            const exists = yield* localStorage.fileExists(file.path)
+            if (!exists) return null
             if (isNode()) {
               return resolveLocalFileUrl(deps.localPathRoot, file.path)
             }
             return yield* localStorage.getFileUrl(file.path)
           }
-        }
 
-        if (config.autoPrioritizeOnResolve !== false) {
-          if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
-            yield* executor.prioritizeDownload(fileId)
+          if (local?.localHash) {
+            const exists = yield* localStorage.fileExists(file.path)
+            if (exists) {
+              if (isNode()) {
+                return resolveLocalFileUrl(deps.localPathRoot, file.path)
+              }
+              return yield* localStorage.getFileUrl(file.path)
+            }
           }
-        }
 
-        if (!file.remoteKey) return null
-        return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
-          Effect.mapError(
-            (error) =>
-              new StorageError({
-                message: "Failed to resolve remote URL",
-                cause: error
-              })
+          if (config.autoPrioritizeOnResolve !== false) {
+            if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
+              yield* executor.prioritizeDownload(fileId)
+            }
+          }
+
+          if (!file.remoteKey) return null
+          return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: "Failed to resolve remote URL",
+                  cause: error
+                })
+            )
           )
-        )
+        }).pipe(Effect.result)
+        // Storage reads and signing can outlive the version that requested them.
+        const current = yield* getFile(fileId)
+        if (
+          current && !current.deletedAt && current.contentHash === file.contentHash &&
+          current.path === file.path && current.remoteKey === file.remoteKey
+        ) {
+          return Result.isSuccess(result) ? result.success : yield* Effect.fail(result.failure)
+        }
+        if (Result.isSuccess(result) && result.success?.startsWith("blob:")) URL.revokeObjectURL(result.success)
+        return null
       })
 
     const setOnline = (online: boolean): Effect.Effect<void> =>
@@ -1833,7 +1451,10 @@ export const makeFileSync = (
         if (online) {
           yield* Ref.set(onlineRef, true)
           yield* emit({ type: "online" })
-          yield* executor.resume()
+          if (isRunningLeader()) {
+            yield* reEnqueueQueuedTransfers()
+            if (isRunningLeader()) yield* executor.resume()
+          }
         } else {
           yield* goOffline()
         }
@@ -1857,23 +1478,9 @@ export const makeFileSync = (
       Effect.gen(function*() {
         if (isLocalOnly) return []
 
-        const retriedFileIds: Array<string> = []
-        const currentState = yield* stateManager.getState()
-
-        for (const [fileId, localFile] of Object.entries(currentState)) {
-          if (localFile.uploadStatus === "error") {
-            yield* stateManager.setTransferStatus(fileId, "upload", "queued")
-            yield* executor.enqueueUpload(fileId)
-            retriedFileIds.push(fileId)
-          }
-          if (localFile.downloadStatus === "error") {
-            yield* stateManager.setTransferStatus(fileId, "download", "queued")
-            yield* executor.enqueueDownload(fileId)
-            if (!retriedFileIds.includes(fileId)) {
-              retriedFileIds.push(fileId)
-            }
-          }
-        }
+        const retriedFileIds = yield* reconciliation.recover(true)
+        yield* writeRepairs((repairs) => repairs.map((r) => ({ ...r, attempts: 0 })))
+        yield* reconciliation.repair()
 
         if (retriedFileIds.length > 0) {
           yield* Effect.logInfo(`[FileSync] Manually retrying ${retriedFileIds.length} files from error state`)

@@ -8,7 +8,7 @@
  */
 
 import type { Scope } from "effect"
-import { Context, Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Ref, Schedule } from "effect"
+import { Context, Deferred, Duration, Effect, Fiber, Layer, Option, Queue, Schedule, Semaphore } from "effect"
 
 /**
  * Transfer kind
@@ -95,27 +95,31 @@ export type TransferHandler = (
  * SyncExecutor service interface
  */
 export interface SyncExecutorService {
+  /** Synchronous membership check for durable queue reconstruction; does not schedule a follow-up. */
+  readonly hasTask: (kind: TransferKind, fileId: string) => boolean
+
   /**
-   * Enqueue a download task
+   * Enqueue a download task. Enqueues during an active transfer coalesce into
+   * one subsequent run so the handler can pick up the latest version.
    */
   readonly enqueueDownload: (fileId: string) => Effect.Effect<void>
 
   /**
-   * Enqueue an upload task
+   * Enqueue an upload task. Enqueues during an active transfer coalesce into
+   * one subsequent run so the handler can pick up the latest version.
    */
   readonly enqueueUpload: (fileId: string) => Effect.Effect<void>
 
   /**
    * Prioritize a download - moves it to high priority queue.
    * If already queued in normal queue, it will be processed from high priority first.
-   * If already in high priority, inflight, or processed, this is a no-op.
+   * If already in high priority or inflight, this is a no-op.
    */
   readonly prioritizeDownload: (fileId: string) => Effect.Effect<void>
 
   /**
-   * Cancel a pending download.
-   * Marks the file as cancelled so it will be skipped when dequeued.
-   * If already inflight, the download will continue but won't be retried on failure.
+   * Cancel queued and in-flight downloads, including retries.
+   * Waits for the in-flight effect to finish interruption.
    */
   readonly cancelDownload: (fileId: string) => Effect.Effect<void>
 
@@ -176,15 +180,6 @@ export interface SyncExecutorService {
 export class SyncExecutor extends Context.Service<SyncExecutor, SyncExecutorService>()("SyncExecutor") {}
 
 /**
- * Internal state for the executor
- */
-interface ExecutorState {
-  readonly paused: boolean
-  readonly downloadsInflight: number
-  readonly uploadsInflight: number
-}
-
-/**
  * Callback invoked after each task completes (success or failure after all retries exhausted).
  * Errors thrown by the callback are caught and logged — they won't crash the executor.
  */
@@ -199,485 +194,205 @@ export const makeSyncExecutor = (
   onTaskComplete?: TaskCompleteCallback
 ): Effect.Effect<SyncExecutorService, never, Scope.Scope> =>
   Effect.gen(function*() {
-    // Create queues for downloads and uploads
-    // Downloads use two queues: high priority (processed first) and normal
-    const highPriorityDownloadQueue = yield* Queue.unbounded<string>()
-    const downloadQueue = yield* Queue.unbounded<string>()
-    const uploadQueue = yield* Queue.unbounded<string>()
+    // Queue entries have identity so obsolete normal/priority entries cannot
+    // consume a later request for the same file.
+    interface Request {
+      readonly kind: TransferKind
+      readonly fileId: string
+      priority: boolean
+    }
+    const downloadQueue = yield* Queue.unbounded<Request>()
+    const priorityQueue = yield* Queue.unbounded<Request>()
+    const uploadQueue = yield* Queue.unbounded<Request>()
+    const queued = new Map<string, Request>()
+    const active = new Map<string, { request: Request; fiber: Fiber.Fiber<void, never> }>()
+    const idleWaiters = new Set<Deferred.Deferred<void>>()
+    const workerMutex = yield* Semaphore.make(1)
+    let paused = false
+    let downloadWorker: Fiber.Fiber<void, never> | undefined
+    let uploadWorker: Fiber.Fiber<void, never> | undefined
+    const keyOf = (kind: TransferKind, fileId: string) => `${kind}:${fileId}`
+    const countKind = (kind: TransferKind) =>
+      Array.from(active.values()).filter((entry) => entry.request.kind === kind).length
 
-    // State management
-    const stateRef = yield* Ref.make<ExecutorState>({
-      paused: false,
-      downloadsInflight: 0,
-      uploadsInflight: 0
-    })
-
-    // Worker fiber tracking for liveness
-    const downloadWorkerFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
-    const uploadWorkerFiberRef = yield* Ref.make<Fiber.Fiber<void, never> | null>(null)
-
-    // Track queued file IDs to avoid duplicates
-    const highPriorityDownloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
-    const downloadQueuedSet = yield* Ref.make<Set<string>>(new Set())
-    const uploadQueuedSet = yield* Ref.make<Set<string>>(new Set())
-
-    // Track processed downloads to skip duplicates when same file is in both queues
-    const downloadProcessedSet = yield* Ref.make<Set<string>>(new Set())
-
-    // Track cancelled downloads to skip when dequeued (e.g., file was deleted)
-    const cancelledDownloadsSet = yield* Ref.make<Set<string>>(new Set())
-
-    // Track in-flight task fibers for interruption on leadership loss
-    const inflightFibersRef = yield* Ref.make<
-      Map<string, { fiber: Fiber.Fiber<TransferResult, never>; kind: TransferKind; fileId: string }>
-    >(new Map())
-
-    // Signal for idle waiting
-    const idleDeferred = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(Option.none())
-
-    // Create retry schedule with exponential backoff
     const retrySchedule = Schedule.exponential(Duration.millis(config.baseDelayMs)).pipe(
       Schedule.jittered,
-      Schedule.upTo({
-        duration: Duration.millis(config.maxDelayMs),
-        times: config.maxRetries
-      })
+      Schedule.upTo({ duration: Duration.millis(config.maxDelayMs), times: config.maxRetries })
     )
 
-    // Check if we're idle and signal if needed
     const checkIdle = Effect.gen(function*() {
-      const state = yield* Ref.get(stateRef)
-      const highPriorityDownloadQueueSize = yield* Queue.size(highPriorityDownloadQueue)
-      const downloadQueueSize = yield* Queue.size(downloadQueue)
-      const uploadQueueSize = yield* Queue.size(uploadQueue)
-
-      if (
-        state.downloadsInflight === 0 &&
-        state.uploadsInflight === 0 &&
-        highPriorityDownloadQueueSize === 0 &&
-        downloadQueueSize === 0 &&
-        uploadQueueSize === 0
-      ) {
-        // Clear processed and cancelled sets when idle to avoid unbounded memory growth
-        yield* Ref.set(downloadProcessedSet, new Set())
-        yield* Ref.set(highPriorityDownloadQueuedSet, new Set())
-        yield* Ref.set(cancelledDownloadsSet, new Set())
-
-        const maybeDeferred = yield* Ref.get(idleDeferred)
-        if (Option.isSome(maybeDeferred)) {
-          yield* Deferred.succeed(maybeDeferred.value, undefined)
-          yield* Ref.set(idleDeferred, Option.none())
-        }
-      }
+      if (active.size !== 0 || queued.size !== 0) return
+      const waiters = Array.from(idleWaiters)
+      idleWaiters.clear()
+      for (const waiter of waiters) yield* Deferred.succeed(waiter, undefined)
     })
 
-    // Process a single task with retry
-    const processTask = (
-      kind: TransferKind,
-      fileId: string
-    ): Effect.Effect<TransferResult> =>
-      Effect.gen(function*() {
-        // Remove from queued sets and mark as processed for downloads
-        if (kind === "download") {
-          yield* Ref.update(downloadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.delete(fileId)
-            return newSet
-          })
-          yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.delete(fileId)
-            return newSet
-          })
-          yield* Ref.update(downloadProcessedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.add(fileId)
-            return newSet
-          })
-        } else {
-          yield* Ref.update(uploadQueuedSet, (set) => {
-            const newSet = new Set(set)
-            newSet.delete(fileId)
-            return newSet
-          })
-        }
+    const offer = (request: Request) =>
+      Queue.offer(
+        request.kind === "upload" ? uploadQueue : request.priority ? priorityQueue : downloadQueue,
+        request
+      )
 
-        // Execute with retry
-        const result = yield* handler(kind, fileId).pipe(
+    const processTask = (request: Request): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const { fileId, kind } = request
+        const result = yield* Effect.suspend(() => handler(kind, fileId)).pipe(
           Effect.retry(retrySchedule),
           Effect.map(() => ({ kind, fileId, success: true as const })),
           Effect.catch((error) => Effect.succeed({ kind, fileId, success: false as const, error }))
         )
-
-        // Log and notify when retries are exhausted
         if (!result.success) {
-          yield* Effect.logWarning(
-            `Transfer failed after ${config.maxRetries} retries`,
-            { kind, fileId, error: result.error }
-          )
+          yield* Effect.logWarning(`Transfer failed after ${config.maxRetries} retries`, result)
         }
-
-        // Notify caller of task completion (success or failure)
         if (onTaskComplete) {
           yield* onTaskComplete(result).pipe(
             Effect.catch((callbackError) => Effect.logWarning("onTaskComplete callback failed", { callbackError }))
           )
         }
-
-        // Update inflight count
-        yield* Ref.update(stateRef, (s) => ({
-          ...s,
-          downloadsInflight: kind === "download" ? s.downloadsInflight - 1 : s.downloadsInflight,
-          uploadsInflight: kind === "upload" ? s.uploadsInflight - 1 : s.uploadsInflight
-        }))
-
-        // Check if we're idle now
-        yield* checkIdle
-
-        return result
       })
 
-    // Fork a tracked task: starts processTask in a background fiber
-    // and registers/unregisters it in inflightFibersRef for interruption support
-    const forkTracked = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        // Reserve the in-flight slot before forking. Effect 4 can schedule the
-        // detached task after an awaitIdle caller has already observed the
-        // queue as empty, so incrementing inside the child creates a race.
-        yield* Ref.update(stateRef, (s) => ({
-          ...s,
-          downloadsInflight: kind === "download" ? s.downloadsInflight + 1 : s.downloadsInflight,
-          uploadsInflight: kind === "upload" ? s.uploadsInflight + 1 : s.uploadsInflight
-        }))
-
-        const trackedTask = processTask(kind, fileId).pipe(
-          Effect.ensuring(
-            Ref.update(inflightFibersRef, (map) => {
-              const newMap = new Map(map)
-              newMap.delete(`${kind}:${fileId}`)
-              return newMap
-            })
-          )
+    const forkTracked = (request: Request, scope: Scope.Scope): Effect.Effect<void> =>
+      workerMutex.withPermit(Effect.uninterruptible(Effect.gen(function*() {
+        const key = keyOf(request.kind, request.fileId)
+        if (queued.get(key) !== request || active.has(key)) return
+        if (paused) {
+          yield* offer(request)
+          return
+        }
+        // Keep the request queued until its active slot is registered.
+        // Gate execution until its handle is registered. Even a synchronous
+        // handler must not finalize before it owns an active slot.
+        const ready = yield* Deferred.make<void>()
+        const task = Deferred.await(ready).pipe(
+          Effect.andThen(processTask(request)),
+          Effect.interruptible,
+          Effect.ensuring(Effect.gen(function*() {
+            active.delete(key)
+            const next = queued.get(key)
+            if (next) yield* offer(next)
+            yield* checkIdle
+          }))
         )
-        // The enqueue effect returns immediately; attach transfer fibers to the
-        // global scope and retain their handles so they can be interrupted on
-        // leadership loss. A child fiber would be cancelled as soon as this
-        // short-lived enqueue effect completes in Effect 4.
-        const fiber = yield* Effect.forkDetach(trackedTask)
-        yield* Ref.update(inflightFibersRef, (map) => {
-          const newMap = new Map(map)
-          newMap.set(`${kind}:${fileId}`, { fiber, kind, fileId })
-          return newMap
-        })
-      })
+        const fiber = yield* Effect.forkIn(task, scope)
+        active.set(key, { request, fiber })
+        if (queued.get(key) !== request) {
+          yield* Fiber.interrupt(fiber)
+          return
+        }
+        queued.delete(key)
+        yield* Deferred.succeed(ready, undefined)
+      })))
 
-    // Worker that processes uploads (single queue)
-    const createUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        const processLoop: Effect.Effect<void> = Effect.gen(function*() {
-          // Check if paused
-          const state = yield* Ref.get(stateRef)
-          if (state.paused) {
-            yield* Effect.sleep(Duration.millis(100))
-            return
-          }
+    const worker = (kind: TransferKind, scope: Scope.Scope): Effect.Effect<void> =>
+      Effect.forever(Effect.gen(function*() {
+        const limit = kind === "download" ? config.maxConcurrentDownloads : config.maxConcurrentUploads
+        if (paused || countKind(kind) >= limit) {
+          yield* Effect.sleep("50 millis")
+          return
+        }
+        let next = yield* Queue.poll(kind === "download" ? priorityQueue : uploadQueue)
+        if (kind === "download" && Option.isNone(next)) next = yield* Queue.poll(downloadQueue)
+        if (Option.isSome(next)) {
+          yield* forkTracked(next.value, scope)
+        } else {
+          yield* Effect.sleep("100 millis")
+        }
+      })).pipe(Effect.interruptible)
 
-          // Check if we can start more tasks
-          if (state.uploadsInflight >= config.maxConcurrentUploads) {
-            yield* Effect.sleep(Duration.millis(50))
-            return
-          }
-
-          // Try to get a task from the queue (non-blocking)
-          const maybeFileId = yield* Queue.poll(uploadQueue)
-          if (Option.isNone(maybeFileId)) {
-            yield* Effect.sleep(Duration.millis(100))
-            return
-          }
-
-          // Process the task in the background and track the fiber
-          const fileId = maybeFileId.value
-          yield* forkTracked("upload", fileId)
-        })
-
-        yield* Effect.forever(processLoop).pipe(Effect.interruptible)
-      })
-
-    // Worker that processes downloads with priority (high priority queue first)
-    const createDownloadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        const processLoop: Effect.Effect<void> = Effect.gen(function*() {
-          // Check if paused
-          const state = yield* Ref.get(stateRef)
-          if (state.paused) {
-            yield* Effect.sleep(Duration.millis(100))
-            return
-          }
-
-          // Check if we can start more tasks
-          if (state.downloadsInflight >= config.maxConcurrentDownloads) {
-            yield* Effect.sleep(Duration.millis(50))
-            return
-          }
-
-          // Try high priority queue first
-          const maybeHighPriority = yield* Queue.poll(highPriorityDownloadQueue)
-          if (Option.isSome(maybeHighPriority)) {
-            const fileId = maybeHighPriority.value
-            // Check if already processed or cancelled (e.g., file was deleted)
-            const processed = yield* Ref.get(downloadProcessedSet)
-            const cancelled = yield* Ref.get(cancelledDownloadsSet)
-            if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* forkTracked("download", fileId)
-            } else {
-              // Item was skipped - check if we're idle now
-              yield* checkIdle
-            }
-            return
-          }
-
-          // Fall back to normal queue
-          const maybeNormal = yield* Queue.poll(downloadQueue)
-          if (Option.isSome(maybeNormal)) {
-            const fileId = maybeNormal.value
-            // Check if already processed or cancelled via high priority queue
-            const processed = yield* Ref.get(downloadProcessedSet)
-            const cancelled = yield* Ref.get(cancelledDownloadsSet)
-            if (!processed.has(fileId) && !cancelled.has(fileId)) {
-              yield* forkTracked("download", fileId)
-            } else {
-              // Item was skipped - check if we're idle now
-              yield* checkIdle
-            }
-            return
-          }
-
-          // Both queues empty, wait a bit
-          yield* Effect.sleep(Duration.millis(100))
-        })
-
-        yield* Effect.forever(processLoop).pipe(Effect.interruptible)
-      })
-
-    // Start a download worker and track its fiber
-    const startDownloadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        const fiber = yield* Effect.forkScoped(createDownloadWorker())
-        yield* Ref.set(downloadWorkerFiberRef, fiber)
-      })
-
-    // Start an upload worker and track its fiber
-    const startUploadWorker = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        const fiber = yield* Effect.forkScoped(createUploadWorker())
-        yield* Ref.set(uploadWorkerFiberRef, fiber)
-      })
-
-    // Check if a fiber is dead (null or exited)
-    const isFiberDead = (
-      fiber: Fiber.Fiber<void, never> | null
-    ): Effect.Effect<boolean> => Effect.sync(() => !fiber || fiber.pollUnsafe() !== undefined)
-
-    // Ensure workers are running. Restarts any dead workers.
-    // Workers check the paused state in their loop, so they can be running but not processing.
     const ensureWorkers = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        const downloadFiber = yield* Ref.get(downloadWorkerFiberRef)
-        const uploadFiber = yield* Ref.get(uploadWorkerFiberRef)
-
-        const downloadDead = yield* isFiberDead(downloadFiber)
-        const uploadDead = yield* isFiberDead(uploadFiber)
-
-        if (downloadDead) {
-          yield* startDownloadWorker()
+      workerMutex.withPermit(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        if (!downloadWorker || downloadWorker.pollUnsafe() !== undefined) {
+          downloadWorker = yield* Effect.forkIn(worker("download", scope), scope)
         }
-        if (uploadDead) {
-          yield* startUploadWorker()
+        if (!uploadWorker || uploadWorker.pollUnsafe() !== undefined) {
+          uploadWorker = yield* Effect.forkIn(worker("upload", scope), scope)
         }
-      })
+      }))
 
-    // Start workers (idempotent - uses ensureWorkers)
-    const start = (): Effect.Effect<void, never, Scope.Scope> =>
-      Effect.gen(function*() {
-        yield* ensureWorkers()
-      })
-
-    // Atomic check-and-set: Ref.modify returns [shouldEnqueue, newSet] in a single
-    // operation, preventing races where two fibers both see the fileId as absent
-    // and double-enqueue the same file.
-    const enqueueDownload = (fileId: string): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const shouldEnqueue = yield* Ref.modify(downloadQueuedSet, (set) => {
-          if (set.has(fileId)) return [false, set] as const
-          const newSet = new Set(set)
-          newSet.add(fileId)
-          return [true, newSet] as const
-        })
-        if (shouldEnqueue) {
-          yield* Queue.offer(downloadQueue, fileId)
-        }
-      })
-
-    const enqueueUpload = (fileId: string): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        const shouldEnqueue = yield* Ref.modify(uploadQueuedSet, (set) => {
-          if (set.has(fileId)) return [false, set] as const
-          const newSet = new Set(set)
-          newSet.add(fileId)
-          return [true, newSet] as const
-        })
-        if (shouldEnqueue) {
-          yield* Queue.offer(uploadQueue, fileId)
-        }
-      })
+    const enqueue = (kind: TransferKind, fileId: string): Effect.Effect<void> =>
+      Effect.uninterruptible(Effect.gen(function*() {
+        const key = keyOf(kind, fileId)
+        if (queued.has(key)) return
+        const request: Request = { kind, fileId, priority: false }
+        queued.set(key, request)
+        // An explicit enqueue during a transfer requests one subsequent run.
+        // Its finalizer offers that request only after the active run exits.
+        if (!active.has(key)) yield* offer(request)
+      }))
 
     const prioritizeDownload = (fileId: string): Effect.Effect<void> =>
-      Effect.gen(function*() {
-        // Check if already processed or in high priority queue
-        const processed = yield* Ref.get(downloadProcessedSet)
-        if (processed.has(fileId)) return
-
-        // Check if file is actually queued in normal queue (otherwise nothing to prioritize)
-        const normalQueued = yield* Ref.get(downloadQueuedSet)
-        if (!normalQueued.has(fileId)) return
-
-        // Atomic check-and-set for the high priority queue set
-        const shouldEnqueue = yield* Ref.modify(highPriorityDownloadQueuedSet, (set) => {
-          if (set.has(fileId)) return [false, set] as const
-          const newSet = new Set(set)
-          newSet.add(fileId)
-          return [true, newSet] as const
-        })
-        if (shouldEnqueue) {
-          yield* Queue.offer(highPriorityDownloadQueue, fileId)
-        }
-
-        // Note: We don't remove from normal queue since Effect Queue doesn't support removal.
-        // The worker will skip it when it reaches it in the normal queue because
-        // it will already be in the downloadProcessedSet by then.
-      })
+      Effect.uninterruptible(Effect.gen(function*() {
+        const key = keyOf("download", fileId)
+        const request = queued.get(key)
+        if (!request || request.priority || active.has(key)) return
+        request.priority = true
+        yield* Queue.offer(priorityQueue, request)
+      }))
 
     const cancelDownload = (fileId: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        // Mark as cancelled so it will be skipped when dequeued
-        yield* Ref.update(cancelledDownloadsSet, (set) => {
-          const newSet = new Set(set)
-          newSet.add(fileId)
-          return newSet
-        })
-
-        // Remove from queued sets so queue counts are accurate
-        yield* Ref.update(downloadQueuedSet, (set) => {
-          const newSet = new Set(set)
-          newSet.delete(fileId)
-          return newSet
-        })
-        yield* Ref.update(highPriorityDownloadQueuedSet, (set) => {
-          const newSet = new Set(set)
-          newSet.delete(fileId)
-          return newSet
-        })
-
-        // Note: We can't remove from the actual Queue, but the worker will skip
-        // when it sees the fileId in cancelledDownloadsSet
+        const key = keyOf("download", fileId)
+        queued.delete(key)
+        const entry = active.get(key)
+        if (entry) yield* Fiber.interrupt(entry.fiber)
+        yield* checkIdle
       })
 
-    const pause = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: true }))
-
-    const resume = (): Effect.Effect<void> => Ref.update(stateRef, (s) => ({ ...s, paused: false }))
-
-    const isPaused = (): Effect.Effect<boolean> => Ref.get(stateRef).pipe(Effect.map((s) => s.paused))
-
-    const getInflightCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
-      Ref.get(stateRef).pipe(
-        Effect.map((s) => ({
-          downloads: s.downloadsInflight,
-          uploads: s.uploadsInflight
-        }))
-      )
-
-    const getQueuedCount = (): Effect.Effect<{ downloads: number; uploads: number }> =>
+    const interruptInflight = (): Effect.Effect<ReadonlyArray<TransferTask>> =>
       Effect.gen(function*() {
-        // Use the queued sets for accurate counts (they track unique file IDs)
-        const highPriorityQueued = yield* Ref.get(highPriorityDownloadQueuedSet)
-        const normalQueued = yield* Ref.get(downloadQueuedSet)
-        const uploadsQueued = yield* Ref.get(uploadQueuedSet)
-
-        // Union of both download sets to avoid double-counting
-        const allDownloadIds = new Set([...highPriorityQueued, ...normalQueued])
-
-        return {
-          downloads: allDownloadIds.size,
-          uploads: uploadsQueued.size
-        }
+        const entries = Array.from(active.values())
+        for (const entry of entries) yield* Fiber.interrupt(entry.fiber)
+        return entries.map(({ request: { fileId, kind } }) => ({ kind, fileId }))
       })
 
     const awaitIdle = (): Effect.Effect<void> =>
       Effect.gen(function*() {
-        // Check if already idle
-        const state = yield* Ref.get(stateRef)
-        const highPriorityDownloadQueueSize = yield* Queue.size(highPriorityDownloadQueue)
-        const downloadQueueSize = yield* Queue.size(downloadQueue)
-        const uploadQueueSize = yield* Queue.size(uploadQueue)
-
-        if (
-          state.downloadsInflight === 0 &&
-          state.uploadsInflight === 0 &&
-          highPriorityDownloadQueueSize === 0 &&
-          downloadQueueSize === 0 &&
-          uploadQueueSize === 0
-        ) {
-          return
-        }
-
-        // Create a deferred to wait on
-        const deferred = yield* Deferred.make<void>()
-        yield* Ref.set(idleDeferred, Option.some(deferred))
-
-        // Wait for completion
-        yield* Deferred.await(deferred)
-      })
-
-    // Interrupt all in-flight transfer fibers and reset inflight counts.
-    // Returns metadata about interrupted tasks so the caller can reset state.
-    const interruptInflight = (): Effect.Effect<
-      ReadonlyArray<{ kind: TransferKind; fileId: string }>
-    > =>
-      Effect.gen(function*() {
-        const fibers = yield* Ref.getAndSet(inflightFibersRef, new Map())
-        const interrupted: Array<{ kind: TransferKind; fileId: string }> = []
-
-        for (const [, entry] of fibers) {
-          yield* Fiber.interrupt(entry.fiber)
-          interrupted.push({ kind: entry.kind, fileId: entry.fileId })
-        }
-
-        // Reset inflight counts to 0
-        yield* Ref.update(stateRef, (s) => ({
-          ...s,
-          downloadsInflight: 0,
-          uploadsInflight: 0
-        }))
-
-        // Signal idle if needed (queues may still have items but no inflight)
+        const waiter = yield* Deferred.make<void>()
+        // Register before checking to avoid a lost completion, and support
+        // multiple callers waiting for the same batch.
+        idleWaiters.add(waiter)
         yield* checkIdle
-
-        return interrupted
+        yield* Deferred.await(waiter).pipe(Effect.ensuring(Effect.sync(() => {
+          idleWaiters.delete(waiter)
+        })))
       })
+
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function*() {
+        paused = true
+        yield* interruptInflight()
+      })
+    )
 
     return {
-      enqueueDownload,
-      enqueueUpload,
+      hasTask: (kind, fileId) => active.has(keyOf(kind, fileId)) || queued.has(keyOf(kind, fileId)),
+      enqueueDownload: (fileId) => enqueue("download", fileId),
+      enqueueUpload: (fileId) => enqueue("upload", fileId),
       prioritizeDownload,
       cancelDownload,
-      pause,
-      resume,
-      isPaused,
-      getInflightCount,
-      getQueuedCount,
+      pause: () =>
+        workerMutex.withPermit(Effect.sync(() => {
+          paused = true
+        })),
+      resume: () =>
+        Effect.sync(() => {
+          paused = false
+        }),
+      isPaused: () => Effect.sync(() => paused),
+      getInflightCount: () =>
+        Effect.sync(() => ({
+          downloads: countKind("download"),
+          uploads: countKind("upload")
+        })),
+      getQueuedCount: () =>
+        Effect.sync(() => ({
+          downloads: Array.from(queued.values()).filter((request) => request.kind === "download").length,
+          uploads: Array.from(queued.values()).filter((request) => request.kind === "upload").length
+        })),
       awaitIdle,
       interruptInflight,
-      start,
+      start: ensureWorkers,
       ensureWorkers
     }
   })

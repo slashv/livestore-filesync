@@ -87,6 +87,115 @@ const createFailingRemoteStorage = () => {
 const runHashFile = (file: File) => Effect.runPromise(Effect.provide(hashFile(file), HashServiceLive))
 
 describe("FileSync - File operations", () => {
+  it.each(["remote", "local-only"] as const)(
+    "does not resolve a deleted %s record sharing retained bytes",
+    async (mode) => {
+      const { deps, events, shutdown, store } = await createTestStore()
+      const runtime = createRuntime(deps, mode === "local-only" ? { remoteMode: "local-only" } : {})
+      const fileSync = await runtime.runPromise(FileSync)
+      try {
+        const deleted = await runtime.runPromise(fileSync.saveFile(new File(["shared"], "a.txt")))
+        const survivor = await runtime.runPromise(fileSync.saveFile(new File(["shared"], "b.txt")))
+        expect(deleted.path).toBe(survivor.path)
+        if (mode === "remote") {
+          for (const file of [deleted, survivor]) {
+            store.commit(events.fileUpdated({
+              id: file.fileId,
+              path: file.path,
+              contentHash: file.contentHash,
+              remoteKey: "retained-key",
+              updatedAt: new Date()
+            }))
+          }
+        }
+        await runtime.runPromise(fileSync.deleteFile(deleted.fileId))
+        expect(await runtime.runPromise(fileSync.resolveFileUrl(deleted.fileId))).toBeNull()
+        expect(await runtime.runPromise(fileSync.resolveFileUrl(survivor.fileId))).not.toBeNull()
+        const storage = await runtime.runPromise(LocalFileStorage)
+        expect(await runtime.runPromise(storage.fileExists(survivor.path))).toBe(true)
+        if (mode === "remote") {
+          await runtime.runPromise(storage.deleteFile(survivor.path))
+          expect(await runtime.runPromise(fileSync.resolveFileUrl(deleted.fileId))).toBeNull()
+          expect(await runtime.runPromise(fileSync.resolveFileUrl(survivor.fileId))).toContain("retained-key")
+        }
+      } finally {
+        await runtime.dispose()
+        await shutdown()
+      }
+    }
+  )
+
+  for (const boundary of ["local-read", "signing", "failed-signing"] as const) {
+    it.each(["edit", "delete"] as const)(`rejects %s during ${boundary} URL resolution`, async (change) => {
+      const { deps, events, shutdown, store } = await createTestStore()
+      const runtime = createRuntime(deps, boundary === "local-read" ? { remoteMode: "local-only" } : {})
+      const fileSync = await runtime.runPromise(FileSync)
+      let entered!: () => void
+      let release!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      try {
+        const file = await runtime.runPromise(fileSync.saveFile(new File(["old"], "a.txt")))
+        const local = await runtime.runPromise(LocalFileStorage)
+        if (boundary !== "local-read") {
+          store.commit(
+            events.fileUpdated({
+              id: file.fileId,
+              path: file.path,
+              contentHash: file.contentHash,
+              remoteKey: "old-key",
+              updatedAt: new Date()
+            })
+          )
+          await runtime.runPromise(local.deleteFile(file.path))
+          const remote = await runtime.runPromise(RemoteStorage)
+          vi.spyOn(remote, "getDownloadUrl").mockImplementation(() =>
+            Effect.gen(function*() {
+              entered()
+              yield* Effect.promise(() => barrier)
+              if (boundary === "failed-signing") {
+                return yield* Effect.fail(new DownloadError({ message: "old signing failed", url: "old-key" }))
+              }
+              return "https://storage.test/old-key"
+            })
+          )
+        } else {
+          vi.spyOn(local, "fileExists").mockImplementation(() =>
+            Effect.promise(async () => {
+              entered()
+              await barrier
+              return true
+            })
+          )
+        }
+        const resolving = runtime.runPromise(fileSync.resolveFileUrl(file.fileId))
+        await started
+        if (change === "delete") store.commit(events.fileDeleted({ id: file.fileId, deletedAt: new Date() }))
+        else {
+          store.commit(
+            events.fileUpdated({
+              id: file.fileId,
+              path: "new-path",
+              contentHash: "new-hash",
+              remoteKey: "new-key",
+              updatedAt: new Date()
+            })
+          )
+        }
+        release()
+        expect(await resolving).toBeNull()
+      } finally {
+        release()
+        await runtime.dispose()
+        await shutdown()
+      }
+    })
+  }
+
   it("saves files and records metadata", async () => {
     const { deps, shutdown, store, tables } = await createTestStore()
     const runtime = createRuntime(deps)

@@ -73,7 +73,7 @@ export type { SyncSchema, SyncStore } from "../livestore/types.js"
 export interface SignerRemoteConfig {
   signerBaseUrl: string
   headers?: Record<string, string>
-  authToken?: string
+  authToken?: string | (() => string | null)
   /** Include credentials (cookies) in cross-origin requests. Required for cookie-based auth. */
   includeCredentials?: boolean
 }
@@ -143,10 +143,10 @@ export interface CreateFileSyncConfig {
  */
 export interface FileSyncInstance {
   /** Start the sync process */
-  start: () => void
+  start: () => Promise<void>
 
   /** Stop the sync process */
-  stop: () => void
+  stop: () => Promise<void>
 
   /** Save a new file locally and queue for upload */
   saveFile: (file: File) => Promise<SyncFileOperationResult>
@@ -154,7 +154,7 @@ export interface FileSyncInstance {
   /** Update an existing file */
   updateFile: (fileId: string, file: File) => Promise<SyncFileOperationResult>
 
-  /** Delete a file (soft delete in store, cleanup local/remote) */
+  /** Delete a file (soft delete in store, reclaim unowned local bytes; retain remote blobs) */
   deleteFile: (fileId: string) => Promise<void>
 
   /** Read a file from local storage */
@@ -247,6 +247,10 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   let online = true // optimistic default; health check will correct if offline
   let unsubscribeEvents: (() => void) | null = null
   let disposed = false
+  let requestedRun = 0
+  let nextRun = 0
+  let lifecycle: Promise<void> = Promise.resolve()
+  let disposal: Promise<void> | null = null
   let scope: Scope.Closeable | null = null
   let fileSyncService: FileSyncService | null = null
 
@@ -312,7 +316,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
 
   const MainLayer = Layer.mergeAll(BaseLayer, FileSyncLayer)
 
-  const runtime = ManagedRuntime.make(MainLayer)
+  let runtime = ManagedRuntime.make(MainLayer)
 
   // Helper to run Effect and get result
   const runEffect = async <A, E>(effect: Effect.Effect<A, E, any>): Promise<A> => {
@@ -324,6 +328,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const getFileSyncService = async (): Promise<FileSyncService> => {
+    if (disposed) throw new Error("FileSync instance is disposed")
     if (fileSyncService) return fileSyncService
     fileSyncService = await runEffect(Effect.gen(function*() {
       return yield* FileSync
@@ -340,43 +345,72 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
       } else if (event.type === "offline") {
         online = false
       }
-      options.onEvent?.(event)
+      if (!disposed && requestedRun !== 0) notify(event)
     })
   }
 
-  const start = () => {
-    if (scope || disposed) return
-    void (async () => {
-      try {
-        scope = await runEffect(Scope.make())
-        const fileSync = await getFileSyncService()
-        await ensureEventSubscription()
-        await runEffect(Scope.provide(fileSync.start(), scope))
-      } catch (error) {
-        console.error("[createFileSync] Error during start:", error)
-        // Surface initialization failures to event listeners so callers
-        // can detect and handle them (not just console.error)
-        options.onEvent?.({ type: "sync:error", error, context: "start" })
-      }
-    })()
+  const notify = (event: SyncEvent) => {
+    try {
+      options.onEvent?.(event)
+    } catch (error) {
+      console.error("[createFileSync] Event listener failed:", error)
+    }
+  }
+
+  const enqueue = (operation: () => Promise<void>): Promise<void> => {
+    const result = lifecycle.then(operation)
+    // Keep the queue usable after failures, including ignored fire-and-forget calls.
+    lifecycle = result.catch((error) => {
+      console.error("[createFileSync] Lifecycle failed:", error)
+      notify({ type: "sync:error", error, context: "lifecycle" })
+    })
+    return lifecycle
   }
 
   const stopInternal = async () => {
-    if (!scope) return
     const currentScope = scope
     scope = null
-
-    const fileSync = await getFileSyncService()
-    await runEffect(fileSync.stop())
-    if (unsubscribeEvents) {
-      unsubscribeEvents()
+    try {
+      if (fileSyncService) await runEffect(fileSyncService.stop())
+    } finally {
+      unsubscribeEvents?.()
       unsubscribeEvents = null
+      if (currentScope) await runEffect(Scope.close(currentScope, Exit.void))
     }
-    await runEffect(Scope.close(currentScope, Exit.void))
   }
 
-  const stop = () => {
-    void stopInternal()
+  const start = (): Promise<void> => {
+    if (disposed) return disposal ?? Promise.resolve()
+    if (requestedRun !== 0) return lifecycle
+    const run = ++nextRun
+    requestedRun = run
+    return enqueue(async () => {
+      if (disposed || requestedRun !== run || scope) return
+      try {
+        scope = await runEffect(Scope.make())
+        const fileSync = await getFileSyncService()
+        if (disposed || requestedRun !== run) {
+          await stopInternal()
+          return
+        }
+        await ensureEventSubscription()
+        await runEffect(Scope.provide(fileSync.start(), scope))
+      } catch (error) {
+        if (requestedRun === run) requestedRun = 0
+        await stopInternal()
+        // ManagedRuntime memoizes layer acquisition failures. Rebuild for a later start.
+        if (!fileSyncService) {
+          await runtime.dispose()
+          runtime = ManagedRuntime.make(MainLayer)
+        }
+        notify({ type: "sync:error", error, context: "start" })
+      }
+    })
+  }
+
+  const stop = (): Promise<void> => {
+    requestedRun = 0
+    return enqueue(stopInternal)
   }
 
   const saveFile = async (file: File): Promise<SyncFileOperationResult> => {
@@ -397,6 +431,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const readFile = async (path: string): Promise<File> =>
     runEffect(
       Effect.gen(function*() {
+        if (disposed) throw new Error("FileSync instance is disposed")
         const localStorage = yield* LocalFileStorage
         return yield* localStorage.readFile(path)
       })
@@ -405,6 +440,7 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   const getFileUrl = async (path: string): Promise<string | null> =>
     runEffect(
       Effect.gen(function*() {
+        if (disposed) throw new Error("FileSync instance is disposed")
         const localStorage = yield* LocalFileStorage
         const exists = yield* localStorage.fileExists(path)
         if (!exists) return null
@@ -423,10 +459,11 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
   }
 
   const triggerSync = () => {
-    void (async () => {
+    void enqueue(async () => {
+      if (disposed || requestedRun === 0 || !scope) return
       const fileSync = await getFileSyncService()
-      await runEffect(Effect.scoped(fileSync.syncNow()))
-    })()
+      await runEffect(Scope.provide(fileSync.syncNow(), scope))
+    })
   }
 
   const retryErrors = async (): Promise<ReadonlyArray<string>> => {
@@ -434,11 +471,18 @@ export function createFileSync(config: CreateFileSyncConfig): FileSyncInstance {
     return runEffect(fileSync.retryErrors())
   }
 
-  const dispose = async () => {
-    if (disposed) return
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal
     disposed = true
-    await stopInternal()
-    await runtime.dispose()
+    requestedRun = 0
+    disposal = enqueue(async () => {
+      try {
+        await stopInternal()
+      } finally {
+        await runtime.dispose()
+      }
+    })
+    return disposal
   }
 
   return {

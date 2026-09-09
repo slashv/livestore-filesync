@@ -224,3 +224,42 @@ const result = await processor.process('file:///path/to/image.jpg', {
 })
 // Returns { uri: 'file:///path/to/processed.jpg', width, height, mimeType }
 ```
+
+## Thumbnail lifecycle
+
+Thumbnail singleton mounts are reference counted per store object and user ID. A disposer
+only releases its original generation; replacing a store/user or calling `disposeThumbnails()`
+cannot let old cleanup dispose a newer instance. Repeated mounts keep the first configuration.
+Dispose and initialize again to apply new sizes, format, processor, or filesystem options.
+
+`start()` and `stop()` remain compatible with fire-and-forget use and can also be awaited.
+Startup, stop, and disposal are serialized. Explicit stop cancels deferred automatic startup;
+failed worker initialization can be retried. Thumbnail events reach configured callbacks and
+`onThumbnailEvent` subscribers independently, even when a listener throws.
+
+Only a running leader generates thumbnails. Stop and leadership loss invalidate pending
+publication; restart/acquisition scans persisted queued or interrupted generation work again.
+Worker request cancellation removes its pending callback, and late worker replies cannot
+publish a thumbnail into a newer run. Started filesystem writes and configuration cleanup
+are joined during shutdown before another singleton generation starts. An adapter operation
+that never settles can therefore delay shutdown indefinitely. Already-written bytes and
+physical image processing that cannot be cancelled are not rolled back by stop.
+
+When `filesTable` is supplied, generation and publication also require a live source
+row with the queued ID, content hash, and path. Edits and deletions invalidate old
+worker replies and writes; an old attempt cannot retire ownership of a newer queued
+attempt. Polling picks up the current version once its original bytes are local
+(or call `regenerate()` explicitly). State and URL lookups hide deleted or outdated
+content, and URL resolution rechecks the source after storage reads. Rejected blob
+URLs are revoked. Already-started writes can leave unreferenced local thumbnails;
+these guards do not provide physical cancellation or garbage collection.
+
+`filesTable` remains optional for compatibility. Without it, stored thumbnail state
+and URLs can be read, but source deletion/version validation and automatic generation
+are unavailable. Supply the core files table for the guarantees above.
+
+Controlled worker and filesystem tests cover edits/deletions during generation and
+writes, stale URL reads, newer queue ownership, and eventual generation of the current
+version. Production schema tests assert every thumbnail event is `clientOnly`, so
+an accidental remotely synced completion fails deterministically, alongside the
+11 real thumbnail browser cases.

@@ -67,27 +67,36 @@ export interface InitFileSyncConfig {
   userId?: string
 }
 
-let singleton: FileSyncInstance | null = null
-let singletonUserId: string | null = null
-let singletonRemoteMode: "remote" | "local-only" | null = null
-let singletonRefCount = 0
+interface SingletonGeneration {
+  instance: FileSyncInstance
+  store: Store<any>
+  userId: string | null
+  remoteMode: "remote" | "local-only"
+  refs: number
+  wantsStart: boolean
+  ready: Promise<void>
+}
 
-const retainSingleton = (): () => Promise<void> => {
-  singletonRefCount += 1
-  let disposed = false
+let singleton: SingletonGeneration | null = null
+let retirement: Promise<void> = Promise.resolve()
 
+const retire = (generation: SingletonGeneration): Promise<void> => {
+  const pending = generation.instance.dispose()
+  retirement = Promise.all([retirement, pending]).then(() => undefined)
+  void retirement.catch((error) => console.error("[FileSync] Cleanup failed:", error))
+  return retirement
+}
+
+const retainSingleton = (generation: SingletonGeneration): () => Promise<void> => {
+  generation.refs += 1
+  let released = false
   return async () => {
-    if (disposed) return
-    disposed = true
-
-    singletonRefCount = Math.max(0, singletonRefCount - 1)
-    if (singletonRefCount > 0) return
-
-    const instance = singleton
-    singleton = null
-    singletonUserId = null
-    singletonRemoteMode = null
-    await instance?.dispose()
+    if (released) return
+    released = true
+    generation.refs -= 1
+    if (generation.refs > 0) return
+    if (singleton === generation) singleton = null
+    await retire(generation)
   }
 }
 
@@ -95,7 +104,7 @@ const requireFileSync = (): FileSyncInstance => {
   if (!singleton) {
     throw new Error("FileSync not initialized. Call initFileSync(store, config) first.")
   }
-  return singleton
+  return singleton.instance
 }
 
 const validateDefaultSchema = (store: Store<any>) => {
@@ -182,22 +191,12 @@ export const initFileSync = (
   const userId = config.userId ?? null
   const remoteMode = config.remote === false ? "local-only" : "remote"
 
-  // If singleton exists but for a different user or mode, dispose it first
-  if (singleton && (singletonUserId !== userId || singletonRemoteMode !== remoteMode)) {
-    console.log("[FileSync] User or remote mode changed, disposing old instance")
-    singleton.dispose()
-    singleton = null
-    singletonUserId = null
-    singletonRemoteMode = null
-    singletonRefCount = 0
+  if (
+    singleton && singleton.store === store && singleton.userId === userId &&
+    singleton.remoteMode === remoteMode
+  ) {
+    return retainSingleton(singleton)
   }
-
-  if (singleton) {
-    return retainSingleton()
-  }
-
-  singletonUserId = userId
-  singletonRemoteMode = remoteMode
 
   if (!config.fileSystem) {
     throw new Error(
@@ -215,7 +214,7 @@ export const initFileSync = (
       ...(config.remote?.includeCredentials ? { includeCredentials: config.remote.includeCredentials } : {})
     }
 
-  singleton = createFileSync({
+  const instance = createFileSync({
     store,
     schema,
     remote,
@@ -224,18 +223,35 @@ export const initFileSync = (
     options: {
       ...config.options,
       onEvent: (event) => {
-        config.options?.onEvent?.(event)
+        if (singleton?.instance !== instance) return
+        try {
+          config.options?.onEvent?.(event)
+        } catch (error) {
+          console.error("[FileSync] Event listener failed:", error)
+        }
         _broadcastEvent(event)
       }
     }
   })
 
-  // Auto-start by default
-  if (config.autoStart !== false) {
-    singleton.start()
+  const previous = singleton
+  const retired = previous ? retire(previous) : retirement
+  const generation: SingletonGeneration = {
+    instance,
+    store,
+    userId,
+    remoteMode,
+    refs: 0,
+    ready: retired,
+    wantsStart: config.autoStart !== false
   }
+  singleton = generation
+  // Detach before awaiting cleanup: old disposers can never affect this generation.
+  void retired.then(() => {
+    if (singleton === generation && generation.wantsStart) return instance.start()
+  }).catch((error) => console.error("[FileSync] Replacement cleanup failed:", error))
 
-  return retainSingleton()
+  return retainSingleton(generation)
 }
 
 /**
@@ -253,30 +269,31 @@ export const initFileSync = (
  * ```
  */
 export const disposeFileSync = async (): Promise<void> => {
-  if (singleton) {
-    console.log("[FileSync] Disposing singleton")
-    await singleton.dispose()
-    singleton = null
-    singletonUserId = null
-    singletonRemoteMode = null
-    singletonRefCount = 0
-  }
+  const generation = singleton
+  singleton = null
+  await (generation ? retire(generation) : retirement)
 }
 
 /**
  * Start the file sync process.
  * Only needed if initFileSync was called with autoStart: false.
  */
-export const startFileSync = (): void => {
-  requireFileSync().start()
+export const startFileSync = async (): Promise<void> => {
+  requireFileSync()
+  const generation = singleton!
+  generation.wantsStart = true
+  await generation.ready
+  if (singleton === generation && generation.wantsStart) await generation.instance.start()
 }
 
 /**
  * Stop the file sync process.
  * Can be restarted later with startFileSync().
  */
-export const stopFileSync = (): void => {
-  requireFileSync().stop()
+export const stopFileSync = (): Promise<void> => {
+  const instance = requireFileSync()
+  singleton!.wantsStart = false
+  return instance.stop()
 }
 
 export const saveFile = (file: File) => requireFileSync().saveFile(file)
@@ -332,6 +349,10 @@ export const onFileSyncEvent = (
 // This is wired up during initFileSync
 export const _broadcastEvent = (event: FileSyncEvent): void => {
   for (const listener of eventListeners) {
-    listener(event)
+    try {
+      listener(event)
+    } catch (error) {
+      console.error("[FileSync] Event listener failed:", error)
+    }
   }
 }

@@ -13,10 +13,12 @@ import {
   RemoteStorage
 } from "../src/services/index.js"
 import { LocalFileStateManagerLive } from "../src/services/local-file-state/index.js"
+import { LocalFileStorage } from "../src/services/local-file-storage/index.js"
 import { sanitizeStoreId } from "../src/utils/index.js"
+import { waitFor } from "./helpers/livestore.js"
 
 describe("FileSync remote delete", () => {
-  it("deletes the remote file if the file is deleted during an in-flight upload", async () => {
+  it("retains the remote file if the file is deleted during an in-flight upload", async () => {
     const adapter = makeInMemoryAdapter()
     const fileSyncSchema = createFileSyncSchema()
     const { createMaterializers, events, tables } = fileSyncSchema
@@ -35,8 +37,18 @@ describe("FileSync remote delete", () => {
     const uploadStarted = await Effect.runPromise(Deferred.make<void>())
     const allowUpload = await Effect.runPromise(Deferred.make<void>())
 
+    let remoteDeletes = 0
+
     const remoteWithDelay = {
       ...remoteService,
+      delete: (key: string) =>
+        remoteService.delete(key).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              remoteDeletes++
+            })
+          )
+        ),
       upload: (file: File, options: { key: string }) =>
         Effect.gen(function*() {
           yield* Deferred.succeed(uploadStarted, undefined)
@@ -80,14 +92,6 @@ describe("FileSync remote delete", () => {
       await runtime.runPromise(Scope.provide(fileSync.start(), scope))
 
       let targetFileId = ""
-      const uploadCompleted = new Promise<void>((resolve) => {
-        const unsubscribe = fileSync.onEvent((event) => {
-          if (event.type === "upload:complete" && event.fileId === targetFileId) {
-            unsubscribe()
-            resolve()
-          }
-        })
-      })
 
       const file = new File(["hello world"], "hello.txt", { type: "text/plain" })
       const result = await runtime.runPromise(fileSync.saveFile(file))
@@ -98,10 +102,12 @@ describe("FileSync remote delete", () => {
       await runtime.runPromise(fileSync.deleteFile(targetFileId))
 
       await Effect.runPromise(Deferred.succeed(allowUpload, undefined))
-      await uploadCompleted
+      const local = await runtime.runPromise(LocalFileStorage)
+      await waitFor(() => runtime.runPromise(local.fileExists(result.path)), (exists) => !exists)
 
       const remoteStore = await Effect.runPromise(Ref.get(storeRef))
-      expect(remoteStore.size).toBe(0)
+      expect(remoteStore.size).toBe(1)
+      expect(remoteDeletes).toBe(0)
     } finally {
       await runtime.runPromise(fileSync.stop())
       await runtime.runPromise(Scope.close(scope, Exit.void))
