@@ -617,7 +617,11 @@ export const makeExpoFileSystem = (options: ExpoFileSystemOptions = {}): FS.File
       })
 
       const targetLength = Number(length ?? 0n)
-      const truncatedBytes = currentBytes.slice(0, targetLength)
+      if (!Number.isSafeInteger(targetLength) || targetLength < 0) {
+        return yield* Effect.fail(makeSystemError("truncate", "Unknown", path, new Error("Invalid truncate length")))
+      }
+      const truncatedBytes = new Uint8Array(targetLength)
+      truncatedBytes.set(currentBytes.subarray(0, targetLength))
 
       yield* Effect.tryPromise({
         try: async () => {

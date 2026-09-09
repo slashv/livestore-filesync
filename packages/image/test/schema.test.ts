@@ -3,6 +3,13 @@ import { createThumbnailSchema } from "../src/thumbnails/schema/index.js"
 
 describe("Thumbnail Schema", () => {
   describe("createThumbnailSchema", () => {
+    it("keeps every production thumbnail event client-only", () => {
+      // Complements the two-client E2E: replication timing cannot hide a synced completion.
+      for (const event of Object.values(createThumbnailSchema().events)) {
+        expect(event.options.clientOnly, event.name).toBe(true)
+      }
+    })
+
     it("should create schema with tables", () => {
       const schema = createThumbnailSchema()
 

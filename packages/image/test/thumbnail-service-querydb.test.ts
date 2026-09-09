@@ -145,7 +145,7 @@ describe("ThumbnailService query behavior", () => {
     const selectQuery = { kind: "files.select" }
     const filesTable = {
       select: vi.fn(() => selectQuery),
-      where: vi.fn()
+      where: vi.fn(() => selectQuery)
     }
 
     const files = [
@@ -174,16 +174,7 @@ describe("ThumbnailService query behavior", () => {
 
     const store = {
       commit: vi.fn(),
-      query: vi
-        .fn<(query: unknown) => unknown>()
-        // readConfig()
-        .mockReturnValueOnce([])
-        // scanExistingFiles() -> files table
-        .mockReturnValueOnce(files)
-        // queueFile() -> readFileThumbnailState(file.id)
-        .mockReturnValueOnce([])
-        .mockReturnValueOnce([])
-        .mockReturnValueOnce([])
+      query: vi.fn((query: unknown) => query === selectQuery ? files : [])
     }
 
     const service = await makeService({ concurrency: 0, filesTable, store })
@@ -208,7 +199,7 @@ describe("ThumbnailService query behavior", () => {
     const selectQuery = { kind: "files.select" }
     const filesTable = {
       select: vi.fn(() => selectQuery),
-      where: vi.fn()
+      where: vi.fn(() => selectQuery)
     }
 
     const files = [
@@ -228,39 +219,20 @@ describe("ThumbnailService query behavior", () => {
       }
     ]
 
-    const queuedStateRow = {
-      contentHash: "hash-1",
-      fileId: "file-1",
-      mimeType: "image/jpeg",
-      sizesJson: JSON.stringify({ small: { status: "queued" } })
-    }
-    const skippedStateRow = {
-      contentHash: "hash-2",
-      fileId: "file-2",
-      mimeType: "unknown",
-      sizesJson: JSON.stringify({ small: { status: "skipped" } })
-    }
-
+    const states = new Map<string, unknown>()
     const store = {
-      commit: vi.fn(),
-      query: vi
-        .fn<(query: unknown) => unknown>()
-        // First start: readConfig()
-        .mockReturnValueOnce([])
-        // First start: scanExistingFiles() -> files table
-        .mockReturnValueOnce(files)
-        // First start: queueFile() -> readFileThumbnailState(file-1)
-        .mockReturnValueOnce([])
-        // First start: queueFile() -> readFileThumbnailState(file-2)
-        .mockReturnValueOnce([])
-        // Second start: readConfig()
-        .mockReturnValueOnce([])
-        // Second start: scanExistingFiles() -> files table
-        .mockReturnValueOnce(files)
-        // Second start: queueFile() -> readFileThumbnailState(file-1)
-        .mockReturnValueOnce([queuedStateRow])
-        // Second start: queueFile() -> readFileThumbnailState(file-2)
-        .mockReturnValueOnce([skippedStateRow])
+      commit: vi.fn((...events: Array<any>) => {
+        for (const event of events) {
+          if (getEventName(event) === "v1.ThumbnailStateUpsert") states.set(event.args.fileId, event.args)
+        }
+      }),
+      query: vi.fn((query: any) => {
+        if (query === selectQuery) return files
+        const sql = query.asSql()
+        if (sql.usedTables.has("thumbnailConfig")) return []
+        const id = sql.bindValues[0]
+        return id ? [states.get(id)].filter(Boolean) : [...states.values()]
+      })
     }
 
     const service = await makeService({

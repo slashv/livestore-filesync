@@ -22,6 +22,7 @@ import {
   Layer,
   PubSub,
   Ref,
+  Result,
   Schedule,
   Scope,
   Semaphore,
@@ -1383,46 +1384,58 @@ export const makeFileSync = (
     ): Effect.Effect<string | null, StorageError | FileNotFoundError> =>
       Effect.gen(function*() {
         const file = yield* getFile(fileId)
-        if (!file) return null
+        if (!file || file.deletedAt) return null
 
-        const localState = yield* getLocalFilesState()
-        const local = localState[fileId]
+        const result = yield* Effect.gen(function*() {
+          const localState = yield* getLocalFilesState()
+          const local = localState[fileId]
 
-        if (isLocalOnly) {
-          const exists = yield* localStorage.fileExists(file.path)
-          if (!exists) return null
-          if (isNode()) {
-            return resolveLocalFileUrl(deps.localPathRoot, file.path)
-          }
-          return yield* localStorage.getFileUrl(file.path)
-        }
-
-        if (local?.localHash) {
-          const exists = yield* localStorage.fileExists(file.path)
-          if (exists) {
+          if (isLocalOnly) {
+            const exists = yield* localStorage.fileExists(file.path)
+            if (!exists) return null
             if (isNode()) {
               return resolveLocalFileUrl(deps.localPathRoot, file.path)
             }
             return yield* localStorage.getFileUrl(file.path)
           }
-        }
 
-        if (config.autoPrioritizeOnResolve !== false) {
-          if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
-            yield* executor.prioritizeDownload(fileId)
+          if (local?.localHash) {
+            const exists = yield* localStorage.fileExists(file.path)
+            if (exists) {
+              if (isNode()) {
+                return resolveLocalFileUrl(deps.localPathRoot, file.path)
+              }
+              return yield* localStorage.getFileUrl(file.path)
+            }
           }
-        }
 
-        if (!file.remoteKey) return null
-        return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
-          Effect.mapError(
-            (error) =>
-              new StorageError({
-                message: "Failed to resolve remote URL",
-                cause: error
-              })
+          if (config.autoPrioritizeOnResolve !== false) {
+            if (local?.downloadStatus === "pending" || local?.downloadStatus === "queued") {
+              yield* executor.prioritizeDownload(fileId)
+            }
+          }
+
+          if (!file.remoteKey) return null
+          return yield* remoteStorage.getDownloadUrl(file.remoteKey).pipe(
+            Effect.mapError(
+              (error) =>
+                new StorageError({
+                  message: "Failed to resolve remote URL",
+                  cause: error
+                })
+            )
           )
-        )
+        }).pipe(Effect.result)
+        // Storage reads and signing can outlive the version that requested them.
+        const current = yield* getFile(fileId)
+        if (
+          current && !current.deletedAt && current.contentHash === file.contentHash &&
+          current.path === file.path && current.remoteKey === file.remoteKey
+        ) {
+          return Result.isSuccess(result) ? result.success : yield* Effect.fail(result.failure)
+        }
+        if (Result.isSuccess(result) && result.success?.startsWith("blob:")) URL.revokeObjectURL(result.success)
+        return null
       })
 
     const setOnline = (online: boolean): Effect.Effect<void> =>

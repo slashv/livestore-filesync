@@ -47,13 +47,14 @@ const setup = (leader = true) => {
   const schema = createThumbnailSchema()
   const select = {}
   const filesTable = { select: () => select, where: () => select }
+  const source = { id: "file", contentHash: "hash", path: "photo.jpg", deletedAt: null as Date | null }
   const states = new Map<string, any>()
   let configRow: any
   const store = {
     [StoreInternalsSymbol]: { clientSession: { lockStatus } },
     query: (query: any) => {
-      if (query === select) return [{ id: "file", contentHash: "hash", path: "photo.jpg", deletedAt: null }]
-      if (query.tableDef?.name === "thumbnailConfig") return configRow ? [configRow] : []
+      if (query === select) return [{ ...source }]
+      if (query.asSql().usedTables.has("thumbnailConfig")) return configRow ? [configRow] : []
       return [...states.values()]
     },
     commit: vi.fn((...events: Array<any>) => {
@@ -64,9 +65,10 @@ const setup = (leader = true) => {
     })
   }
   const writes = vi.fn(() => Effect.void)
+  const reads = vi.fn(() => Effect.succeed(new Uint8Array(12)))
   const fileSystem = Layer.succeed(FileSystem, {
     exists: () => Effect.succeed(true),
-    readFile: () => Effect.succeed(new Uint8Array(12)),
+    readFile: reads,
     makeDirectory: () => Effect.void,
     writeFile: writes,
     remove: () => Effect.void
@@ -80,7 +82,7 @@ const setup = (leader = true) => {
     fileSystem,
     worker: ControlledWorker as unknown as new() => Worker
   }
-  return { config, store, lockStatus, writes }
+  return { config, store, lockStatus, writes, reads, source, states }
 }
 afterEach(async () => {
   await disposeThumbnails()
@@ -88,6 +90,244 @@ afterEach(async () => {
 })
 
 describe("public thumbnail lifecycle", () => {
+  it("preserves legacy stored-state lookup without filesTable", async () => {
+    const { config, states } = setup()
+    states.set("file", {
+      fileId: "file",
+      contentHash: "hash",
+      mimeType: "image/jpeg",
+      sizesJson: JSON.stringify({ small: { status: "done", path: "thumbnails/hash/small.webp" } })
+    })
+    const instance = createThumbnails({ ...config, filesTable: undefined })
+    try {
+      expect(await instance.resolveThumbnailUrl("file", "small")).not.toBeNull()
+      expect(instance.getThumbnailState("file")?.contentHash).toBe("hash")
+    } finally {
+      await instance.dispose()
+    }
+  })
+
+  it("polls the current source version after rejecting an obsolete worker response", async () => {
+    const { config, source, writes } = setup()
+    const instance = createThumbnails(config)
+    try {
+      const starting = instance.start()
+      await vi.waitFor(() => expect(ControlledWorker.instances).toHaveLength(1))
+      const worker = ControlledWorker.instances[0]!
+      worker.emit({ type: "ready" })
+      await starting
+      await vi.waitFor(() => expect(worker.requests).toHaveLength(1))
+      Object.assign(source, { contentHash: "new-hash", path: "new.jpg" })
+      worker.emit({
+        type: "complete",
+        id: worker.requests[0].id,
+        thumbnails: [{ sizeName: "small", data: new ArrayBuffer(2) }]
+      })
+      await vi.waitFor(() => expect(worker.requests).toHaveLength(2), { timeout: 5000 })
+      expect(writes).not.toHaveBeenCalled()
+      worker.emit({
+        type: "complete",
+        id: worker.requests[1].id,
+        thumbnails: [{ sizeName: "small", data: new ArrayBuffer(3) }]
+      })
+      await vi.waitFor(() =>
+        expect(instance.getThumbnailState("file")).toMatchObject({
+          contentHash: "new-hash",
+          sizes: { small: { status: "done" } }
+        })
+      )
+      expect(await instance.resolveThumbnailUrl("file", "small")).not.toBeNull()
+    } finally {
+      await instance.dispose()
+    }
+  })
+
+  it.each(["edit", "delete"] as const)(
+    "revalidates after a generation-error listener performs an %s",
+    async (change) => {
+      const { config, source, store } = setup()
+      const onEvent = vi.fn((event: { type: string }) => {
+        if (event.type !== "thumbnail:generation-error") return
+        if (change === "delete") source.deletedAt = new Date()
+        else Object.assign(source, { contentHash: "new-hash", path: "new.jpg" })
+      })
+      const instance = createThumbnails({ ...config, onEvent })
+      try {
+        const starting = instance.start()
+        await vi.waitFor(() => expect(ControlledWorker.instances).toHaveLength(1))
+        const worker = ControlledWorker.instances[0]!
+        worker.emit({ type: "ready" })
+        await starting
+        await vi.waitFor(() => expect(worker.requests).toHaveLength(1))
+        worker.emit({ type: "error", id: worker.requests[0].id, error: "worker failed" })
+        await vi.waitFor(() =>
+          expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+            type: "thumbnail:generation-error"
+          }))
+        )
+        expect(instance.getThumbnailState("file")).toBeNull()
+        if (change === "edit") {
+          await instance.regenerate("file")
+          await vi.waitFor(() => expect(worker.requests).toHaveLength(2))
+          worker.emit({
+            type: "complete",
+            id: worker.requests[1].id,
+            thumbnails: [{ sizeName: "small", data: new ArrayBuffer(3) }]
+          })
+          await vi.waitFor(() =>
+            expect(instance.getThumbnailState("file")).toMatchObject({
+              contentHash: "new-hash",
+              sizes: { small: { status: "done" } }
+            })
+          )
+        }
+      } finally {
+        await instance.dispose()
+      }
+      expect(store.commit.mock.calls.flat().some((event) => event.args.sizesJson?.includes("\"error\""))).toBe(false)
+    }
+  )
+
+  it.each(["edit", "delete"] as const)(
+    "rejects %s during worker generation and preserves newer queued ownership",
+    async (change) => {
+      const { config, source, store, writes } = setup()
+      const instance = createThumbnails(config)
+      try {
+        const starting = instance.start()
+        await vi.waitFor(() => expect(ControlledWorker.instances).toHaveLength(1))
+        const worker = ControlledWorker.instances[0]!
+        worker.emit({ type: "ready" })
+        await starting
+        await vi.waitFor(() => expect(worker.requests).toHaveLength(1))
+        if (change === "delete") source.deletedAt = new Date()
+        else Object.assign(source, { contentHash: "new-hash", path: "new.jpg" })
+        await instance.regenerate("file")
+        worker.emit({
+          type: "complete",
+          id: worker.requests[0].id,
+          thumbnails: [{ sizeName: "small", data: new ArrayBuffer(2) }]
+        })
+        if (change === "edit") {
+          await vi.waitFor(() => expect(worker.requests).toHaveLength(2))
+          // An old completion must not retire ownership of this current attempt.
+          await instance.regenerate("file")
+          expect(instance.getThumbnailState("file")?.sizes.small?.status).toBe("generating")
+          worker.emit({
+            type: "complete",
+            id: worker.requests[1].id,
+            thumbnails: [{ sizeName: "small", data: new ArrayBuffer(3) }]
+          })
+          await vi.waitFor(() =>
+            expect(instance.getThumbnailState("file")).toMatchObject({
+              contentHash: "new-hash",
+              sizes: { small: { status: "done" } }
+            })
+          )
+          expect(await instance.resolveThumbnailUrl("file", "small")).not.toBeNull()
+          expect(writes).toHaveBeenCalledTimes(1)
+          await instance.regenerate("file")
+          expect(worker.requests).toHaveLength(2)
+        } else {
+          await instance.dispose()
+          expect(writes).not.toHaveBeenCalled()
+        }
+        expect(
+          store.commit.mock.calls.flat().some((event) =>
+            event.args.contentHash === "hash" && event.args.sizesJson?.includes("\"done\"")
+          )
+        ).toBe(false)
+      } finally {
+        await instance.dispose()
+      }
+    }
+  )
+
+  it.each(["edit", "delete"] as const)("rejects %s while thumbnail storage is writing", async (change) => {
+    const { config, source, store, writes } = setup()
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    writes.mockImplementation(() => Effect.promise(() => barrier))
+    const instance = createThumbnails(config)
+    try {
+      const starting = instance.start()
+      await vi.waitFor(() => expect(ControlledWorker.instances).toHaveLength(1))
+      const worker = ControlledWorker.instances[0]!
+      worker.emit({ type: "ready" })
+      await starting
+      await vi.waitFor(() => expect(worker.requests).toHaveLength(1))
+      worker.emit({
+        type: "complete",
+        id: worker.requests[0].id,
+        thumbnails: [{ sizeName: "small", data: new ArrayBuffer(2) }]
+      })
+      await vi.waitFor(() => expect(writes).toHaveBeenCalledTimes(1))
+      if (change === "delete") source.deletedAt = new Date()
+      else Object.assign(source, { contentHash: "new-hash", path: "new.jpg" })
+      release()
+      if (change === "edit") {
+        await instance.regenerate("file")
+        await vi.waitFor(() => expect(worker.requests).toHaveLength(2))
+        worker.emit({
+          type: "complete",
+          id: worker.requests[1].id,
+          thumbnails: [{ sizeName: "small", data: new ArrayBuffer(3) }]
+        })
+        await vi.waitFor(() => expect(instance.getThumbnailState("file")?.sizes.small?.status).toBe("done"))
+        expect(instance.getThumbnailState("file")?.contentHash).toBe("new-hash")
+      } else {
+        expect(await instance.resolveThumbnailUrl("file", "small")).toBeNull()
+      }
+    } finally {
+      release()
+      await instance.dispose()
+    }
+    expect(
+      store.commit.mock.calls.flat().some((event) =>
+        event.args.contentHash === "hash" && event.args.sizesJson?.includes("\"done\"")
+      )
+    ).toBe(false)
+  })
+
+  it.each(["edit", "delete", "path"] as const)("rejects %s during thumbnail URL reads", async (change) => {
+    const { config, reads, source, states } = setup()
+    states.set("file", {
+      fileId: "file",
+      contentHash: "hash",
+      mimeType: "image/jpeg",
+      sizesJson: JSON.stringify({ small: { status: "done", path: "thumbnails/hash/small.webp" } })
+    })
+    const instance = createThumbnails(config)
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    reads.mockImplementation(() =>
+      Effect.promise(async () => {
+        await barrier
+        return new Uint8Array(12)
+      })
+    )
+    try {
+      const resolving = instance.resolveThumbnailUrl("file", "small")
+      await vi.waitFor(() => expect(reads).toHaveBeenCalledOnce())
+      if (change === "delete") source.deletedAt = new Date()
+      else if (change === "path") source.path = "moved.jpg"
+      else source.contentHash = "new-hash"
+      release()
+      expect(await resolving).toBeNull()
+      if (change !== "path") {
+        expect(await instance.resolveThumbnailUrl("file", "small")).toBeNull()
+        expect(instance.getThumbnailState("file")).toBeNull()
+      }
+    } finally {
+      release()
+      await instance.dispose()
+    }
+  })
+
   it("stops startup blocked on worker readiness and can restart", async () => {
     const { config, store } = setup()
     const instance = createThumbnails(config)
