@@ -428,6 +428,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-beta.99
         version: 4.0.0-beta.99(effect@4.0.0-beta.99)(vitest@3.2.4(@types/debug@4.1.12)(@types/node@22.19.7)(jsdom@26.1.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@livestore/adapter-web':
+        specifier: 0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4
+        version: 0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4(4dcf4a4f4e86344a3e99d69bd72cc56a)
       '@livestore/livestore':
         specifier: 0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4
         version: 0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4(4dcf4a4f4e86344a3e99d69bd72cc56a)

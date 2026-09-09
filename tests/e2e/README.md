@@ -42,12 +42,31 @@ All framework implementations must include the following `data-testid` attribute
 pnpm --filter e2e-tests test:react
 ```
 
-The default `pnpm --filter e2e-tests test` command currently targets the React example.
+The default `pnpm test` (at the root) and `pnpm --filter e2e-tests test` run
+React FileSync followed by React thumbnails in Chromium. Run the thumbnail suite alone:
+
+```bash
+pnpm --filter e2e-tests test:react-thumbnail
+```
+
+Mixed-stage refresh coverage holds upload requests until completed, in-progress,
+and queued files coexist, then reloads and checks every remote payload. Cross-context
+thumbnail coverage blocks the second context's download, proves completed thumbnail
+state was not synced, then checks independently generated thumbnail bytes and dimensions.
+The local Worker backend is started by Vite; external R2/S3 credentials are not required.
+These two scenarios use request barriers rather than fixed transfer delays.
+
+Chromium is the default verification target. Firefox is available explicitly via
+`E2E_FRAMEWORK=react-thumbnail pnpm --filter e2e-tests exec playwright test --project=firefox`;
+it is not part of the default pass claim. Vue examples are historical.
+The FileSync run reports thumbnail specs as configured skips; the subsequent
+React-thumbnail run executes them. Do not run package builds concurrently with
+browser tests: Vite can reload during transfer assertions.
 
 ### Testing Against Different Ports/URLs
 
 ```bash
-BASE_URL=http://localhost:60004 pnpm test
+E2E_PORT=60014 pnpm --filter e2e-tests test:react
 ```
 
 ### Auth for Remote Storage Checks
@@ -88,7 +107,7 @@ pnpm --filter e2e-tests test:vue
 
 ```bash
 # Run only upload tests
-pnpm test --grep "File Upload"
+pnpm --filter e2e-tests test:react --grep "File Upload"
 
 # Run in headed mode for debugging
 pnpm test:headed

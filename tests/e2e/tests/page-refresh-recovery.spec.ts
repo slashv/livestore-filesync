@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
   createTestImage,
-  createMultipleTestImages,
+  authHeaders,
   waitForLiveStore,
   waitForLiveStoreAndSync,
   waitForImageLoaded,
@@ -212,100 +212,53 @@ test.describe('Page Refresh Recovery', () => {
     await downloaderContext.close()
   })
 
-  test.skip('should recover multiple files at various stages after refresh', async ({ browser }) => {
-    // Skipped: This test has additional complexity with multiple files that
-    // exposes a separate timing issue unrelated to the core page refresh recovery.
-    // The single-file tests adequately cover the refresh recovery functionality.
-    const storeId = generateStoreId('refresh_multi')
-    const url = `/?storeId=${storeId}`
-    const fileCount = 3
-    const uploadDelayMs = 3000
-
+  test('should recover multiple files at various stages after refresh', async ({ browser }) => {
     const context = await browser.newContext()
     const page = await context.newPage()
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => { release = resolve })
+    let blockUploads = false
+    let intercepted = 0
+    await context.route('**/livestore-filesync-files/**', async (route) => {
+      if (route.request().method() === 'PUT' && blockUploads) {
+        intercepted++
+        await barrier
+        await route.abort()
+      } else await route.continue()
+    })
+    const inputs = Array.from({ length: 7 }, (_, i) => ({
+      name: `refresh-${i}.txt`, mimeType: 'text/plain', buffer: Buffer.from(`refresh payload ${i}`),
+    }))
+    try {
+      await page.goto(`/?storeId=${generateStoreId('refresh_multi')}`)
+      await waitForLiveStore(page)
+      await page.locator('input[type="file"]').setInputFiles(inputs[0]!)
+      await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText('done')
+      blockUploads = true
+      await page.locator('input[type="file"]').setInputFiles(inputs.slice(1))
+      await expect(page.locator('[data-testid="file-card"]')).toHaveCount(inputs.length)
+      await expect.poll(() => intercepted).toBeGreaterThan(0)
+      await expect.poll(async () => {
+        const statuses = await page.locator('[data-testid="file-upload-status"]').allTextContents()
+        return ['done', 'inProgress', 'queued'].every((status) => statuses.includes(status))
+      }).toBe(true)
 
-    let shouldDelay = true
-
-    // Add delay to uploads so we can refresh mid-transfer
-    await page.route('**/livestore-filesync-files/**', async (route) => {
-      if (route.request().method() === 'PUT') {
-        if (shouldDelay) {
-          await new Promise((resolve) => setTimeout(resolve, uploadDelayMs))
-        }
+      // The old requests remain blocked through reload; new requests can finish.
+      blockUploads = false
+      await page.reload()
+      release()
+      await waitForLiveStore(page)
+      await expect(page.locator('[data-testid="file-upload-status"]')).toHaveText(inputs.map(() => 'done'), { timeout: 30000 })
+      const keys = await page.locator('[data-testid="file-remote-key"]').allTextContents()
+      const contents = []
+      for (const key of keys) {
+        const response = await page.request.get(toRemoteUrl(page.url(), key.trim()), { headers: authHeaders })
+        expect(response.status()).toBe(200)
+        contents.push((await response.body()).toString())
       }
-      await route.continue()
-    })
-
-    await page.goto(url)
-    await waitForLiveStore(page)
-
-    // Upload multiple files
-    const testImages = createMultipleTestImages(fileCount)
-    await page.locator('input[type="file"]').setInputFiles(testImages)
-
-    // Wait for all file cards to appear
-    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(fileCount, {
-      timeout: 10000,
-    })
-
-    // Wait until we have files in progress
-    await expect
-      .poll(
-        async () => {
-          const status = await getSyncStatusCounts(page)
-          return status.uploading + status.queuedUpload
-        },
-        { timeout: 10000, intervals: [100] }
-      )
-      .toBeGreaterThan(0)
-
-    // Log current state before refresh
-    const statusBeforeRefresh = await getSyncStatusCounts(page)
-    console.log('State before refresh:', {
-      uploading: statusBeforeRefresh.uploading,
-      queued: statusBeforeRefresh.queuedUpload,
-      pending: statusBeforeRefresh.pendingUpload,
-    })
-
-    // Disable delay for retry after refresh
-    shouldDelay = false
-
-    // REFRESH THE PAGE with files in various states
-    await page.reload()
-    await waitForLiveStore(page)
-
-    // All file cards should still exist
-    await expect(page.locator('[data-testid="file-card"]')).toHaveCount(fileCount, {
-      timeout: 10000,
-    })
-
-    // Wait for all uploads to eventually complete
-    await expect
-      .poll(
-        async () => {
-          const status = await getSyncStatusCounts(page)
-          return status.uploading + status.queuedUpload + status.pendingUpload
-        },
-        { timeout: 60000, intervals: [500] }
-      )
-      .toBe(0)
-
-    // Verify all files show uploadStatus = done
-    const uploadStatuses = page.locator('[data-testid="file-upload-status"]')
-    await expect(uploadStatuses).toHaveCount(fileCount)
-
-    for (let i = 0; i < fileCount; i++) {
-      await expect(uploadStatuses.nth(i)).toHaveText('done')
-    }
-
-    // Verify all images loaded
-    for (let i = 0; i < fileCount; i++) {
-      await waitForImageLoaded(page.locator('[data-testid="file-image"]').nth(i), 15000)
-    }
-
-    console.log(`All ${fileCount} files recovered successfully after refresh!`)
-
-    await context.close()
+      expect(contents.sort()).toEqual(inputs.map((input) => input.buffer.toString()).sort())
+      expect((await getSyncStatusCounts(page)).errors).toBe(0)
+    } finally { release(); await context.close() }
   })
 
   test('should not leave files stuck in inProgress after refresh', async ({ browser }) => {
