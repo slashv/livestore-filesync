@@ -16,9 +16,15 @@ This document summarizes the event-stream refactor that replaces the previous re
 - `tables.fileSyncCursor` client document with default id `global`
 - `events.fileSyncCursorSet` for updating cursor state
 
+The cursor's `updatedAt` value remains a `Date` in application code. Its decoder accepts both the
+persisted epoch-millisecond representation and the ISO string produced when decoded event args
+cross a JSON worker boundary.
+
 ## Event handling rules
 
-- **FileCreated**: If the local file exists, set local state and enqueue upload.
+- **FileCreated**: If the local file exists, set local state and enqueue upload. Repeated create
+  events for an existing file ID are materialized as no-ops, so historical duplicates do not block
+  fresh-client replay; later update and delete events remain authoritative.
 - **FileUpdated**:
   - If local file missing and `remoteKey` exists → queue download.
   - If local hash mismatches and `remoteKey` exists → queue download.
@@ -96,6 +102,8 @@ Event batch re-processing is safe due to:
 1. **Guarded state updates**: reconciliation checks captured metadata and local state before applying its patch.
 2. **Rebuildable queues**: startup, leadership handoff and heartbeat derive missing work from durable rows; active attempts are not duplicated.
 3. **Hash-based decisions**: upload/download decisions compare local bytes with current metadata, never an obsolete event payload.
+4. **Idempotent creates**: Repeated `FileCreated` events for the same primary ID keep the row's
+   current state, including any later `FileUpdated` or `FileDeleted` effects.
 
 Conditional bootstrap retains its upstream-head cursor policy. Before an event cursor advances,
 failed inspections and rejected concurrent patches are persisted in the optional cursor `repairs`
