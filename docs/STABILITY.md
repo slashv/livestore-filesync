@@ -378,3 +378,24 @@ cancellation. Shutdown can wait for protected local storage operations to finish
 not undo bytes already written or a remote upload already accepted by the server. Old work
 cannot publish transfer completion or progress into a replacement run. Remote retention
 continues to protect shared and offline references.
+
+## Adapter completion and test boundaries
+
+OPFS writes and truncation publish only after writable close succeeds. On write,
+truncate, or close failure, the adapter attempts abort and preserves the original
+error. Tests stage bytes until close, verify old bytes during a blocked close, and
+verify failed partial writes do not close and publish staged content. A failed
+creation of a new file can still leave an empty directory entry.
+
+Expo awaits native mutators (creation, writes, copy, move, removal, and truncation)
+whether they return immediately or return a promise. File stats treat Expo `type`
+as a MIME type and convert millisecond timestamps into `Date` values. Controlled module tests exercise byte round trips, ordered
+directory/write completion, and synchronous/asynchronous failures. These are not
+real-device tests and do not establish native atomicity, mobile permission behavior,
+or recovery from an OS kill. Expo writes may leave partial bytes on native failure.
+
+Thumbnail configuration tests use real in-memory LiveStore materializers and the
+production service/storage with controlled filesystem and generation adapters. They
+assert persisted state and output bytes across unchanged and changed configuration,
+without duplicating the production hash. Browser tests exercise real canvas workers,
+OPFS, and the local Worker storage backend.

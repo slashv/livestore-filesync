@@ -1,6 +1,6 @@
 import { Cause, Effect, Option } from "effect"
 import { PlatformError } from "effect/PlatformError"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeOpfsFileSystem } from "./OpfsFileSystem.js"
 
 type Entry = FileEntry | DirectoryEntry
@@ -39,29 +39,26 @@ class MockFileHandle {
     return new File([buffer], this.name, { type: entry.mimeType })
   }
 
-  async createWritable(_options?: { keepExistingData?: boolean }): Promise<{
-    write: (data: Blob) => Promise<void>
-    truncate: (length: number) => Promise<void>
-    close: () => Promise<void>
-  }> {
+  async createWritable(options?: { keepExistingData?: boolean }) {
     const directory = this.directory
     const name = this.name
+    const previous = directory.entries.get(name)
+    let staged: FileEntry = {
+      type: "file",
+      data: options?.keepExistingData && previous?.type === "file" ? previous.data.slice() : new Uint8Array(),
+      mimeType: "application/octet-stream"
+    }
     return {
       write: async (data: Blob) => {
-        const buffer = await data.arrayBuffer()
-        directory.entries.set(name, {
-          type: "file",
-          data: new Uint8Array(buffer),
-          mimeType: data.type || "application/octet-stream"
-        })
+        staged = { type: "file", data: new Uint8Array(await data.arrayBuffer()), mimeType: data.type }
       },
       truncate: async (length: number) => {
-        const entry = directory.entries.get(name)
-        if (entry && entry.type === "file") {
-          entry.data = entry.data.slice(0, length)
-        }
+        staged.data = staged.data.slice(0, length)
       },
-      close: async () => {}
+      close: async () => {
+        directory.entries.set(name, staged)
+      },
+      abort: async () => {}
     }
   }
 }
@@ -156,6 +153,7 @@ describe("OpfsFileSystem", () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     if (originalNavigator) {
       Object.defineProperty(globalThis, "navigator", originalNavigator)
     } else {
@@ -257,5 +255,94 @@ describe("OpfsFileSystem", () => {
     expect(await Effect.runPromise(fs.exists("new.txt"))).toBe(true)
     const renamed = await Effect.runPromise(fs.readFile("new.txt"))
     expect(Array.from(renamed)).toEqual([1, 2, 3])
+  })
+
+  for (const operation of ["write", "truncate", "close"] as const) {
+    it(`preserves published bytes and original error when ${operation} fails`, async () => {
+      const fs = makeOpfsFileSystem()
+      const original = new Uint8Array([1, 2, 3, 4])
+      await Effect.runPromise(fs.writeFile("file.bin", original))
+      const create = MockFileHandle.prototype.createWritable
+      const failure = new DOMException("quota exceeded", "QuotaExceededError")
+      const abort = vi.fn(async () => {
+        throw new Error("abort also failed")
+      })
+      const close = vi.fn()
+      vi.spyOn(MockFileHandle.prototype, "createWritable").mockImplementation(
+        async function(this: MockFileHandle, options) {
+          const writable = await create.call(this, options)
+          return {
+            ...writable,
+            write: async (data: Blob) => {
+              await writable.write(data.slice(0, 1))
+              if (operation === "write") throw failure
+            },
+            truncate: async (length: number) => {
+              await writable.truncate(length)
+              throw failure
+            },
+            close: async () => {
+              close()
+              if (operation === "close") throw failure
+              await writable.close()
+            },
+            abort
+          }
+        }
+      )
+      const result = await Effect.runPromiseExit(
+        operation === "truncate"
+          ? fs.truncate("file.bin", 1)
+          : fs.writeFile("file.bin", new Uint8Array([9, 8, 7]))
+      )
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        const error = Cause.findErrorOption(result.cause)
+        expect(Option.isSome(error)).toBe(true)
+        if (Option.isSome(error)) expect(error.value.cause).toBe(failure)
+      }
+      expect(abort).toHaveBeenCalledOnce()
+      expect(close).toHaveBeenCalledTimes(operation === "close" ? 1 : 0)
+      expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(original)
+    })
+  }
+
+  it("keeps old bytes visible until close settles and waits before reporting success", async () => {
+    const fs = makeOpfsFileSystem()
+    await Effect.runPromise(fs.writeFile("file.bin", new Uint8Array([1])))
+    const create = MockFileHandle.prototype.createWritable
+    let release!: () => void
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const closing = vi.fn()
+    vi.spyOn(MockFileHandle.prototype, "createWritable").mockImplementation(
+      async function(this: MockFileHandle, options) {
+        const writable = await create.call(this, options)
+        return {
+          ...writable,
+          close: async () => {
+            closing()
+            await barrier
+            await writable.close()
+          }
+        }
+      }
+    )
+    let finished = false
+    const writing = Effect.runPromise(fs.writeFile("file.bin", new Uint8Array([2]))).then(() => {
+      finished = true
+    })
+    try {
+      await vi.waitFor(() => expect(closing).toHaveBeenCalledOnce())
+      expect(finished).toBe(false)
+      expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(new Uint8Array([1]))
+      release()
+      await writing
+      expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(new Uint8Array([2]))
+    } finally {
+      release()
+      await writing
+    }
   })
 })

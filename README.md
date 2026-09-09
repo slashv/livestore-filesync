@@ -2,7 +2,7 @@
 
 File sync for LiveStore apps. This missing piece for local-first apps that need to sync files.
 
-**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo currently typechecks but has no adapter runtime tests.
+**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo has controlled filesystem module contract tests; real-device behavior is not yet verified. `pnpm test` includes both maintained React examples in Chromium.
 
 **[!]** This project currently targets an exact LiveStore main snapshot and Effect 4 beta cohort. The pins in `pnpm-workspace.yaml` keep local development and CI on one reproducible package graph. These snapshot pins are development inputs, not a published compatibility promise.
 

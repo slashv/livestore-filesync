@@ -84,6 +84,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@livestore/adapter-web": "catalog:",
     "@livestore/livestore": "catalog:",
     "@livestore/peer-deps": "catalog:",
     "@opentelemetry/api": "catalog:",

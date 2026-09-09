@@ -238,9 +238,18 @@ describe("durable reconciliation", () => {
       const done = await t.seed("done")
       t.advance()
       await t.start()
+      const errors: Array<{ type: string; context?: string }> = []
+      t.sync.onEvent((event) => {
+        if (event.type === "sync:error") errors.push(event)
+      })
       t.faults.reads = 1
       const pending = await t.seed("pending")
       await waitFor(t.repairs, (r) => r.some((entry) => entry.fileId === pending.id))
+      expect(errors).toEqual([expect.objectContaining({ type: "sync:error", context: `reconcile:${pending.id}` })])
+      const healthy = await t.seed("pending")
+      await waitFor(() => t.state(healthy.id), (s) => s?.uploadStatus === "done")
+      expect(await t.remoteFiles.get(healthy.remoteKey)?.text()).toBe(healthy.id)
+      expect(t.repairs()).toEqual([expect.objectContaining({ fileId: pending.id, attempts: 1 })])
       // Cursor has advanced, but the failure is durable independently of stream replay.
       await t.runtime.runPromise(t.sync.stop())
       const cursor = t.store.query(t.deps.schema.queryDb(t.tables.fileSyncCursor.get()))

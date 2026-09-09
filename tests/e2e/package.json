@@ -5,9 +5,10 @@
   "private": true,
   "description": "Framework-agnostic E2E tests for livestore-filesync",
   "scripts": {
-    "test": "pnpm --filter @livestore-filesync/core build && E2E_FRAMEWORK=react playwright test --project=chromium",
+    "test": "pnpm --filter @livestore-filesync/core build && pnpm test:react && pnpm test:react-thumbnail",
     "test:vue": "E2E_FRAMEWORK=vue playwright test --project=chromium",
     "test:react": "E2E_FRAMEWORK=react playwright test --project=chromium",
+    "test:react-thumbnail": "E2E_FRAMEWORK=react-thumbnail playwright test --project=chromium",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug"

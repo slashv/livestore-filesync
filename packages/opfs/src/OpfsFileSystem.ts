@@ -491,8 +491,12 @@ export const makeOpfsFileSystem = (
           const writable = await fileHandle.createWritable({ keepExistingData: true })
           try {
             await writable.truncate(Number(length ?? 0n))
-          } finally {
             await writable.close()
+          } catch (cause) {
+            // Closing publishes staged bytes. A failed write/truncate must abort
+            // instead, retaining the previous file and the original failure.
+            await writable.abort().catch(() => {})
+            throw cause
           }
         },
         catch: (cause) => makeSystemError("truncate", "Unknown", path, cause)
@@ -519,8 +523,12 @@ export const makeOpfsFileSystem = (
               data.byteOffset + data.byteLength
             ) as ArrayBuffer
             await writable.write(new Blob([buffer], { type: "application/octet-stream" }))
-          } finally {
             await writable.close()
+          } catch (cause) {
+            // Closing publishes staged bytes. A failed write/truncate must abort
+            // instead, retaining the previous file and the original failure.
+            await writable.abort().catch(() => {})
+            throw cause
           }
         },
         catch: (cause) => makeSystemError("writeFile", "Unknown", path, cause)
