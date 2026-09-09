@@ -399,3 +399,14 @@ production service/storage with controlled filesystem and generation adapters. T
 assert persisted state and output bytes across unchanged and changed configuration,
 without duplicating the production hash. Browser tests exercise real canvas workers,
 OPFS, and the local Worker storage backend.
+
+File URL resolution rejects tombstoned rows even when shared local bytes or retained
+remote objects still exist. It rechecks the live row's content hash, path, and remote
+key after local reads or signing, returning `null` if that version changed, including
+when the obsolete read fails. A previously returned URL cannot be revoked by a later
+delete; these lookup guards do not change remote retention or access policy.
+
+Expo truncation zero-fills extensions and preserves the prefix when shrinking; a
+zero length empties the file. Invalid negative, fractional, non-finite, or unsafe
+lengths fail without writing. Contract tests cover shrink/zero/grow and the OPFS fake
+models native zero-filled extension, in addition to completion/failure boundaries.

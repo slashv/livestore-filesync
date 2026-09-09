@@ -53,7 +53,9 @@ class MockFileHandle {
         staged = { type: "file", data: new Uint8Array(await data.arrayBuffer()), mimeType: data.type }
       },
       truncate: async (length: number) => {
-        staged.data = staged.data.slice(0, length)
+        const resized = new Uint8Array(length)
+        resized.set(staged.data.subarray(0, length))
+        staged.data = resized
       },
       close: async () => {
         directory.entries.set(name, staged)
@@ -159,6 +161,18 @@ describe("OpfsFileSystem", () => {
     } else {
       delete (globalThis as { navigator?: unknown }).navigator
     }
+  })
+
+  it.each([
+    [1, [7]],
+    [0, []],
+    [4, [7, 9, 0, 0]]
+  ])("truncates two bytes to %i with zero-filled growth", async (length, expected) => {
+    const fs = makeOpfsFileSystem()
+    await Effect.runPromise(fs.writeFile("file.bin", new Uint8Array([7, 9])))
+    await Effect.runPromise(fs.truncate("file.bin", length))
+    expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(new Uint8Array(expected))
+    expect((await Effect.runPromise(fs.stat("file.bin"))).size).toBe(BigInt(length))
   })
 
   it("writes and reads files with a base directory", async () => {

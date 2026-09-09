@@ -71,6 +71,28 @@ const gate = () => {
 }
 
 describe("Expo filesystem module contract", () => {
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid truncate length %s without modifying bytes",
+    async (length) => {
+      const fs = makeExpoFileSystem()
+      await Effect.runPromise(fs.writeFile("file.bin", new Uint8Array([7, 9])))
+      await expect(Effect.runPromise(fs.truncate("file.bin", length))).rejects.toThrow()
+      expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(new Uint8Array([7, 9]))
+    }
+  )
+
+  it.each([
+    [1, [7]],
+    [0, []],
+    [4, [7, 9, 0, 0]]
+  ])("truncates two bytes to %i with zero-filled growth", async (length, expected) => {
+    const fs = makeExpoFileSystem()
+    await Effect.runPromise(fs.writeFile("file.bin", new Uint8Array([7, 9])))
+    await Effect.runPromise(fs.truncate("file.bin", length))
+    expect(await Effect.runPromise(fs.readFile("file.bin"))).toEqual(new Uint8Array(expected))
+    expect((await Effect.runPromise(fs.stat("file.bin"))).size).toBe(BigInt(length))
+  })
+
   it("round trips bytes through synchronous native writes and normalizes relative paths", async () => {
     const fs = makeExpoFileSystem()
     const bytes = new Uint8Array([0, 255, 128, 42])

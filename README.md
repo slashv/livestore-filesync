@@ -286,6 +286,12 @@ transfers and serializes deletion with writes and metadata publication within a 
 instance. It rechecks references after asynchronous deletion and restores bytes if a new
 owner appeared while the adapter was deleting.
 
+`resolveFileUrl()` returns `null` for deleted records and rejects results from reads
+or signing if the source version changes while resolution is in progress. With the
+core `files` table configured, thumbnail generation, state, and URL lookup similarly
+reject deleted or outdated source content; polling generates the current version.
+See [thumbnail guarantees and compatibility limits](docs/image-processing.md).
+
 Remote blobs are **retained**, including replaced content and stale uploads. A client cannot
 know about references on offline devices, so it cannot safely garbage-collect remote keys.
 Applications needing reclamation must implement a server-authoritative retention/GC policy;
