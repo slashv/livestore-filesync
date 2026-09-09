@@ -1,5 +1,5 @@
-import { Cause, Effect, Exit, Option, Ref } from "effect"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { Cause, Effect, Exit, Fiber, Option, Ref } from "effect"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DeleteError, DownloadError, UploadError } from "../../errors/index.js"
 import { makeStoredPath } from "../../utils/index.js"
 import { makeMemoryRemoteStorage, makeS3SignerRemoteStorage, type MemoryRemoteStorageOptions } from "./index.js"
@@ -443,6 +443,159 @@ describe("RemoteStorage", () => {
 
       expect(file.name).toBe("file.txt")
       expect(await file.text()).toBe("download")
+    })
+
+    it("downloads a real response body without progress", async () => {
+      globalThis.fetch = (async (url) =>
+        String(url).includes("/v1/sign/")
+          ? Response.json({ url: "https://s3.local/get-url" })
+          : new Response("unlocked body", { headers: { "Content-Type": "text/plain" } })) as typeof fetch
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const file = await Effect.runPromise(storage.download("file.txt"))
+      expect(await file.text()).toBe("unlocked body")
+    })
+
+    it.each(["upload signer", "download signer", "delete", "health", "upload transfer"])(
+      "aborts an interrupted %s request",
+      async (operation) => {
+        let entered!: () => void
+        const started = new Promise<void>((resolve) => {
+          entered = resolve
+        })
+        let requestSignal: AbortSignal | undefined
+        globalThis.fetch = (async (url, init) => {
+          if (operation === "upload transfer" && String(url).includes("/v1/sign/")) {
+            return Response.json({ method: "PUT", url: "https://s3.local/put-url" })
+          }
+          requestSignal = init?.signal ?? undefined
+          entered()
+          return await new Promise<Response>(() => {})
+        }) as typeof fetch
+        const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+        const effect: Effect.Effect<unknown, unknown> = operation.startsWith("upload")
+          ? storage.upload(new File(["data"], "data.txt"), { key: "key" })
+          : operation === "download signer"
+          ? storage.getDownloadUrl("key")
+          : operation === "delete"
+          ? storage.delete("key")
+          : storage.checkHealth()
+        const fiber = Effect.runFork(effect)
+        await started
+        expect(requestSignal?.aborted).toBe(false)
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        expect(requestSignal?.aborted).toBe(true)
+      }
+    )
+
+    it("aborts a download while its arrayBuffer body is pending", async () => {
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      let requestSignal: AbortSignal | undefined
+      let release!: (value: ArrayBuffer) => void
+      globalThis.fetch = (async (url, init) => {
+        if (String(url).includes("/v1/sign/")) return Response.json({ url: "https://s3.local/get-url" })
+        requestSignal = init?.signal ?? undefined
+        return {
+          ok: true,
+          headers: new Headers(),
+          arrayBuffer: () => {
+            entered()
+            return new Promise<ArrayBuffer>((resolve) => {
+              release = resolve
+            })
+          }
+        } as Response
+      }) as typeof fetch
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const completed = vi.fn()
+      const fiber = Effect.runFork(storage.download("key").pipe(Effect.tap(() => Effect.sync(completed))))
+      await started
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(requestSignal?.aborted).toBe(true)
+      release(new ArrayBuffer(1))
+      await Promise.resolve()
+      expect(completed).not.toHaveBeenCalled()
+    })
+
+    it("cancels a pending streamed download and suppresses late progress", async () => {
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      let requestSignal: AbortSignal | undefined
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      const cancel = vi.fn()
+      const body = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value
+        },
+        pull() {
+          entered()
+        },
+        cancel
+      }, { highWaterMark: 0 })
+      globalThis.fetch = (async (url, init) => {
+        if (String(url).includes("/v1/sign/")) return Response.json({ url: "https://s3.local/get-url" })
+        requestSignal = init?.signal ?? undefined
+        return new Response(body)
+      }) as typeof fetch
+      const progress = vi.fn()
+      const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+      const fiber = Effect.runFork(storage.download("key", { onProgress: progress }))
+      await started
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(requestSignal?.aborted).toBe(true)
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(() => controller.enqueue(new Uint8Array([1]))).toThrow()
+      expect(progress).not.toHaveBeenCalled()
+      expect(body.locked).toBe(false)
+    })
+
+    it("aborts XHR uploads and ignores queued progress after interruption", async () => {
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const abort = vi.fn()
+      const progress = vi.fn()
+      let lateProgress!: () => void
+      const originalXHR = globalThis.XMLHttpRequest
+      class FakeXHR {
+        upload = {
+          onprogress: null as ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null
+        }
+        onload = null
+        onerror = null
+        ontimeout = null
+        onabort = null
+        open() {}
+        setRequestHeader() {}
+        abort = abort
+        send() {
+          const callback = this.upload.onprogress!
+          lateProgress = () => callback({ lengthComputable: true, loaded: 1, total: 2 })
+          lateProgress()
+          entered()
+        }
+      }
+      globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest
+      globalThis.fetch = (async () => Response.json({ method: "PUT", url: "https://s3.local/put-url" })) as typeof fetch
+      try {
+        const storage = makeS3SignerRemoteStorage({ signerBaseUrl: "https://signer.local" })
+        const fiber = Effect.runFork(
+          storage.upload(new File(["data"], "data.txt"), { key: "key", onProgress: progress })
+        )
+        await started
+        expect(progress).toHaveBeenCalledOnce()
+        await Effect.runPromise(Fiber.interrupt(fiber))
+        expect(abort).toHaveBeenCalledOnce()
+        lateProgress()
+        expect(progress).toHaveBeenCalledOnce()
+      } finally {
+        globalThis.XMLHttpRequest = originalXHR
+      }
     })
 
     it("should surface delete failures", async () => {

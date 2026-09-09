@@ -1,5 +1,4 @@
-import type { Scope } from "effect"
-import { Deferred, Effect, Ref } from "effect"
+import { Deferred, Effect, Exit, Ref, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import { makeSyncExecutor, type SyncExecutorConfig } from "./index.js"
 
@@ -1075,5 +1074,57 @@ describe("SyncExecutor", () => {
 
       expect(result).toHaveLength(0)
     })
+  })
+})
+
+describe("SyncExecutor worker ownership", () => {
+  it("serializes concurrent worker startup and respects the transfer limit", async () => {
+    let active = 0
+    let maximum = 0
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const release = yield* Deferred.make<void>()
+      const executor = yield* makeSyncExecutor(() =>
+        Effect.gen(function*() {
+          active++
+          maximum = Math.max(maximum, active)
+          yield* Deferred.await(release)
+          active--
+        })
+      )
+      yield* Effect.forEach(Array.from({ length: 20 }), () => executor.ensureWorkers(), { concurrency: "unbounded" })
+      yield* Effect.forEach(Array.from({ length: 10 }, (_, i) => String(i)), executor.enqueueDownload)
+      yield* Effect.sleep("150 millis")
+      expect(active).toBe(2)
+      yield* Deferred.succeed(release, undefined)
+      yield* executor.awaitIdle()
+    })))
+    expect(maximum).toBe(2)
+  })
+
+  it("interrupts transfers when their worker scope closes and can restart in a new scope", async () => {
+    let completions = 0
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const executor = yield* makeSyncExecutor(() =>
+        Effect.gen(function*() {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+          completions++
+        })
+      )
+      const firstRun = yield* Scope.make()
+      yield* Scope.provide(executor.start(), firstRun)
+      yield* executor.enqueueUpload("file")
+      yield* Deferred.await(entered)
+      yield* Scope.close(firstRun, Exit.void)
+      yield* Deferred.succeed(release, undefined)
+      expect(completions).toBe(0)
+      expect(yield* executor.getInflightCount()).toEqual({ downloads: 0, uploads: 0 })
+      yield* executor.start()
+      yield* executor.enqueueUpload("file")
+      yield* executor.awaitIdle()
+      expect(completions).toBe(1)
+    })))
   })
 })

@@ -302,6 +302,20 @@ FileSync is designed to work correctly when multiple browser tabs are open to th
 
 No configuration required — this works automatically.
 
+## Lifecycle and shared mounts
+
+`start()` and `stop()` are awaitable; existing fire-and-forget calls remain supported.
+`dispose()` is permanent and idempotent. Overlapping singleton mounts share the first
+configuration for the same store object, user, and remote mode. Each disposer belongs to
+its original instance, so an old mount cannot dispose a newer user's instance. Explicitly
+dispose and reinitialize to change configuration, or supply an `authToken` getter for
+same-user token refresh. Failed startup can be retried with `start()`.
+
+Background workers run only while this instance is a running leader. Stop and leadership
+loss invalidate old transfer progress/completion and interrupt owned work; restart rebuilds
+persisted work. Fetch/XHR support abort, but shutdown may wait for local storage operations
+that cannot be cancelled immediately. See [lifecycle guarantees](docs/STABILITY.md#instance-lifecycle-and-singleton-mounts).
+
 ## Startup and Stream Restarts
 
 - Startup bootstrap from the `files` table is **conditional**. It runs only when the stored

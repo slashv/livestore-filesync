@@ -103,7 +103,7 @@ describe("ThumbnailService query behavior", () => {
     await Effect.runPromise(service.stop())
   })
 
-  it("regenerate queries files table and queues work without external queryDb", async () => {
+  it("regenerate does not publish work while stopped", async () => {
     queryDbMock.mockClear()
 
     const whereQuery = { kind: "files.where" }
@@ -135,14 +135,8 @@ describe("ThumbnailService query behavior", () => {
     const service = await makeService({ filesTable, store })
     await Effect.runPromise(service.regenerate("file-1"))
 
-    expect(filesTable.where).toHaveBeenCalledWith({ id: "file-1" })
-    expect(queryDbMock).toHaveBeenCalledWith(whereQuery)
-    expect(store.query).toHaveBeenCalledWith(whereQuery)
-
-    expect(store.commit).toHaveBeenCalledTimes(1)
-    const [regenerateCommitArgs] = store.commit.mock.calls
-    expect(regenerateCommitArgs).toHaveLength(1)
-    expect(getEventName(regenerateCommitArgs[0])).toBe("v1.ThumbnailStateUpsert")
+    expect(filesTable.where).not.toHaveBeenCalled()
+    expect(store.commit).not.toHaveBeenCalled()
   })
 
   it("batches thumbnail state upserts into a single commit when scanning on start", async () => {

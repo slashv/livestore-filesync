@@ -66,15 +66,15 @@ export interface ThumbnailInstance {
   /**
    * Start the thumbnail service
    */
-  readonly start: () => void
+  readonly start: () => Promise<void>
 
   /**
-   * Stop the thumbnail service
+   * Stop the thumbnail service, joining started storage writes.
    */
-  readonly stop: () => void
+  readonly stop: () => Promise<void>
 
   /**
-   * Dispose of all resources
+   * Dispose of all resources. Repeated calls share completion.
    */
   readonly dispose: () => Promise<void>
 }
@@ -171,7 +171,8 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
   const MainLayer = Layer.mergeAll(ServiceLayer, WorkerClientLayer, StorageLayer, FileSystemLive)
 
   // Create runtime
-  const runtime = ManagedRuntime.make(MainLayer)
+  let runtime = ManagedRuntime.make(MainLayer)
+  let acquiredService = false
 
   // Run an effect
   const runPromise = <A, E>(
@@ -218,55 +219,60 @@ export const createThumbnails = (config: CreateThumbnailsConfig): ThumbnailInsta
       })
     )
 
-  const start = (): void => {
-    runPromise(
-      Effect.gen(function*() {
-        const service = yield* ThumbnailService
-        yield* service.start()
-      })
-    ).catch((error) => {
-      console.error("[ThumbnailService] Failed to start:", error)
-    })
+  let disposed = false
+  let desiredRunning = false
+  let stopping = Promise.resolve()
+  let disposal: Promise<void> | undefined
+  const start = (): Promise<void> => {
+    if (disposed) return Promise.resolve()
+    desiredRunning = true
+    return stopping.then(async () => {
+      if (!desiredRunning || disposed) return
+      const startingRuntime = runtime
+      try {
+        await runPromise(Effect.gen(function*() {
+          const service = yield* ThumbnailService
+          acquiredService = true
+          yield* service.start()
+        }))
+      } catch (error) {
+        // Failed layer acquisition is memoized by ManagedRuntime. Retire it so
+        // a later start can retry transient filesystem/worker construction failure.
+        if (!acquiredService && !disposed && runtime === startingRuntime) {
+          await startingRuntime.dispose()
+          if (!disposed && runtime === startingRuntime) runtime = ManagedRuntime.make(MainLayer)
+        }
+        throw error
+      }
+    }).catch((error) => console.error("[ThumbnailService] Failed to start:", error))
   }
 
-  const stop = (): void => {
-    runPromise(
-      Effect.gen(function*() {
+  const stopOwned = (): Promise<void> => {
+    desiredRunning = false
+    stopping = stopping.then(() =>
+      runPromise(Effect.gen(function*() {
         const service = yield* ThumbnailService
         yield* service.stop()
-      })
-    ).catch((error) => {
-      console.error("[ThumbnailService] Failed to stop:", error)
-    })
+      }))
+    ).catch((error) => console.error("[ThumbnailService] Failed to stop:", error))
+    return stopping
   }
+  const stop = (): Promise<void> => disposed ? disposal ?? Promise.resolve() : stopOwned()
 
-  const dispose = async (): Promise<void> => {
-    // Stop first
-    try {
-      await runPromise(
-        Effect.gen(function*() {
-          const service = yield* ThumbnailService
-          yield* service.stop()
-        })
-      )
-    } catch {
-      // Ignore
-    }
-
-    // Terminate worker
-    try {
-      await runPromise(
-        Effect.gen(function*() {
+  const dispose = (): Promise<void> => {
+    if (disposal) return disposal
+    disposed = true
+    disposal = stopOwned().then(async () => {
+      try {
+        await runPromise(Effect.gen(function*() {
           const workerClient = yield* ThumbnailWorkerClient
           yield* workerClient.terminate()
-        })
-      )
-    } catch {
-      // Ignore
-    }
-
-    // Dispose runtime
-    await runtime.dispose()
+        }))
+      } finally {
+        await runtime.dispose()
+      }
+    })
+    return disposal
   }
 
   return {

@@ -1,7 +1,8 @@
-import { Effect, Exit, Layer, ManagedRuntime, Scope } from "effect"
+import { Effect, Exit, Layer, ManagedRuntime, Scope, SubscriptionRef } from "effect"
 import { describe, expect, it } from "vitest"
 import { createTestStore, waitFor } from "../../../test/helpers/livestore.js"
 import { DownloadError } from "../../errors/index.js"
+import { getClientSession } from "../../livestore/types.js"
 import { hashFile, makeStoredPath } from "../../utils/index.js"
 import { stripFilesRoot } from "../../utils/path.js"
 import { HashServiceLive } from "../hash/index.js"
@@ -37,16 +38,19 @@ const setup = async (blockedKind: "upload" | "download", blockWrite = false, loc
   const remoteFiles = new Map<string, File>()
   const uploads: Array<string> = []
   const downloads: Array<string> = []
+  const progressCallbacks: Array<() => void> = []
   const remote: RemoteStorageService = {
     upload: (file, options) =>
       Effect.gen(function*() {
+        progressCallbacks.push(() => options.onProgress?.({ loaded: 1, total: 2 }))
         uploads.push(options.key)
         if (blockedKind === "upload" && uploads.length === 1) yield* gate.wait
         remoteFiles.set(options.key, file)
         return { key: options.key }
       }),
-    download: (key) =>
+    download: (key, options) =>
       Effect.gen(function*() {
+        progressCallbacks.push(() => options?.onProgress?.({ loaded: 1, total: 2 }))
         downloads.push(key)
         const file = remoteFiles.get(key)
         if (blockedKind === "download" && downloads.length === 1) yield* gate.wait
@@ -85,6 +89,7 @@ const setup = async (blockedKind: "upload" | "download", blockWrite = false, loc
   const runtime = ManagedRuntime.make(Layer.mergeAll(
     base,
     FileSyncLive(deps, {
+      healthCheckIntervalMs: 20,
       remoteMode: localOnly ? "local-only" : "remote",
       executorConfig: {
         maxConcurrentDownloads: 1,
@@ -118,6 +123,7 @@ const setup = async (blockedKind: "upload" | "download", blockWrite = false, loc
     remoteFiles,
     uploads,
     downloads,
+    progressCallbacks,
     runtime,
     fileSync,
     localStorage,
@@ -365,6 +371,101 @@ describe("FileSync shared blob ownership", () => {
       await waitFor(() => t.runtime.runPromise(t.localStorage.fileExists(first.path)), (exists) => !exists)
       expect(await t.remoteFiles.get(stripFilesRoot(first.path))?.text()).toBe("shared")
       expect(t.record(first.fileId).remoteKey).toBe("")
+    } finally {
+      await t.close()
+    }
+  })
+})
+
+describe("FileSync worker lifecycle", () => {
+  it("stops active transfers and ignores late progress, then reconstructs work on restart", async () => {
+    const t = await setup("download")
+    try {
+      const file = await t.seed("restart me")
+      const received: Array<string> = []
+      t.fileSync.onEvent((event) => received.push(event.type))
+      await Promise.all([t.start(), t.start()])
+      await t.gate.entered
+      await Promise.all([t.runtime.runPromise(t.fileSync.stop()), t.runtime.runPromise(t.fileSync.stop())])
+      const stoppedEvents = [...received]
+      t.progressCallbacks[0]!()
+      t.gate.release()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(received).toEqual(stoppedEvents)
+      expect(await t.state(file.fileId)).toMatchObject({ downloadStatus: "queued", localHash: "" })
+      expect(await t.runtime.runPromise(t.localStorage.fileExists(file.path))).toBe(false)
+      await t.start()
+      await waitFor(() => t.state(file.fileId), (state) => state?.downloadStatus === "done")
+      expect(t.downloads).toEqual([file.remoteKey, file.remoteKey])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it("waits for an unabortable write without publishing completion after stop", async () => {
+    const t = await setup("download", true)
+    try {
+      const file = await t.seed("write in progress")
+      t.gate.release()
+      await t.start()
+      await t.writeGate.entered
+      let stopped = false
+      const stop = t.runtime.runPromise(t.fileSync.stop()).then(() => {
+        stopped = true
+      })
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(stopped).toBe(false)
+      t.writeGate.release()
+      await stop
+      expect(await t.state(file.fileId)).toMatchObject({ downloadStatus: "queued", localHash: "" })
+      await t.start()
+      await waitFor(() => t.state(file.fileId), (state) => state?.downloadStatus === "done")
+    } finally {
+      await t.close()
+    }
+  })
+
+  it("keeps follower work paused through explicit online and health recovery", async () => {
+    const t = await setup("upload")
+    const lock = getClientSession(t.deps.store).lockStatus
+    try {
+      await t.runtime.runPromise(SubscriptionRef.set(lock, "no-lock"))
+      const file = await t.runtime.runPromise(t.fileSync.saveFile(new File(["follower"], "file.txt")))
+      await t.start()
+      await t.runtime.runPromise(t.fileSync.retryErrors())
+      await t.runtime.runPromise(t.fileSync.setOnline(false))
+      await t.runtime.runPromise(t.fileSync.setOnline(true))
+      await t.runtime.runPromise(t.fileSync.setOnline(false))
+      await waitFor(() => t.runtime.runPromise(t.fileSync.isOnline()), Boolean)
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(t.uploads).toEqual([])
+      await t.runtime.runPromise(SubscriptionRef.set(lock, "has-lock"))
+      await t.gate.entered
+      t.gate.release()
+      await waitFor(() => t.state(file.fileId), (state) => state?.uploadStatus === "done")
+      expect(t.uploads).toHaveLength(1)
+    } finally {
+      await t.close()
+    }
+  })
+
+  it("interrupts old leadership work and reconstructs it after reacquiring the lock", async () => {
+    const t = await setup("download")
+    const lock = getClientSession(t.deps.store).lockStatus
+    try {
+      const file = await t.seed("leadership handoff")
+      await t.start()
+      await t.gate.entered
+      await t.runtime.runPromise(SubscriptionRef.set(lock, "no-lock"))
+      await waitFor(() => t.state(file.fileId), (state) => state?.downloadStatus === "queued")
+      t.gate.release()
+      await t.runtime.runPromise(t.fileSync.setOnline(false))
+      await t.runtime.runPromise(t.fileSync.setOnline(true))
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      expect(t.downloads).toHaveLength(1)
+      await t.runtime.runPromise(SubscriptionRef.set(lock, "has-lock"))
+      await waitFor(() => t.state(file.fileId), (state) => state?.downloadStatus === "done")
+      expect(t.downloads).toHaveLength(2)
     } finally {
       await t.close()
     }

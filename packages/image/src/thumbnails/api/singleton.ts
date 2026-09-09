@@ -19,7 +19,39 @@ import { createThumbnails, type ThumbnailInstance } from "./createThumbnails.js"
 // ============================================
 
 let singleton: ThumbnailInstance | null = null
-let singletonUserId: string | null = null
+interface Generation {
+  instance: ThumbnailInstance
+  store: Store<any>
+  userId: string | null
+  references: number
+  startRequested: boolean
+  disposal?: Promise<void>
+}
+let generation: Generation | null = null
+let retirement = Promise.resolve()
+const retire = (owner: Generation): Promise<void> => {
+  if (generation === owner) {
+    generation = null
+    singleton = null
+  }
+  if (!owner.disposal) {
+    const pending = owner.instance.dispose()
+    owner.disposal = pending
+    retirement = Promise.all([retirement, pending]).then(() => undefined).catch((error) => {
+      console.error("[Thumbnails] Disposal failed:", error)
+    })
+  }
+  return owner.disposal
+}
+const acquire = (owner: Generation): () => Promise<void> => {
+  owner.references++
+  let released = false
+  return async () => {
+    if (released) return
+    released = true
+    if (--owner.references === 0) await retire(owner)
+  }
+}
 
 const requireThumbnails = (): ThumbnailInstance => {
   if (!singleton) {
@@ -72,9 +104,10 @@ const resolveSchema = (store: Store<any>, schema?: SchemaFallback): ResolvedSche
  * Creates a ThumbnailService instance, and by default starts automatically.
  * Returns a dispose function to clean up resources.
  *
- * If a userId is provided and differs from the previous initialization,
- * the existing singleton will be disposed and a new one created.
- * This ensures state is refreshed when switching users.
+ * Calls with the same store object and userId share a reference-counted instance
+ * and its first configuration. Dispose and initialize to change configuration.
+ * A different store or user retires the old instance; stale cleanup functions
+ * cannot dispose its replacement. New automatic startup waits for retirement.
  *
  * @example
  * ```typescript
@@ -100,23 +133,7 @@ export const initThumbnails = (
 ): () => Promise<void> => {
   const userId = config.userId ?? null
 
-  // If singleton exists but for a different user, dispose it first
-  if (singleton && singletonUserId !== userId) {
-    console.log("[Thumbnails] User changed, disposing old instance")
-    singleton.dispose()
-    singleton = null
-    singletonUserId = null
-  }
-
-  if (singleton) {
-    return async () => {
-      await singleton?.dispose()
-      singleton = null
-      singletonUserId = null
-    }
-  }
-
-  singletonUserId = userId
+  if (generation?.store === store && generation.userId === userId) return acquire(generation)
 
   if (!config.fileSystem) {
     throw new Error(
@@ -139,7 +156,7 @@ export const initThumbnails = (
     resolvedFilesTable = config.schema.tables.files
   }
 
-  singleton = createThumbnails({
+  const instance = createThumbnails({
     store,
     tables,
     events,
@@ -150,21 +167,30 @@ export const initThumbnails = (
     ...(config.format !== undefined ? { format: config.format } : {}),
     ...(config.concurrency !== undefined ? { concurrency: config.concurrency } : {}),
     ...(config.supportedMimeTypes !== undefined ? { supportedMimeTypes: config.supportedMimeTypes } : {}),
-    ...(config.onEvent !== undefined ? { onEvent: config.onEvent } : {}),
+    onEvent: (event) => {
+      if (generation?.instance !== instance) return
+      _broadcastThumbnailEvent(event)
+      try {
+        config.onEvent?.(event)
+      } catch (error) {
+        console.error("[Thumbnails] Event listener failed:", error)
+      }
+    },
     ...(config.qualitySettings !== undefined ? { qualitySettings: config.qualitySettings } : {}),
     ...(resolvedFilesTable !== undefined ? { filesTable: resolvedFilesTable } : {})
   })
 
-  // Auto-start by default
+  const previous = generation
+  const owner: Generation = { instance, store, userId, references: 0, startRequested: config.autoStart !== false }
+  generation = owner
+  singleton = instance
+  if (previous) void retire(previous).catch((error) => console.error("[Thumbnails] Disposal failed:", error))
   if (config.autoStart !== false) {
-    singleton.start()
+    void retirement.then(() => {
+      if (generation === owner && owner.startRequested) instance.start()
+    })
   }
-
-  return async () => {
-    await singleton?.dispose()
-    singleton = null
-    singletonUserId = null
-  }
+  return acquire(owner)
 }
 
 /**
@@ -182,28 +208,32 @@ export const initThumbnails = (
  * ```
  */
 export const disposeThumbnails = async (): Promise<void> => {
-  if (singleton) {
-    console.log("[Thumbnails] Disposing singleton")
-    await singleton.dispose()
-    singleton = null
-    singletonUserId = null
-  }
+  const owner = generation
+  if (owner) await retire(owner)
+  else await retirement
 }
 
 /**
  * Start thumbnail generation.
  * Only needed if initThumbnails was called with autoStart: false.
  */
-export const startThumbnails = (): void => {
-  requireThumbnails().start()
+export const startThumbnails = (): Promise<void> => {
+  requireThumbnails()
+  const owner = generation!
+  owner.startRequested = true
+  return retirement.then(() => {
+    if (generation === owner && owner.startRequested) return owner.instance.start()
+  })
 }
 
 /**
  * Stop thumbnail generation.
  * Can be restarted later with startThumbnails().
  */
-export const stopThumbnails = (): void => {
-  requireThumbnails().stop()
+export const stopThumbnails = (): Promise<void> => {
+  requireThumbnails()
+  generation!.startRequested = false
+  return generation!.instance.stop()
 }
 
 /**
@@ -293,6 +323,10 @@ export const onThumbnailEvent = (
  */
 export const _broadcastThumbnailEvent = (event: ThumbnailEvent): void => {
   for (const listener of eventListeners) {
-    listener(event)
+    try {
+      listener(event)
+    } catch (error) {
+      console.error("[Thumbnails] Event listener failed:", error)
+    }
   }
 }

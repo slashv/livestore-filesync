@@ -348,3 +348,33 @@ The knobs below live in the host app's LiveStore worker/monitor code (not in thi
      behavior on transient sync errors.
    - For most apps, prefer non-shutdown behavior and surface persistent failures via monitoring
      (`sync:error`, `sync:stream-exhausted`, `sync:heartbeat-recovery`).
+
+## Instance lifecycle and singleton mounts
+
+`createFileSync().start()` and `.stop()` (and their singleton helpers) now return
+`Promise<void>`. Existing callers may continue ignoring the result; await it when ordering
+startup or shutdown matters. Transitions are serialized, repeated calls share ownership,
+and `dispose()` is permanent and idempotent. Startup failures are reported as `sync:error`
+and a later `start()` can retry. `stop()` leaves local file APIs usable.
+
+Singleton mounts share an instance only for the same store object, user ID (including no
+user ID), and remote/local-only mode. Each returned disposer releases its originating
+mount exactly once. Store/user/mode replacement and explicit global disposal detach the
+old generation before asynchronous cleanup, so stale cleanup cannot dispose the replacement.
+The first configuration for a shared generation wins; use `disposeFileSync()` followed by
+`initFileSync()` to change filesystem, preprocessing, concurrency, or signer configuration.
+`remote.authToken` also accepts a getter for token refresh within the same user session.
+Configured callbacks and event subscribers are isolated from one another when they throw.
+
+Only a running leader may execute background transfers. Health recovery and queue repair
+cannot enable a follower executor. Each run owns its workers, watcher, and transfer fibers;
+stop and leadership loss invalidate old progress and completion before joining cleanup.
+Restart and leadership acquisition reconstruct persisted interrupted work through
+Reconciliation, including with an advanced event cursor.
+
+The signer adapter aborts fetch and XHR on interruption and cancels streamed download
+readers. Adapter filesystem writes and image processing may not support immediate physical
+cancellation. Shutdown can wait for protected local storage operations to finish; it does
+not undo bytes already written or a remote upload already accepted by the server. Old work
+cannot publish transfer completion or progress into a replacement run. Remote retention
+continues to protect shared and offline references.
