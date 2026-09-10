@@ -281,6 +281,13 @@ Each package has a `files` field in `package.json` that controls what gets publi
 
 This excludes test files and duplicate source directories from the published package.
 
+## September 2026 prerelease
+
+The synchronized `0.9.0-next.1` cohort is published under `next` for all six packages.
+`latest` remains `0.8.0`. Publication required one interactive passkey confirmation.
+Verify registry availability after the CLI succeeds: one package returned HTTP 202 and
+became available after npm completed its publish-time processing.
+
 ## Post-publish Verification
 
 After publishing, verify the packages are available:

@@ -54,5 +54,6 @@ Native image resize and JPEG upload also pass in the iOS simulator. All 11 Priva
 Electron scenarios pass. FileSync's full package/Node/React/thumbnail tests, typecheck, lint and
 build pass. The six `0.9.0-next.1` package archives have exact portable dependency metadata.
 PrivateView's final full browser run passes all 38 tests. An earlier cold-start error was not
-reproduced in 12 fresh-store starts or the final full suite. Publication is still pending npm
-authentication, followed by a clean PrivateView install of the actual published release.
+reproduced in 12 fresh-store starts or the final full suite. All six packages were published on September 10, 2026 as `0.9.0-next.1` with the `next`
+dist-tag. Registry SHA-512 values match the validated archives and `latest` remains `0.8.0`.
+PrivateView consumes the exact published release with a regenerated portable lockfile.
