@@ -8,12 +8,14 @@ vi.stubGlobal("fetch", mockFetch)
 
 // Mock AWS client signing
 vi.mock("aws4fetch", () => ({
-  AwsClient: vi.fn().mockImplementation(() => ({
-    sign: vi.fn().mockImplementation(async (url: string, options?: { method?: string }) => ({
-      url: `${url}?X-Amz-Signature=mock-signature`,
-      method: options?.method ?? "GET"
-    }))
-  }))
+  AwsClient: vi.fn().mockImplementation(function() {
+    return {
+      sign: vi.fn().mockImplementation(async (url: string, options?: { method?: string }) => ({
+        url: `${url}?X-Amz-Signature=mock-signature`,
+        method: options?.method ?? "GET"
+      }))
+    }
+  })
 }))
 
 type MockEnv = S3SignerEnv & {

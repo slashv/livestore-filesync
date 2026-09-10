@@ -372,7 +372,7 @@ describe("RemoteStorage", () => {
       globalThis.fetch = originalFetch
     })
 
-    it("should send auth headers and key to signer on upload", async () => {
+    it.each([false, true])("should send auth headers and key without XHR (progress=%s)", async (progress) => {
       let capturedBody: unknown = null
       let capturedHeaders: Record<string, string> | null = null
       globalThis.fetch = (async (url, init) => {
@@ -402,7 +402,9 @@ describe("RemoteStorage", () => {
       })
 
       const file = new File(["data"], "data.txt", { type: "text/plain" })
-      const upload = await Effect.runPromise(storage.upload(file, { key: "custom-key" }))
+      const upload = await Effect.runPromise(
+        storage.upload(file, { key: "custom-key", ...(progress ? { onProgress: () => {} } : {}) })
+      )
 
       expect(upload.key).toBe("custom-key")
       expect(upload.etag).toBe("\"etag-1\"")

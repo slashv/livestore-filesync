@@ -2,9 +2,9 @@
 
 File sync for LiveStore apps. This missing piece for local-first apps that need to sync files.
 
-**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo has controlled filesystem module contract tests; real-device behavior is not yet verified. `pnpm test` includes both maintained React examples in Chromium.
+**[!]** This is still under active development and not yet ready for production. The maintained React/OPFS path and image package are covered by unit and browser E2E tests. The Node example includes an adapter store-creation smoke test. Expo has filesystem/image module contract tests and iOS simulator checks for old-store recovery, image resize and upload. Physical-device and Android behavior are not yet verified. `pnpm test` includes both maintained React examples in Chromium.
 
-**[!]** This project currently targets an exact LiveStore main snapshot and Effect 4 beta cohort. The pins in `pnpm-workspace.yaml` keep local development and CI on one reproducible package graph. These snapshot pins are development inputs, not a published compatibility promise.
+**[!]** This project currently targets an exact LiveStore main snapshot and Effect 4 RC cohort. The pins in `pnpm-workspace.yaml` keep local development and CI on one reproducible package graph. These snapshot pins are development inputs, not a published compatibility promise.
 
 - **Local-first**: Files are written to local storage first ensuring best UX and offline support.
 
@@ -41,11 +41,11 @@ pnpm install
 
 ### LiveStore snapshot cohort
 
-This repo follows LiveStore main through exact npm snapshots and immutable Git commits so installs are reproducible:
+This repo follows LiveStore main through exact npm snapshots so installs are reproducible:
 
-- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-63cb2f26448608d4747d5ec881d7188f3a81bfa4`
-- Effect packages use `4.0.0-beta.99`
-- `@livestore/adapter-node` temporarily uses `livestore-contrib` commit `7003f4e0673c2254a327c9fb4d816cbdd55d8d09` from PR #36. That commit updates the adapter to the same LiveStore core commit and supplies the current `StateHead` service.
+- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-97407c6622c93eb1ae4c02a40c79743426ee101f`
+- Effect packages use `4.0.0-rc.111`
+- `@livestore/adapter-node` uses published contrib snapshot `0.0.0-snapshot-9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f`, with transitive core dependencies overridden to the selected core snapshot.
 
 Update the complete LiveStore and Effect catalog cohorts together and run `pnpm install` whenever intentionally moving to a newer snapshot.
 
@@ -148,7 +148,7 @@ import { NodeFileSystem } from '@effect/platform-node'
 createFileSync({ fileSystem: NodeFileSystem.layer, ... })
 ```
 
-The Node adapter is temporarily installed directly from the immutable `livestore-contrib` PR #36 commit because the last published contrib snapshot predates the selected core snapshot. pnpm overrides its repository-local LiveStore links with the exact npm snapshot cohort used by this workspace. The Node example's `pnpm test` command verifies that the adapter can create and shut down a store. Replace the Git pin with the matching composite npm snapshot after contrib publishes it.
+The published Node adapter uses the same Effect RC cohort. Workspace overrides align its core dependencies with the selected snapshot. The Node example smoke test checks startup; its migration harness checks old persisted metadata, cached bytes, and resumed uploads. Node uploads use fetch when XMLHttpRequest is unavailable.
 
 ## Backend Storage
 
@@ -510,7 +510,7 @@ See `examples/react-thumbnail` for the maintained thumbnail example. Vue thumbna
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)
-- Effect `4.0.0-beta.99` and the matching Effect platform packages
+- Effect `4.0.0-rc.111` and the matching Effect platform packages
 - For image processing with Vips: wasm-vips ^0.0.16 (~5 MB WASM), SharedArrayBuffer support (requires COOP/COEP headers). Alternatively, use the Canvas processor which has no additional requirements.
 
 ## License

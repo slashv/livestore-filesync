@@ -1,6 +1,6 @@
 {
   "name": "@livestore-filesync/opfs",
-  "version": "0.9.0-next.0",
+  "version": "0.9.0-next.1",
   "type": "module",
   "license": "MIT",
   "description": "OPFS filesystem adapter for livestore-filesync",
@@ -38,6 +38,6 @@
   "devDependencies": {
     "effect": "catalog:",
     "typescript": "^5.6.2",
-    "vitest": "^3.2.0"
+    "vitest": "catalog:"
   }
 }
