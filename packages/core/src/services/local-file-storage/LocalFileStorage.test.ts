@@ -1,5 +1,5 @@
-import { Cause, Effect, Exit, Layer, Option } from "effect"
-import { FileSystem, Size } from "effect/FileSystem"
+import { ByteSize, Cause, Effect, Exit, Layer, Option } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import type * as FS from "effect/FileSystem"
 import { systemError } from "effect/PlatformError"
 import { describe, expect, it } from "vitest"
@@ -21,14 +21,14 @@ describe("LocalFileStorage", () => {
     mtime: Option.none(),
     atime: Option.none(),
     birthtime: Option.none(),
-    dev: 0,
+    dev: 0n,
     ino: Option.none(),
     mode: 0,
     nlink: Option.none(),
     uid: Option.none(),
     gid: Option.none(),
     rdev: Option.none(),
-    size: Size(size),
+    size: ByteSize.bytes(size),
     blksize: Option.none(),
     blocks: Option.none()
   })

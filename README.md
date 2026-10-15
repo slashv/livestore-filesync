@@ -43,9 +43,9 @@ pnpm install
 
 This repo follows LiveStore main through exact npm snapshots so installs are reproducible:
 
-- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-97407c6622c93eb1ae4c02a40c79743426ee101f`
-- Effect packages use `4.0.0-rc.111`
-- `@livestore/adapter-node` uses published contrib snapshot `0.0.0-snapshot-9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f`, with transitive core dependencies overridden to the selected core snapshot.
+- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7`
+- Effect packages use `4.0.5`; Vitest uses `5.0.5` for the matching Effect test adapter
+- `@livestore/adapter-node` uses published contrib `0.5.0`, with transitive core dependencies overridden to the selected core snapshot.
 
 Update the complete LiveStore and Effect catalog cohorts together and run `pnpm install` whenever intentionally moving to a newer snapshot.
 
@@ -510,7 +510,7 @@ See `examples/react-thumbnail` for the maintained thumbnail example. Vue thumbna
 ## Requirements
 
 - Browser: OPFS support (Chrome 86+, Edge 86+, Firefox 111+, Safari 15.2+)
-- Effect `4.0.0-rc.111` and the matching Effect platform packages
+- Effect `4.0.5` and the matching Effect platform packages
 - For image processing with Vips: wasm-vips ^0.0.16 (~5 MB WASM), SharedArrayBuffer support (requires COOP/COEP headers). Alternatively, use the Canvas processor which has no additional requirements.
 
 ## License
