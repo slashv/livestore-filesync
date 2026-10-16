@@ -1,5 +1,26 @@
 # September 2026 dependency migration
 
+The current October 2026 target is LiveStore main snapshot
+`0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5`, published
+contrib `0.5.0`, Effect `4.0.5`, and Vitest `5.0.5`. The September cohort and
+recovery procedures below remain historical migration context. The current
+upgrade keeps persisted event names and file contracts unchanged; rerun the
+old-store harness against this candidate before release.
+
+The October source candidate is `0.9.0-next.2`; it has not been published.
+Effect 4.0.5 replaces `FileSystem.Size` with `ByteSize.bytes` and represents
+file device IDs as bigint. OPFS, Expo and filesystem test fixtures now use
+those representations. This changes filesystem adapter construction without
+changing stored file bytes or event payloads.
+
+The September snapshot fixture successfully reopens under the October target.
+The migration harness verifies queued and interrupted transfers, an offline
+edit and cached bytes, then recovers both pending uploads. Run the documented
+seed command from the September checkout and verify/recover from this one.
+
+CI uses Node 24 and pnpm 10.14.0, builds package declarations before checking,
+then runs lint, the full package/Node/browser suite and production builds.
+
 Candidate cohort: LiveStore `0.0.0-snapshot-97407c6622c93eb1ae4c02a40c79743426ee101f`,
 Effect and platform packages `4.0.0-rc.111`, Vitest `4.1.10`, and published contrib Node
 adapter `0.0.0-snapshot-9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f`.

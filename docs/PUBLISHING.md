@@ -58,7 +58,7 @@ All checks must pass before publishing.
 
 ## LiveStore Snapshot Dependencies
 
-This project develops against exact LiveStore npm snapshots rather than a local registry. LiveStore core packages are pinned to snapshot `97407c6622c93eb1ae4c02a40c79743426ee101f`, with Effect pinned to `4.0.0-rc.111`, in the `catalog` section of `pnpm-workspace.yaml`. The Node adapter uses published contrib snapshot `0.0.0-snapshot-9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f` with core overrides. Tests use Vitest `4.1.10`, satisfying the RC Effect test adapter peer requirement.
+This project develops against exact LiveStore npm snapshots rather than a local registry. LiveStore core packages are pinned to snapshot `505332f912c100d281378048f0beb0b2db11a9c5`, with Effect pinned to `4.0.5`, in the `catalog` section of `pnpm-workspace.yaml`. The Node adapter uses published contrib `0.5.0` with core overrides. Tests use Vitest `5.0.5`, satisfying the Effect test adapter peer requirement.
 
 Before publishing `@livestore-filesync/*` packages:
 

@@ -7,8 +7,8 @@
  * @module
  */
 
-import { Data, Effect, Layer, Option, Stream } from "effect"
-import { FileSystem, Size } from "effect/FileSystem"
+import { ByteSize, Data, Effect, Layer, Option, Stream } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import * as FS from "effect/FileSystem"
 import { type PlatformError, systemError, type SystemErrorTag } from "effect/PlatformError"
 
@@ -169,14 +169,14 @@ const makeFileInfo = (
   mtime: mtime ? Option.some(mtime) : Option.none(),
   atime: Option.none(), // Expo doesn't provide access time
   birthtime: birthtime ? Option.some(birthtime) : Option.none(),
-  dev: 0,
+  dev: 0n,
   ino: Option.none(),
   mode: 0,
   nlink: Option.none(),
   uid: Option.none(),
   gid: Option.none(),
   rdev: Option.none(),
-  size: Size(size),
+  size: ByteSize.bytes(size),
   blksize: Option.none(),
   blocks: Option.none()
 })

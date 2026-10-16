@@ -222,9 +222,9 @@ initFileSync(store, {
 
 ### Node.js usage
 
-The filesystem layer below runs on Effect `4.0.0-rc.111`. The Node adapter uses published
-contrib snapshot `9fd312cd51d0c38b9e53a78bb4fc211ee4f9c5d2.8aa073fb46b5977e8dbae2be00e8af3b85abbd2f`.
-Workspace overrides resolve its core dependencies to snapshot `97407c6622c93eb1ae4c02a40c79743426ee101f`.
+The filesystem layer below runs on Effect `4.0.5`. The Node adapter uses published
+contrib `0.5.0`. Workspace overrides resolve its core dependencies to snapshot
+`505332f912c100d281378048f0beb0b2db11a9c5`.
 The Node example tests startup and includes an old-store migration harness. Uploads use fetch
 when XMLHttpRequest is unavailable; progress callbacks do not require XHR on Node.
 
