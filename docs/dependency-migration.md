@@ -1,7 +1,7 @@
 # September 2026 dependency migration
 
 The current October 2026 target is LiveStore main snapshot
-`0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7`, published
+`0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5`, published
 contrib `0.5.0`, Effect `4.0.5`, and Vitest `5.0.5`. The September cohort and
 recovery procedures below remain historical migration context. The current
 upgrade keeps persisted event names and file contracts unchanged; rerun the

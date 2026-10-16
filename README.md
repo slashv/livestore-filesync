@@ -43,7 +43,7 @@ pnpm install
 
 This repo follows LiveStore main through exact npm snapshots so installs are reproducible:
 
-- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7`
+- LiveStore core, web, React, sync, and development packages use `0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5`
 - Effect packages use `4.0.5`; Vitest uses `5.0.5` for the matching Effect test adapter
 - `@livestore/adapter-node` uses published contrib `0.5.0`, with transitive core dependencies overridden to the selected core snapshot.
 

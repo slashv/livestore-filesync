@@ -30,17 +30,17 @@ overrides:
   '@effect/platform-node-shared': 4.0.5
   '@effect/vitest': 4.0.5
   '@livestore/adapter-node': 0.5.0
-  '@livestore/adapter-web': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/devtools-vite': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/livestore': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/peer-deps': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/react': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/sqlite-wasm': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/sync-cf': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/wa-sqlite': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-  '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
+  '@livestore/adapter-web': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/devtools-vite': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/livestore': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/peer-deps': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/react': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/sqlite-wasm': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/sync-cf': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/wa-sqlite': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+  '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
   '@opentelemetry/api': 1.9.0
   '@opentelemetry/context-zone': 2.7.1
   '@opentelemetry/core': 2.7.1
@@ -119,14 +119,14 @@ importers:
         specifier: 0.5.0
         version: 0.5.0(562de4919a3217708da1ea555f09ec8f)
       '@livestore/livestore':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@livestore/sync-cf':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -159,26 +159,26 @@ importers:
         specifier: workspace:*
         version: link:../../packages/s3-signer
       '@livestore/adapter-web':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/devtools-vite':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(5c1365fb8c968c2e47598455a94d12a5)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(5c1365fb8c968c2e47598455a94d12a5)
       '@livestore/livestore':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@livestore/react':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(67acdb8dee2b9df2273a88556002a928)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(67acdb8dee2b9df2273a88556002a928)
       '@livestore/sync-cf':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/wa-sqlite':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -256,26 +256,26 @@ importers:
         specifier: workspace:*
         version: link:../../packages/s3-signer
       '@livestore/adapter-web':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/devtools-vite':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(5c1365fb8c968c2e47598455a94d12a5)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(5c1365fb8c968c2e47598455a94d12a5)
       '@livestore/livestore':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@livestore/react':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(67acdb8dee2b9df2273a88556002a928)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(67acdb8dee2b9df2273a88556002a928)
       '@livestore/sync-cf':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@livestore/wa-sqlite':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -344,14 +344,14 @@ importers:
         specifier: 0.5.0
         version: 0.5.0(562de4919a3217708da1ea555f09ec8f)
       '@livestore/adapter-web':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@livestore/livestore':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -405,11 +405,11 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@livestore/utils':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -430,14 +430,14 @@ importers:
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@livestore/adapter-web':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@livestore/livestore':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@livestore/peer-deps':
-        specifier: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
-        version: 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
+        specifier: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
+        version: 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
@@ -1934,8 +1934,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/adapter-web@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-RQSWnRMP6DbrKtl5e5XFcshvJXuQWe83tEUw+MKVek4tsTCt1PI4gW8qf2KfZvEB5NWVn6UXzvMmdb/a0sT5uw==}
+  '@livestore/adapter-web@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-n4f3zdxjDdJaSCeeYt3jDfKQsw0cYTPlof2OGQtCk8rZ+EjSQJhPDZP3w5XJDuptboxzaj+9DMKi2mUOGzf7mg==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -1948,8 +1948,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/common-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-/3S8THcoZCdwxz++0Eb6hvFRMlr9SsihGFQZI9gMKKxGHjmh1V6gj/T5lf6KSbwiqM2UiJMotIVUdkuYOcvwHw==}
+  '@livestore/common-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-yNw/I5U+SYH60f+GmHpUz7wQ+K9wGDFB4yUEhHF6YDa3OXnRb/kWdDSA+kuk5R5g/kbwFM2bY57j3MmKcN9Ndg==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -1962,8 +1962,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/common@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-6CDNM03X/Vi4iU7wVinhCmVRYrCfCmKjkGj72lkazPdlSfszUCpq7NtYkb7Aux4e3EY5nULzWXDp2FmeZ+gn1g==}
+  '@livestore/common@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-BWvgtALxJzMEWYL0nfOZaU0O9qxGHvgCVZKW9N12aNkSteJ1ijcNrnsvzAnFq008dXxqIKI12pc/aqQc9ZFptg==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -1976,13 +1976,13 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/devtools-vite@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-Rj3NGyn8Qc0AvwPz9SKudR5d5rS3h1cYEuIGEAi3YyQKUXJN44Cm1XFLk1VLEXI7fCmws/fervEkiY2BRnHNoA==}
+  '@livestore/devtools-vite@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-r8Q39zHZx8nYzxrgCSojTP8XsSZuknwkIwkydFC7CKXfB9FEdNZGmRRwlzqu6eyc0GXkG70bGKFExuU3HtvtsA==}
     peerDependencies:
       vite: ^8.0.16
 
-  '@livestore/framework-toolkit@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-h5wyXikKElum8uiV4jaRz+PuUIKZUyAJiXl9h/D39ogob4qjuqlV3Pht2x9INl1QENNMimb1KxQvurDKyaZVkQ==}
+  '@livestore/framework-toolkit@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-gkUQMHLBuZTAZsi64geTUakU/qFoVh1GLbo0hRLjzSkt6jNVADu+Mj/6Akp1d3n30GV+01w64Dc2roImCHFnJw==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -1995,8 +1995,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/livestore@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-kUWphjUlUkFsYhN553/r9/T94ocVAAXHsKqnKYYMkDg3W+0ly1b+ocFEWUfvgpWNT1gmQjyCtehjyLJqPEYptg==}
+  '@livestore/livestore@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-db2hI/1A845CkSdhOsAQnhlEgYzWRqlSxunrYpZslicweNCsywOzLM8q8NTE2HtNIXVZHk+SxyyMfWwoUMhAFw==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -2009,11 +2009,11 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/peer-deps@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-yFjxlQc3hvmN7jt6LbyzC9xs78asX4LICGG5b4c05kXeQ6dKbU6nrRgo6B9DN/mrh3eZYwSvOve+3VxqsmEriQ==}
+  '@livestore/peer-deps@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-vQzYeRHPM8UuqyKDxpUQP5mWlNhlWdDigq3XkeNcOK2dBhnDQGoxCVz9aTnoed3Sf4SXbM2pgkI1JmDQLsHr3g==}
 
-  '@livestore/react@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-LErZeenp7QDRuqm5Hfe/u7fkEXl3K1hrRKJYPYPSQr10QdZLcL0FaKqoB1wfRLhLmio/QiSvyYGYwgpUyCDfQw==}
+  '@livestore/react@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-QxG7SKqSAcj9lQexWQyeJCLNlFOaaYPAkJ9HLy/KfZQNrhPRLTt2ChuQuUR02BqOnvw1trM2Myd2EDIo5SA8VA==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -2027,8 +2027,8 @@ packages:
       effect: 4.0.5
       react: ^19.0.0
 
-  '@livestore/sqlite-wasm@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-lDtG3HPTRpJdvqlfDw20c2DcKavDosgz98v/PrajxROoE2Mys0/bTUJmomEKD7Y+vq7Yy57lFpb1+JTIvZqt7g==}
+  '@livestore/sqlite-wasm@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-5xpRx8NVFV0cxRphjMWpBQvd844cc/W4SP3bV3+VR27umi3XwM1gIjvhXUrfJNCrwdrXw3SncUrWwb4xv2qYWA==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -2041,8 +2041,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/sync-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-uU2VpB7/U2lix/B70eo/1GCmEI2Tn0s5rSFfj5HWtQBHjkGAxNLWG82JyvIWWKnbONgyKeLS6JM7pM++3eAcAg==}
+  '@livestore/sync-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-EvcIQidMGPIQqJemrtYbHN9XFhj9fdkUWRK2tfAIzH2/wrsLO0llH4LWbsplhft7KjGZZ7/R7khLT/y46POfnw==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -2055,8 +2055,8 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/utils@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-p5Su3f6z5YBM2UI/9pvf36GSBR/YOmt7PEWe//9S4SOA1nU22eUfz0Vqs0+SShvQkGoib7Nd52fObSYl5IwcBw==}
+  '@livestore/utils@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-VxpNcZ+VnyZX3B5m3wN5AVKcBWM5ZbxXAA0z1uR0xjOj3/wPAOYdX/s1aLBmTrojr9pnh5X04roJVLZYE1sMgA==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -2069,11 +2069,11 @@ packages:
       '@standard-schema/spec': ^1.1.0
       effect: 4.0.5
 
-  '@livestore/wa-sqlite@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-0qD+wVBNY3QtuHlQMbmHO0J8c767obbZKGaAsg33BGk0QcRGaHrpHGJR3rtgSz50vFzjjtxX7kGImQDanpNx9Q==}
+  '@livestore/wa-sqlite@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-0yqvoTesF5pRkxdZkC3+oJzUi7eoVCqqnLxHtzVYBNItTvuAPQEg2tNfvIjK+EM68Zoln8L86Ya1rnPrGW+gKA==}
 
-  '@livestore/webmesh@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7':
-    resolution: {integrity: sha512-FNvQDYIZBsE+p270bwhClhO3MNBW9RBJG1GeFz9pAH7/b4LDQ3Kg7Fsg8SLfQkryYka/GJSsoF9tjddUOZz3xQ==}
+  '@livestore/webmesh@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5':
+    resolution: {integrity: sha512-X46+jN5SklJwLkNv9KYN3HXs+F3yffW/7vhIkonZ9Biltyid01K8Hkp3lJooth9gz55vU+uTxRhCLL6XNg2wkg==}
     peerDependencies:
       '@effect/opentelemetry': 4.0.5
       '@effect/platform-browser': 4.0.5
@@ -5611,18 +5611,6 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.21.3:
-    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   ws@8.22.0:
     resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
     engines: {node: '>=10.0.0'}
@@ -6760,7 +6748,7 @@ snapshots:
       terminal-link: 2.1.1
       undici: 6.23.0
       wrap-ansi: 7.0.0
-      ws: 8.21.3
+      ws: 8.22.0
     optionalDependencies:
       react-native: 0.81.5(@babel/core@7.28.6)(@types/react@19.2.10)(react@19.2.4)
     transitivePeerDependencies:
@@ -7225,16 +7213,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/sqlite-wasm': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/sqlite-wasm': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/adapter-web@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/adapter-web@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7242,16 +7230,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/sqlite-wasm': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/sqlite-wasm': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/adapter-web@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/adapter-web@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7259,16 +7247,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/sqlite-wasm': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/sqlite-wasm': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/common-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/common-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7277,13 +7265,13 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/common-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/common-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7292,13 +7280,13 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/common@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/common@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7306,15 +7294,15 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@noble/hashes': 2.4.0
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/common@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/common@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7322,18 +7310,18 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/webmesh': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/webmesh': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@noble/hashes': 2.4.0
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/devtools-vite@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(5c1365fb8c968c2e47598455a94d12a5)':
+  '@livestore/devtools-vite@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(5c1365fb8c968c2e47598455a94d12a5)':
     dependencies:
-      '@livestore/adapter-web': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/adapter-web': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@parcel/watcher': 2.5.6
       vite: 8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)
     transitivePeerDependencies:
@@ -7348,7 +7336,7 @@ snapshots:
       - '@standard-schema/spec'
       - effect
 
-  '@livestore/framework-toolkit@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/framework-toolkit@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7356,16 +7344,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/adapter-web': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/livestore': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/adapter-web': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/livestore': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/livestore@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/livestore@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7373,14 +7361,14 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/livestore@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/livestore@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7388,14 +7376,14 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/peer-deps@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))':
+  '@livestore/peer-deps@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7420,7 +7408,7 @@ snapshots:
       - utf-8-validate
       - vitest
 
-  '@livestore/peer-deps@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))':
+  '@livestore/peer-deps@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(redis@6.2.1(@opentelemetry/api@1.9.0))(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7445,7 +7433,7 @@ snapshots:
       - utf-8-validate
       - vitest
 
-  '@livestore/react@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(67acdb8dee2b9df2273a88556002a928)':
+  '@livestore/react@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(67acdb8dee2b9df2273a88556002a928)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7453,17 +7441,17 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/framework-toolkit': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/livestore': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/framework-toolkit': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/livestore': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
       react: 19.2.4
 
-  '@livestore/sqlite-wasm@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/sqlite-wasm@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7472,16 +7460,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/common-cf': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/wa-sqlite': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common-cf': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/wa-sqlite': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/sqlite-wasm@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/sqlite-wasm@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7490,16 +7478,16 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/common-cf': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/wa-sqlite': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common-cf': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/wa-sqlite': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/sync-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/sync-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7508,15 +7496,15 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/common-cf': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/common-cf': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/sync-cf@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/sync-cf@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@cloudflare/workers-types': 4.20251118.0
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
@@ -7525,15 +7513,15 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/common': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/common-cf': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/common-cf': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/utils@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/utils@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7549,7 +7537,7 @@ snapshots:
       pretty-bytes: 7.0.1
       qrcode-generator: 2.0.4
 
-  '@livestore/utils@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/utils@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7565,9 +7553,9 @@ snapshots:
       pretty-bytes: 7.0.1
       qrcode-generator: 2.0.4
 
-  '@livestore/wa-sqlite@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7': {}
+  '@livestore/wa-sqlite@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5': {}
 
-  '@livestore/webmesh@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)':
+  '@livestore/webmesh@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7575,13 +7563,13 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@22.19.7)(jsdom@26.1.0)(vite@8.2.0(@types/node@22.19.7)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(562de4919a3217708da1ea555f09ec8f)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(562de4919a3217708da1ea555f09ec8f)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
 
-  '@livestore/webmesh@0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
+  '@livestore/webmesh@0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)':
     dependencies:
       '@effect/opentelemetry': 4.0.5(@opentelemetry/api-logs@0.216.0)(@opentelemetry/api@1.9.0)(@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.216.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-node@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-web@2.7.1(@opentelemetry/api@1.9.0))(@opentelemetry/semantic-conventions@1.40.0)(effect@4.0.5)
       '@effect/platform-browser': 4.0.5(effect@4.0.5)
@@ -7589,7 +7577,7 @@ snapshots:
       '@effect/platform-node': 4.0.5(effect@4.0.5)(redis@6.2.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.5(effect@4.0.5)
       '@effect/vitest': 4.0.5(effect@4.0.5)(vitest@5.0.5(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jsdom@26.1.0)(vite@8.2.0(@types/node@25.0.3)(esbuild@0.28.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@livestore/utils': 0.0.0-snapshot-42a59b73f9fb1ad4204f6c52bcaafc249f15eda7(fef8b5d727aa0f2cc1184dd64a7c2cd7)
+      '@livestore/utils': 0.0.0-snapshot-505332f912c100d281378048f0beb0b2db11a9c5(fef8b5d727aa0f2cc1184dd64a7c2cd7)
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@standard-schema/spec': 1.1.0
@@ -7709,7 +7697,7 @@ snapshots:
       detect-libc: 2.1.2
       is-glob: 4.0.3
       node-addon-api: 7.1.1
-      picomatch: 4.0.5
+      picomatch: 4.0.7
     optionalDependencies:
       '@parcel/watcher-android-arm64': 2.5.6
       '@parcel/watcher-darwin-arm64': 2.5.6
@@ -9875,7 +9863,7 @@ snapshots:
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 14.2.0
-      ws: 8.21.3
+      ws: 8.22.0
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -11565,8 +11553,6 @@ snapshots:
   ws@7.5.10: {}
 
   ws@8.21.0: {}
-
-  ws@8.21.3: {}
 
   ws@8.22.0: {}
 

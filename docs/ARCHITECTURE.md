@@ -224,7 +224,7 @@ initFileSync(store, {
 
 The filesystem layer below runs on Effect `4.0.5`. The Node adapter uses published
 contrib `0.5.0`. Workspace overrides resolve its core dependencies to snapshot
-`42a59b73f9fb1ad4204f6c52bcaafc249f15eda7`.
+`505332f912c100d281378048f0beb0b2db11a9c5`.
 The Node example tests startup and includes an old-store migration harness. Uploads use fetch
 when XMLHttpRequest is unavailable; progress callbacks do not require XHR on Node.
 
